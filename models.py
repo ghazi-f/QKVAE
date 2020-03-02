@@ -12,7 +12,8 @@ from h_params import *
 # =================================================== EMBEDDING UTILITY ================================================
 
 
-# =========================================== BASE SEMI SUPERVISED MODEL CLASS =========================================
+# ==================================================== BASE MODEL CLASS ================================================
+
 class BaseAE(nn.module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, h_params):
         super(BaseAE, self).__init__()
@@ -28,7 +29,7 @@ class BaseAE(nn.module, metaclass=abc.ABCMeta):
         self.decoder = h_params.decoder(h_params, self.word_embeddings)
 
         # The losses
-        self.losses = nn.ModuleList([loss(self, w) for loss, w in zip(h_params.losses, h_params.loss_weights)])
+        self.losses = nn.ModuleList([loss(self, *w) for loss, w in zip(h_params.losses, h_params.loss_weights)])
 
         # TODO: initialize network parameters
 
@@ -38,14 +39,44 @@ class BaseAE(nn.module, metaclass=abc.ABCMeta):
         # Getting the Summary writer
         self.writer = SummaryWriter(h_params.viz_path)
 
+        # Initializing truth variables
+        self.X = None
+        self.Y = None
+        self.iw_X = None
+        self.iw_Y = None
+
+        # Initializing estimated variables
+        self.Z = [None for _ in h_params.z_types]
+        self.Z_log_probas = [None for _ in h_params.z_types]
+        self.Z_samples = [None for _ in h_params.z_types]
+        self.iw_Z = [None for _ in h_params.z_types]
+        self.iw_Z_log_probas = [None for _ in h_params.z_types]
+        self.iw_Z_samples = [None for _ in h_params.z_types]
+
+        self.X_hat_params = None
+        self.iw_X_hat_params = None
+
+        self.iw_samples = None
+
     def opt_step(self, samples):
 
         if (self.step % self.h_params.grad_accumulation_steps) == 0:
+            # Reinitializing gradients if accumulation is over
             self.optimizer.zero_grad()
-        sum([loss.forward(samples) * loss.w for loss in self.losses]).backward()
+
+        # Forward and backward pass
+        self.forward(samples)
+        if isinstance(self, ImportanceWeightedAEMixin):
+            self.iw_forward(samples, is_training=True)
+
+        losses = [loss.forward(samples) * loss.w for loss in self.losses]
+        sum(losses).backward()
+
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
+            # Applying gradients if accumulation is over
             self.optimizer.step()
-        self._dump_train_visu()
+
+        self._dump_train_viz()
         self.step += 1
 
     def prior_sample(self, sample_size):
@@ -65,13 +96,13 @@ class BaseAE(nn.module, metaclass=abc.ABCMeta):
 
         # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
         for loss in self.losses:
-            for metric, name in loss.metrics():
+            for name, metric in loss.metrics(is_training=True):
                 self.writer.add_scalar(os.path.join('train', name), metric, self.step)
 
-    def dump_test_viz(self, samples, gen_samples=1):
+    def dump_test_viz(self, gen_samples=1):
         # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
         for loss in self.losses:
-            for metric, name in loss.metrics(samples):
+            for name, metric in loss.metrics(is_training=False):
                 self.writer.add_scalar(os.path.join('test', name), metric, self.step)
 
     def decode_to_text(self, z):
@@ -89,7 +120,122 @@ class BaseAE(nn.module, metaclass=abc.ABCMeta):
 
 
 # ======================================================================================================================
-class SSAE(BaseAE):
+# ==================================================== AE MIX-INS ======================================================
+
+class DeterministicAEMixin(BaseAE, metaclass=abc.ABCMeta):
+    def forward(self, samples):
+        # Samples should contain [X, Y]
+        self.X = samples[0]
+        if len(samples) > 1:  # Checking whether we have labels
+            self.Y = samples[1]
+
+        z_params = []
+        z_log_probas = []
+        z_samples = []
+        for x in self.X:
+            z_params_i, _, _ = self.encoder.forward(x, z_samples[-1])
+            posterior = [z.posterior_sample(params) for z, params in zip(z_params_i, self.h_params.z_types)]
+            z_samples.append(torch.cat([pos_i[0] for pos_i in posterior]))
+            z_log_probas.append(torch.cat([pos_i[1] for pos_i in posterior]))
+            z_params.append(z_params_i)
+
+        # Saving the current latent variable posterior samples in the class attributes and linking them to the
+        # back-propagation graph
+        # For DAE, the samples are the m parameter itself for gaussians, and softmax(logits, temperature) for
+        # categorical variables
+        self.Z_samples = nn.ModuleList([
+            z_params_i['loc'] if 'loc' in z_params_i else F.softmax(z_params_i['logits']) if 'logits' in z_params_i
+            else None
+            for z_params_i in z_params])
+        self.Z_log_probas = nn.ModuleList(z_log_probas)
+        self.Z = nn.ModuleList(z_params)
+
+        x_hat_params = []
+        x_prev = self.word_embeddings[self.vocab_index.w2i['<go>']]
+        for z_sample, x_i in zip(self.Z_samples, self.X):
+            x_hat_params_i, _, _ = self.decoder.forward(z_sample, x_prev)
+            x_hat_params.append(x_hat_params_i)
+            x_prev = x_i
+
+        self.X_hat_params = nn.ModuleList(x_hat_params)
+
+
+class VariationalAEMixin(BaseAE, metaclass=abc.ABCMeta):
+    def forward(self, samples):
+        # Samples should contain [X, Y]
+        self.X = samples[0]
+        if len(samples) > 1:  # Checking whether we have labels
+            self.Y = samples[1]
+
+        z_params = []
+        z_log_probas = []
+        z_samples = []
+        for x in self.X:
+            z_params_i, _, _ = self.encoder.forward(x, z_samples[-1])
+            posterior = [z.posterior_sample(params) for z, params in zip(z_params_i, self.h_params.z_types)]
+            z_samples.append(torch.cat([pos_i[0] for pos_i in posterior]))
+            z_log_probas.append(torch.cat([pos_i[1] for pos_i in posterior]))
+            z_params.append(z_params_i)
+
+        # Saving the current latent variable posterior samples in the class attributes and linking them to the
+        # back-propagation graph
+        self.Z_samples = nn.ModuleList(z_samples)
+        self.Z_log_probas = nn.ModuleList(z_log_probas)
+        self.Z = nn.ModuleList(z_params)
+
+        x_hat_params = []
+        x_prev = self.word_embeddings[self.vocab_index.w2i['<go>']]
+        for z_sample, x_i in zip(self.Z_samples, self.X):
+            x_hat_params_i, _, _ = self.decoder.forward(z_sample, x_prev)
+            x_hat_params.append(x_hat_params_i)
+            x_prev = x_i
+
+        self.X_hat_params = nn.ModuleList(x_hat_params)
+
+
+class ImportanceWeightedAEMixin(BaseAE, metaclass=abc.ABCMeta):
+    def iw_forward(self, samples, is_training):
+        if is_training:
+            self.iw_samples = self.h_params.training_iw_samples
+        else:
+            self.iw_samples = self.h_params.testing_iw_samples
+        # Samples should contain [X, Y]
+        x_size = samples[0].shape
+        self.iw_X = samples[0].expand(x_size[0]*self.iw_samples, *x_size[1:])
+        if len(samples) > 1:  # Checking whether we have labels
+            y_size = samples[1].shape
+            self.iw_Y = samples[1].expand(y_size[0]*self.iw_samples, *y_size[1:])
+
+        z_params = []
+        z_log_probas = []
+        z_samples = []
+        for x in self.iw_X:
+            z_params_i, _, _ = self.encoder.forward(x, z_samples[-1])
+            posterior = [z.posterior_sample(params) for z, params in zip(z_params_i, self.h_params.z_types)]
+            z_samples.append(torch.cat([pos_i[0] for pos_i in posterior]))
+            z_log_probas.append(torch.cat([pos_i[1] for pos_i in posterior]))
+            z_params.append(z_params_i)
+
+        # Saving the current latent variable posterior samples in the class attributes and linking them to the
+        # back-propagation graph
+        self.iw_Z_samples = nn.ModuleList(z_samples)
+        self.iw_Z_log_probas = nn.ModuleList(z_log_probas)
+        self.iw_Z = nn.ModuleList(z_params)
+
+        x_hat_params = []
+        x_prev = self.word_embeddings[self.vocab_index.w2i['<go>']]
+        for z_sample, x_i in zip(self.Z_samples, self.X):
+            x_hat_params_i, _, _ = self.decoder.forward(z_sample, x_prev)
+            x_hat_params.append(x_hat_params_i)
+            x_prev = x_i
+
+        self.iw_X_hat_params = nn.ModuleList(x_hat_params)
+
+
+# ======================================================================================================================
+# ==================================================== MODEL CLASSES ===================================================
+
+class SSAE(BaseAE, DeterministicAEMixin):
     def __init__(self, vocab_index, h_params=None):
         if h_params is None:
             h_params = DefaultSSHParams
@@ -97,14 +243,14 @@ class SSAE(BaseAE):
         assert any([isinstance(loss, Supervision) for loss in self.losses]), "You forgot to include a supervision loss."
 
 
-class AE(BaseAE):
+class AE(BaseAE, DeterministicAEMixin):
     def __init__(self, vocab_index, h_params=None):
         if h_params is None:
             h_params = DefaultHParams
         super(AE, self).__init__(vocab_index, h_params)
 
 
-class VAE(BaseAE):
+class VAE(BaseAE, VariationalAEMixin):
     def __init__(self, vocab_index, h_params=None):
         if h_params is None:
             h_params = DefaultVariationalHParams
@@ -113,8 +259,11 @@ class VAE(BaseAE):
         assert not any([not isinstance(loss, ELBo) and isinstance(loss, Reconstruction)
                         for loss in self.losses]), "A non variational sample reconstruction loss is in your losses"
 
+
 class SSVAE(VAE, SSAE):
     def __init__(self, vocab_index, h_params=None):
         if h_params is None:
             h_params = DefaultSSVariationalHParams
         super(VAE, self).__init__(vocab_index, h_params)
+
+# ======================================================================================================================
