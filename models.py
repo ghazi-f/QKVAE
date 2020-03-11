@@ -1,11 +1,12 @@
 import os
 import abc
 
-
+from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+
 from components import *
 from h_params import *
 
@@ -15,11 +16,12 @@ from h_params import *
 # ==================================================== BASE MODEL CLASS ================================================
 
 class BaseAE(nn.Module, metaclass=abc.ABCMeta):
-    def __init__(self, vocab_index, h_params, autoload=True):
+    def __init__(self, vocab_index, tag_index, h_params, autoload=True):
         super(BaseAE, self).__init__()
 
         self.h_params = h_params
         self.vocab_index = vocab_index
+        self.tag_index = tag_index
         self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
 
         # Encoder
@@ -119,7 +121,7 @@ class BaseAE(nn.Module, metaclass=abc.ABCMeta):
         # computational cost may be high, and because the make the log file a lot larger.
         if complete:
             for summary_type, summary_name, summary_data in self.data_specific_metrics():
-                summary_dumpers[summary_type]('test'+summary_name, summary_data  , self.step)
+                summary_dumpers[summary_type]('test'+summary_name, summary_data, self.step)
 
     def data_specific_metrics(self):
         # this is supposed to output a list of (summary type, summary name, summary data) triplets
@@ -250,7 +252,7 @@ class VariationalAEMixin:
         if x_hat_params.shape[-1] == self.h_params.vocab_size:
             x_hat_params = torch.argmax(x_hat_params, dim=-1)
         text = '||'.join([' '.join([self.vocab_index.itos[x_i_h_p_j] for x_i_h_p_j in x_i_h_p])
-                          for x_i_h_p in x_hat_params])
+                          for x_i_h_p in x_hat_params]).replace('<pad>', '_').replace('<unk>', '<?>')
         return text
 
     def data_specific_metrics(self):
@@ -263,6 +265,23 @@ class VariationalAEMixin:
             ]
 
         return summary_triplets
+
+    def get_perplexity(self, iterator):
+        with torch.no_grad():
+            neg_log_perplexity_lb = []
+            total_samples = []
+            for batch in tqdm(iterator, desc="Getting Model Perplexity"):
+                self.forward([batch.text, batch.label], is_training=True)
+                neg_log_perplexity_lb.append(-sum([loss.get_loss(unweighted=True)
+                                         for loss in self.losses if isinstance(loss, ELBo)]))
+                total_samples.append(torch.sum(self.X_lens))
+
+            total_samples = torch.Tensor(total_samples)
+            neg_log_perplexity_lb = torch.Tensor(neg_log_perplexity_lb)/torch.sum(total_samples)*total_samples
+            neg_log_perplexity_lb = torch.sum(neg_log_perplexity_lb)
+            perplexity_ub = 2 ** - neg_log_perplexity_lb
+
+            self.writer.add_scalar('Test/PerplexityUB', perplexity_ub, self.step)
 
 
 class ImportanceWeightedAEMixin:
@@ -308,26 +327,26 @@ class ImportanceWeightedAEMixin:
 # ==================================================== MODEL CLASSES ===================================================
 
 class SSAE(BaseAE, DeterministicAEMixin):
-    def __init__(self, vocab_index, h_params=None):
-        super(SSAE, self).__init__(vocab_index, h_params)
+    def __init__(self, vocab_index, tag_index, h_params=None):
+        super(SSAE, self).__init__(vocab_index, tag_index, h_params)
         assert any([isinstance(loss, Supervision) for loss in self.losses]), "You forgot to include a supervision loss."
 
 
 class AE(BaseAE, DeterministicAEMixin):
-    def __init__(self, vocab_index, h_params=None):
-        super(AE, self).__init__(vocab_index, h_params)
+    def __init__(self, vocab_index, tag_index, h_params=None):
+        super(AE, self).__init__(vocab_index, tag_index, h_params)
 
 
 class VAE(BaseAE, VariationalAEMixin):
-    def __init__(self, vocab_index, h_params=None):
-        super(VAE, self).__init__(vocab_index, h_params)
+    def __init__(self, vocab_index, tag_index, h_params=None):
+        super(VAE, self).__init__(vocab_index, tag_index, h_params)
         assert any([isinstance(loss, ELBo) for loss in self.losses]), "There appears to be no ELBo in your losses"
         assert not any([not isinstance(loss, ELBo) and isinstance(loss, Reconstruction)
                         for loss in self.losses]), "A non variational sample reconstruction loss is in your losses"
 
 
 class SSVAE(VariationalAEMixin, BaseAE):
-    def __init__(self, vocab_index, h_params=None):
-        super(SSVAE, self).__init__(vocab_index, h_params)
+    def __init__(self, vocab_index, tag_index, h_params=None):
+        super(SSVAE, self).__init__(vocab_index, tag_index, h_params)
 
 # ======================================================================================================================

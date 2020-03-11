@@ -210,7 +210,13 @@ class Supervision(BaseCriterion):
     def __init__(self, model, w, supervised_z_index):
         super(Supervision, self).__init__(model, w)
         self.supervised_z_index = supervised_z_index
-        self.criterion = nn.CrossEntropyLoss(ignore_index=self.h_params.target_ignore_index)
+
+        criterion_params = {'ignore_index': self.h_params.target_ignore_index}
+        if self.h_params.weight_prediction:
+            counts = [model.tag_index.freqs[w] for w in self.model.tag_index.itos]
+            freqs = torch.Tensor([1/c if c != 0 else 0 for c in counts]).to(self.h_params.device)
+            criterion_params['weight'] = freqs/torch.sum(freqs)
+        self.criterion = nn.CrossEntropyLoss(**criterion_params)
 
     def get_loss(self):
         num_classes = self.h_params.z_types[self.supervised_z_index].size
@@ -244,11 +250,12 @@ class Reconstruction(BaseCriterion):
         super(Reconstruction, self).__init__(model, w)
         criterion_params = {'ignore_index': self.h_params.token_ignore_index}
         if self.h_params.weight_reconstruction:
-            freqs = 1/torch.Tensor([model.vocab.freqs[w] for w in self.model.vocab.itos]).to(self.h_params.device)
+            freqs = 1/torch.Tensor([model.vocab_index.freqs[w] for w in self.model.vocab_index.itos]).to(self.h_params.device)
             criterion_params['weight'] = freqs/torch.sum(freqs)
         self.criterion = nn.CrossEntropyLoss(**criterion_params)
 
     def get_loss(self):
+        self.criterion(torch.cat(self.model.X_hat_params), F.one_hot(self.model.X))
         return self.criterion(torch.cat(self.model.X_hat_params), F.one_hot(self.model.X))
 
     def _common_metrics(self):
@@ -263,18 +270,26 @@ class Reconstruction(BaseCriterion):
 
 
 class ELBo(BaseCriterion):
-    # This is actually Sticking The Landing (STL) ELBo, and not the standard one
+    # This is actually Sticking The Landing (STL) ELBo, and not the standard one (it estimates the same quantity anyway)
     def __init__(self, model, w):
         super(ELBo, self).__init__(model, w)
-        self.criterion = nn.CrossEntropyLoss(reduction='none', ignore_index=self.h_params.token_ignore_index)
+        criterion_params = {'ignore_index': self.h_params.token_ignore_index, 'reduction': 'none'}
+        if self.h_params.weight_reconstruction:
+            counts = [model.vocab_index.freqs[w] for w in self.model.vocab_index.itos]
+            freqs = torch.Tensor([1/c if c != 0 else 0 for c in counts]).to(self.h_params.device)
+            criterion_params['weight'] = freqs/torch.sum(freqs)
+        self.criterion = nn.CrossEntropyLoss(**criterion_params)
+        criterion_params.pop('weight')
+        self._unweighted_criterion = nn.CrossEntropyLoss(**criterion_params)
         self.log_p_xIz = None
         self.log_p_z = None
         self.log_q_zIx = None
 
-    def get_loss(self):
+    def get_loss(self, unweighted=False):
         # This probability is shaped like [batch_size]
         vocab_size = self.h_params.vocab_size
-        self.log_p_xIz = - self.criterion(self.model.X_hat_params.reshape(-1, vocab_size),
+        criterion = self._unweighted_criterion if unweighted else self.criterion
+        self.log_p_xIz = - criterion(self.model.X_hat_params.reshape(-1, vocab_size),
                                           self.model.X.view(-1)).view(self.model.X.shape)
 
         # The following 2 probabilities are shaped [z_types, batch_size]
@@ -284,23 +299,26 @@ class ELBo(BaseCriterion):
             running_log_prob = []
             for z_type in self.model.h_params.z_types:
                 running_log_prob.append(z_type.prior_log_prob(z_i_samples[:,
-                                                          current_z_beginning: current_z_beginning+z_type.size]))
+                                                              current_z_beginning: current_z_beginning+z_type.size]))
                 current_z_beginning += z_type.size
             self.log_p_z.append(torch.stack(running_log_prob))
-        self.log_p_z_i = torch.stack(self.log_p_z).transpose(0, 1)
+        self.sequence_mask = (self.model.X != self.h_params.token_ignore_index).float()
+        self.valid_n_samples = torch.sum(self.sequence_mask)
+        self.log_p_z_i = torch.stack(self.log_p_z).transpose(0, 1) * self.sequence_mask.unsqueeze(0)
         self.log_p_z = torch.sum(self.log_p_z_i, dim=0)
-        self.log_q_z_iIx = self.model.Z_log_probas.transpose(0, 1)
+        self.log_q_z_iIx = self.model.Z_log_probas.transpose(0, 1) * self.sequence_mask.unsqueeze(0)
         self.log_q_zIx = torch.sum(self.log_q_z_iIx, dim=0)
-
-        return - torch.mean(self.log_p_xIz + self.log_p_z - self.log_q_zIx, dim=(0, 1))
+        return - torch.sum(self.log_p_xIz + self.log_p_z - self.log_q_zIx, dim=(0, 1))/self.valid_n_samples
 
     def _common_metrics(self):
-        current_elbo = - self.get_loss()
-        return {'/ELBo': current_elbo, '/reconstruction_LL': torch.mean(self.log_p_xIz),
+        current_elbo = - self.get_loss(unweighted=True)
+        return {'/ELBo': current_elbo/self.valid_n_samples,
+                '/reconstruction_LL': torch.sum(self.log_p_xIz)/self.valid_n_samples,
                 **{'/KL(q({}|x)Ip({}))'.format(z.name, z.name):
-                   torch.mean(log_qz_iIx - log_pz_i) for z, log_qz_iIx, log_pz_i in zip(self.model.h_params.z_types,
-                                                                                      self.log_q_z_iIx,
-                                                                                      self.log_p_z_i)}}
+                   torch.sum(log_qz_iIx - log_pz_i)/self.valid_n_samples
+                   for z, log_qz_iIx, log_pz_i in zip(self.model.h_params.z_types,
+                                                      self.log_q_z_iIx,
+                                                      self.log_p_z_i)}}
 
     def _train_metrics(self):
         return {}
@@ -310,7 +328,7 @@ class ELBo(BaseCriterion):
 
 
 class IWLBo(ELBo):
-    # This is actually DReG IWLBo and not the standard one
+    # This is actually DReG IWLBo and not the standard one (it estimates the same quantity anyway)
     def __init__(self, model, w):
         assert isinstance(model, ImportanceWeightedAEMixin), "To use IWLBo, your model has to inherit from the " \
                                                              "ImportanceWeightedAEMixin class"

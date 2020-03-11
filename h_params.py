@@ -35,7 +35,8 @@ class DefaultHParams:
                  training_iw_samples=10,
                  testing_iw_samples=100,
                  test_prior_samples=5,
-                 weight_reconstruction=False
+                 weight_reconstruction=False,
+                 weight_prediction=False
                  ):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
@@ -74,6 +75,7 @@ class DefaultHParams:
         self.loss_params = loss_params or [
             [1]]  # [weight] for unsupervised losses, and [weight, supervised_z_index] for the supervised losses
         self.weight_reconstruction = weight_reconstruction
+        self.weight_prediction = weight_prediction
 
         # Optimization hyper-parameters
         self.optimizer = optimizer
@@ -84,7 +86,6 @@ class DefaultHParams:
         self.training_iw_samples = training_iw_samples
         self.testing_iw_samples = testing_iw_samples
         self.test_prior_samples = test_prior_samples
-
 
         # This constructing will mainly serve as a sanity-check for the hyper parameter setting
         assert len(self.losses) == len(self.loss_params)
@@ -121,8 +122,9 @@ class DefaultSSVariationalHParams(DefaultHParams):
                           'losses': [Supervision, ELBo],
                           'loss_params': [[1, 0], [1]],
                           'z_types': [Categorical(supervision_size, 'y_hat', device),
-                                      Gaussian(100, 'z', device)],
-                          'weight_reconstruction': True}
+                                      Gaussian(400, 'z', device)],
+                          'weight_reconstruction': True,
+                          'weight_prediction': True}
         kwargs = {**default_kwargs, **kwargs}
         super(DefaultSSVariationalHParams, self).__init__(**kwargs)
         self.target_ignore_index = target_ignore_index

@@ -7,22 +7,21 @@ from data_prep import UDPoSDaTA as Data
 from models import SSVAE
 from h_params import DefaultSSVariationalHParams as HParams
 
-MAX_LEN = 20
+MAX_LEN = 40
 BATCH_SIZE = 128
 N_EPOCHS = 100
 TEST_FREQ = 5
 COMPLETE_TEST_FREQ = TEST_FREQ * 1
 DEVICE = device('cuda:0')
-print(DEVICE)
 
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS, len(data.tags.itos),
                    device=DEVICE, token_ignore_index=data.tags.stoi['<pad>'],
                    target_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=3, encoder_h=512, encoder_l=3,
-                   test_name='SSVbig')
+                   test_name='SSVbigger')
 test_iterator = data.test_iter.data()
 print("words: ", len(data.vocab.itos), "Target tags: ", len(data.tags.itos), " On device: ", DEVICE.type)
-model = SSVAE(data.vocab, h_params)
+model = SSVAE(data.vocab, data.tags, h_params)
 if DEVICE.type == 'cuda':
     model.cuda(DEVICE)
 
@@ -44,4 +43,7 @@ while data.train_iter is not None:
         if model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ - 1:
             print('Saving The model ..')
             model.save()
+    data.reinit_iterator('valid')
+    model.get_perplexity(data.val_iter)
+    data.reinit_iterator('valid')
     data.reinit_iterator('train')
