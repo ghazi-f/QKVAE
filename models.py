@@ -251,7 +251,7 @@ class VariationalAEMixin:
         # Getting the argmax from the one hot if it's not done
         if x_hat_params.shape[-1] == self.h_params.vocab_size:
             x_hat_params = torch.argmax(x_hat_params, dim=-1)
-        text = '||'.join([' '.join([self.vocab_index.itos[x_i_h_p_j] for x_i_h_p_j in x_i_h_p])
+        text = ' |||| '.join([' '.join([self.vocab_index.itos[x_i_h_p_j] for x_i_h_p_j in x_i_h_p])
                           for x_i_h_p in x_hat_params]).replace('<pad>', '_').replace('<unk>', '<?>')
         return text
 
@@ -281,7 +281,7 @@ class VariationalAEMixin:
             neg_log_perplexity_lb = torch.sum(neg_log_perplexity_lb)
             perplexity_ub = 2 ** - neg_log_perplexity_lb
 
-            self.writer.add_scalar('Test/PerplexityUB', perplexity_ub, self.step)
+            self.writer.add_scalar('test/PerplexityUB', perplexity_ub, self.step)
 
 
 class ImportanceWeightedAEMixin:
