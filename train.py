@@ -8,7 +8,7 @@ from models import SSVAE
 from h_params import DefaultSSVariationalHParams as HParams
 
 MAX_LEN = 40
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 N_EPOCHS = 100
 TEST_FREQ = 5
 COMPLETE_TEST_FREQ = TEST_FREQ * 8
