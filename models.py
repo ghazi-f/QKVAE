@@ -15,7 +15,7 @@ from h_params import *
 # ==================================================== BASE MODEL CLASS ================================================
 
 class BaseAE(nn.Module, metaclass=abc.ABCMeta):
-    def __init__(self, vocab_index, h_params):
+    def __init__(self, vocab_index, h_params, autoload=True):
         super(BaseAE, self).__init__()
 
         self.h_params = h_params
@@ -63,6 +63,10 @@ class BaseAE(nn.Module, metaclass=abc.ABCMeta):
 
         self.iw_samples = None
 
+        # Loading previous checkpoint if auto_load is set to True
+        if autoload:
+            self.load()
+
     def opt_step(self, samples):
 
         if (self.step % self.h_params.grad_accumulation_steps) == 0:
@@ -91,8 +95,9 @@ class BaseAE(nn.Module, metaclass=abc.ABCMeta):
         grad_norm = 0
         for module, name in zip([self, self.encoder, self.decoder], ['overall', 'encoder', 'decoder']):
             for p in module.parameters():
-                param_norm = p.grad.data.norm(2)
-                grad_norm += param_norm.item() ** 2
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    grad_norm += param_norm.item() ** 2
             grad_norm = grad_norm ** (1. / 2)
             self.writer.add_scalar('train' + '/' + '_'.join([name, 'grad_norm']), grad_norm, self.step)
 
@@ -114,21 +119,29 @@ class BaseAE(nn.Module, metaclass=abc.ABCMeta):
         # computational cost may be high, and because the make the log file a lot larger.
         if complete:
             for summary_type, summary_name, summary_data in self.data_specific_metrics():
-                if summary_type == 'text':
-                    for summary_data_i in summary_data:
-                        summary_dumpers[summary_type]('test'+summary_name, summary_data_i, self.step)
+                summary_dumpers[summary_type]('test'+summary_name, summary_data  , self.step)
 
     def data_specific_metrics(self):
         # this is supposed to output a list of (summary type, summary name, summary data) triplets
         return []
 
     def save(self):
-        torch.save(self.state_dict(), self.h_params.save_path)
+        root = ''
+        for subfolder in self.h_params.save_path.split(os.sep)[:-1]:
+            root = os.path.join(root, subfolder)
+            if not os.path.exists(root):
+                os.mkdir(root)
+        torch.save({'model_checkpoint': self.state_dict(), 'step': self.step}, self.h_params.save_path)
         print("Model {} saved !".format(self.h_params.test_name))
 
     def load(self):
-        self.load_state_dict(torch.load(self.h_params.save_path))
-
+        if os.path.exists(self.h_params.save_path):
+            checkpoint = torch.load(self.h_params.save_path)
+            model_checkpoint, self.step = checkpoint['model_checkpoint'], checkpoint['step']
+            self.load_state_dict(model_checkpoint)
+            print("Loaded model at step", self.step)
+        else:
+            print("Save file doesn't exist, the model will be trained from scratch.")
 
 # ======================================================================================================================
 # ==================================================== AE MIX-INS ======================================================
@@ -236,7 +249,8 @@ class VariationalAEMixin:
         # Getting the argmax from the one hot if it's not done
         if x_hat_params.shape[-1] == self.h_params.vocab_size:
             x_hat_params = torch.argmax(x_hat_params, dim=-1)
-        text = [' '.join([self.vocab_index.itos[x_i_h_p_j] for x_i_h_p_j in x_i_h_p]) for x_i_h_p in x_hat_params]
+        text = '||'.join([' '.join([self.vocab_index.itos[x_i_h_p_j] for x_i_h_p_j in x_i_h_p])
+                          for x_i_h_p in x_hat_params])
         return text
 
     def data_specific_metrics(self):

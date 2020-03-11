@@ -9,15 +9,17 @@ from h_params import DefaultSSVariationalHParams as HParams
 
 MAX_LEN = 20
 BATCH_SIZE = 128
-N_EPOCHS = 5
+N_EPOCHS = 100
 TEST_FREQ = 5
-COMPLETE_TEST_FREQ = TEST_FREQ * 10
+COMPLETE_TEST_FREQ = TEST_FREQ * 1
 DEVICE = device('cuda:0')
+print(DEVICE)
 
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS, len(data.tags.itos),
-                   token_ignore_index=data.tags.stoi['<pad>'], target_ignore_index=data.vocab.stoi['<pad>'],
-                   device=DEVICE)
+                   device=DEVICE, token_ignore_index=data.tags.stoi['<pad>'],
+                   target_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=3, encoder_h=512, encoder_l=3,
+                   test_name='SSVbig')
 test_iterator = data.test_iter.data()
 print("words: ", len(data.vocab.itos), "Target tags: ", len(data.tags.itos), " On device: ", DEVICE.type)
 model = SSVAE(data.vocab, h_params)
@@ -25,7 +27,6 @@ if DEVICE.type == 'cuda':
     model.cuda(DEVICE)
 
 current_time = time()
-
 while data.train_iter is not None:
     for training_batch in data.train_iter:
         loss = model.opt_step([training_batch.text, training_batch.label])
@@ -40,4 +41,7 @@ while data.train_iter is not None:
             model([test_batch.text, test_batch.label], is_training=False)
             model.dump_test_viz(complete=model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
         current_time = time()
+        if model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ - 1:
+            print('Saving The model ..')
+            model.save()
     data.reinit_iterator('train')

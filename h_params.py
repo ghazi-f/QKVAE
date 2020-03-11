@@ -39,7 +39,7 @@ class DefaultHParams:
                  ):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
-        self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name)
+        self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
         self.viz_path = os.path.join(ROOT_TENSORBOARD_PATH, test_name)
 
         # Device hyper-parameter
@@ -110,17 +110,21 @@ class DefaultSSHParams(DefaultHParams):
 
 
 class DefaultSSVariationalHParams(DefaultHParams):
-    def __init__(self, vocab_size, max_len, batch_size, n_epoch, supervision_size, device=None,
-                 target_ignore_index=None, token_ignore_index=None):
-        device = device or torch.device('cpu')
-        super(DefaultSSVariationalHParams, self).__init__(vocab_size, max_len, batch_size, n_epoch,
-                                                          test_name='defaultSSV',
-                                                          device=device,
-                                                          losses=[Supervision, ELBo],
-                                                          loss_params=[[1, 0], [1]],
-                                                          z_types=[Categorical(supervision_size, 'y_hat', device),
-                                                                   Gaussian(100, 'z', device)],
-                                                          weight_reconstruction=True)
+    def __init__(self, vocab_size, max_len, batch_size, n_epochs, supervision_size, device=None,
+                 target_ignore_index=None, token_ignore_index=None, **kwargs):
+        default_kwargs = {'vocab_size': vocab_size,
+                          'max_len': max_len,
+                          'batch_size': batch_size,
+                          'n_epochs': n_epochs,
+                          'test_name': 'defaultSSV',
+                          'device': device or torch.device('cpu'),
+                          'losses': [Supervision, ELBo],
+                          'loss_params': [[1, 0], [1]],
+                          'z_types': [Categorical(supervision_size, 'y_hat', device),
+                                      Gaussian(100, 'z', device)],
+                          'weight_reconstruction': True}
+        kwargs = {**default_kwargs, **kwargs}
+        super(DefaultSSVariationalHParams, self).__init__(**kwargs)
         self.target_ignore_index = target_ignore_index
         self.token_ignore_index = token_ignore_index
 # ======================================================================================================================

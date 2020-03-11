@@ -39,7 +39,10 @@ class UDPoSDaTA:
 
         # make iterator for splits
         self.train_iter, self.val_iter,  self.test_iter = data.BucketIterator.splits(
-            (train, val, test), batch_size=batch_size, device=device)
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        self.val_iter.shuffle = False
+        self.test_iter.shuffle = False
+
         self.vocab = text_field.vocab
         self.tags = label_field.vocab
         self.text_field = text_field
@@ -50,22 +53,19 @@ class UDPoSDaTA:
         self.max_epochs = max_epochs
 
     def reinit_iterator(self, split):
-        train, val, test = datasets.UDPOS.splits((('text',  self.text_field), ('label',  self.label_field)))
-        train_iter, val_iter,  test_iter = data.BucketIterator.splits(
-            (train, val, test), batch_size=self.batch_size, device=self.device)
         if split == 'train':
             self.n_epochs += 1
             print("Finished epoch n°{}".format(self.n_epochs))
             if self.n_epochs < self.max_epochs:
-                self.train_iter = train_iter
+                self.train_iter.init_epoch()
             else:
                 print("Reached n_epochs={} and finished training !".format(self.n_epochs))
                 self.train_iter = None
 
         elif split == 'valid':
-            self.val_iter = val_iter
+            self.val_iter.init_epoch()
         elif split == 'test':
-            self.test_iter = test_iter
+            self.test_iter.init_epoch()
         else:
             raise NameError('Misspelled split name : {}'.format(split))
 # ======================================================================================================================
