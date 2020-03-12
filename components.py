@@ -279,7 +279,8 @@ class ELBo(BaseCriterion):
             freqs = torch.Tensor([1/c if c != 0 else 0 for c in counts]).to(self.h_params.device)
             criterion_params['weight'] = freqs/torch.sum(freqs)
         self.criterion = nn.CrossEntropyLoss(**criterion_params)
-        criterion_params.pop('weight')
+        if self.h_params.weight_reconstruction:
+            criterion_params.pop('weight')
         self._unweighted_criterion = nn.CrossEntropyLoss(**criterion_params)
         self.log_p_xIz = None
         self.log_p_z = None
