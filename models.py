@@ -86,7 +86,7 @@ class BaseAE(nn.Module, metaclass=abc.ABCMeta):
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
             # Applying gradients if accumulation is over
             self.optimizer.step()
-            self.step += 1
+        self.step += 1
 
         self._dump_train_viz()
 
