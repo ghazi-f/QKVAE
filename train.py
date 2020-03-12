@@ -17,8 +17,8 @@ DEVICE = device('cuda:0')
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS, len(data.tags.itos),
                    device=DEVICE, token_ignore_index=data.tags.stoi['<pad>'],
-                   target_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=3, encoder_h=512, encoder_l=3,
-                   test_name='SSVbigger')
+                   target_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=5, encoder_h=512, encoder_l=5,
+                   test_name='SSVbigger2', grad_accumulation_steps=2, optimizer_kwargs={'lr': 1e-2})
 test_iterator = data.test_iter.data()
 print("words: ", len(data.vocab.itos), "Target tags: ", len(data.tags.itos), " On device: ", DEVICE.type)
 model = SSVAE(data.vocab, data.tags, h_params)
