@@ -27,7 +27,7 @@ class IMDBData:
 
 class UDPoSDaTA:
     def __init__(self, max_len, batch_size, max_epochs, device):
-        text_field = data.Field(lower=True, include_lengths=True, batch_first=True, fix_length=max_len)
+        text_field = data.Field(lower=True, batch_first=True, fix_length=max_len)
         label_field = data.Field(sequential=True, fix_length=max_len, batch_first=True)
 
         # make splits for data
