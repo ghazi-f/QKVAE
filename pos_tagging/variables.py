@@ -4,7 +4,7 @@
 from components.latent_variables import Categorical, Gaussian
 from components import links
 
-MARKOVIAN = True
+MARKOVIAN = False
 
 
 class XInfer(Categorical):

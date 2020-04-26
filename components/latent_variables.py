@@ -31,7 +31,11 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         if markovian:
             self.rep_net = None
         else:
-            self.rep_net = nn.GRU(self.size, self.size, 1, batch_first=True)
+            if isinstance(self, Categorical):
+                # Wait for the Categorical constructor to instanciate a GRU with the right size
+                self.rep_net = True
+            else:
+                self.rep_net = nn.GRU(self.size, self.size, 1, batch_first=True)
 
         self.prior_params = prior_params
         self.prior_samples = None
@@ -212,10 +216,11 @@ class Gaussian(BaseLatentVariable):
         if self.rep_net is None:
             reps = samples
         else:
+            prev_rep = prev_rep.unsqueeze(0).squeeze(-2) if prev_rep is not None else prev_rep
             if step_wise:
-                reps = self.rep_net(samples.unsqueeze(-2), hx=prev_rep.unsqueeze(0))[0].squeeze(0)
+                reps = self.rep_net(samples.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
             else:
-                reps = self.rep_net(samples, hx=prev_rep.unsqueeze(0))[0]
+                reps = self.rep_net(samples, hx=prev_rep)[0]
         return reps
 
 
@@ -233,7 +238,7 @@ class Categorical(BaseLatentVariable):
                                           name, prior_sequential_link, posterior, markovian, allow_prior)
         self.embedding = embedding
         if self.rep_net is not None:
-            embedding_size = embedding.weight.shape[0]
+            embedding_size = embedding.weight.shape[1]
             self.rep_net = nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
 
     def infer(self, x_params):
@@ -255,8 +260,9 @@ class Categorical(BaseLatentVariable):
         if self.rep_net is None:
             reps = embedded
         else:
+            prev_rep = prev_rep.unsqueeze(0).squeeze(-2) if prev_rep is not None else prev_rep
             if step_wise:
-                reps = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep.unsqueeze(0))[0].squeeze(0)
+                reps = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
             else:
-                reps = self.rep_net(embedded, hx=prev_rep.unsqueeze(0))[0]
+                reps = self.rep_net(embedded, hx=prev_rep)[0]
         return reps

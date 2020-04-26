@@ -114,7 +114,6 @@ class ELBo(BaseCriterion):
                                      ).view(self.gen_net.variables_star[self.generated_v].shape) * self.sequence_mask
 
         self.valid_n_samples = torch.sum(self.sequence_mask)
-
         self.log_p_z = sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]) * self.sequence_mask
         self.log_q_zIx = sum([self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()]) * self.sequence_mask
 
