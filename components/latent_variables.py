@@ -17,7 +17,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     parameters = {}
 
     def __init__(self, prior, size, prior_params, name, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False):
         # IDEA: Lock latent variable behaviour according to it's role in the bayesian network
         super(BaseLatentVariable, self).__init__()
         assert len(self.parameters) > 0
@@ -26,6 +26,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.allow_prior = allow_prior
         self.posterior = posterior or prior
         self.size = size
+        self.is_placeholder = is_placeholder
+        self.inv_seq = inv_seq
+        self.stl = stl
 
         # If the representation is non Markovian an LSTM is added to represent the variable
         if markovian:
@@ -64,12 +67,16 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         if self.posterior.has_rsample:
             sample = self.posterior(**x_params).rsample()
             # Applying STL
-            detached_prior = self.posterior(**{k: v for k, v in x_params.items()})
-            return sample, detached_prior.log_prob(sample)
+            if self.stl:
+                prior = self.posterior(**{k: v.detach() for k, v in x_params.items()})
+            else:
+                prior = self.posterior(**{k: v for k, v in x_params.items()})
+            return sample, prior.log_prob(sample)
         else:
             raise NotImplementedError('Distribution {} has no reparametrized sampling method.')
 
     def prior_sample(self, sample_shape):
+        assert not self.inv_seq, "Reversed priors are still not permitted"
         assert self.allow_prior, "{} Doesn't allow for a prior".format(self)
         if self.prior.has_rsample:
             # Returns a sample from P(z)
@@ -85,7 +92,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                     self.prior_log_probas.append(prior_distrib.log_prob(self.prior_samples[-1]))
                     self.prior_reps.append(self.rep(self.prior_samples[-1], prev_rep=prev_rep))
                     prev_rep = self.prior_reps[-1]
-                    prior_params_i = self.prior_sequential_link(prev_rep)
+                    prior_params_i = self.prior_sequential_link(prev_rep, prev_rep)
                     if isinstance(self, Gaussian):
                         prior_params_i['scale_tril'] = torch.diag_embed(prior_params_i['scale_tril'])
                     elif isinstance(self, Categorical):
@@ -105,6 +112,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             raise NotImplementedError('Distribution {} has no reparametrized sampling method.')
 
     def prior_log_prob(self, sample):
+        assert not self.inv_seq, "Reversed priors are still not permitted"
         assert self.allow_prior, "{} Doesn't allow for a prior".format(self)
         assert isinstance(self, Gaussian), "This is still not implemented for latent variables that are {} " \
                                            "and not Gaussian".format(repr(self))
@@ -112,13 +120,19 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             sample = F.one_hot(sample, self.size).float()
         if self.prior_sequential_link is not None:
             sample_rep = self.rep(sample, step_wise=False)
-            prior_params_i = self.prior_params
+            prior_params_i = {k:v.repeat(list(sample.shape[:-2])+[1]*v.ndim) for k, v in self.prior_params.items()}
             prior_log_probas = []
+            z_params = {param: [] for param in self.parameters}
             for sample_i, sample_rep_i in zip(sample.transpose(0, -2), sample_rep.transpose(0, -2)):
+                for k, v in prior_params_i.items():
+                    z_params[k].append(prior_params_i[k])
                 prior_distrib = self.prior(**prior_params_i)
                 prior_log_probas.append(prior_distrib.log_prob(sample_i))
-                prior_params_i = self.prior_sequential_link(sample_rep_i)
+                prior_params_i = self.prior_sequential_link(sample_rep_i, sample_rep_i)
                 prior_params_i['scale_tril'] = torch.diag_embed(prior_params_i['scale_tril'])
+            for k, v in z_params.items():
+                z_params[k] = torch.stack(v, dim=-1-self.prior_params[k].ndim)
+            self.post_params = z_params
             return torch.stack(prior_log_probas, dim=-1)
 
         else:
@@ -137,7 +151,11 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         pass
 
     def _sequential_forward(self, link_approximator, inputs, prior=None, gt_samples=None):
-        z_params = {param: [] for param in self.parameters}
+        if self.inv_seq:
+            inputs = torch.flip(inputs, dims=[-2])
+            if gt_samples is not None:
+                gt_samples = torch.flip(gt_samples, dims=[-2])
+        z_params = {param: [] for param in self.prior_params}
         z_log_probas = []
         z_samples = []
         prev_zs = [prior] if prior else []
@@ -145,7 +163,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             prev_zs = self.rep(gt_samples, step_wise=False).transpose(0, -2)
             if gt_samples.dtype == torch.long and isinstance(self, Categorical):
                 gt_samples = F.one_hot(gt_samples, self.size).float()
-            gt_samples = gt_samples.transpose(0, -2)
+                gt_samples = gt_samples.transpose(0, -2)
+            else:
+                gt_samples = gt_samples.transpose(0, -2)
             gt_log_probas = []
         z_reps = []
 
@@ -153,42 +173,66 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             # Inputs are unsqueezed to have single element time-step dimension, while previous outputs are unsqueezed to
             # have a single element num_layers*num_directions dimension (to be changed for multilayer GRUs)
             prev_z = prev_zs[len(z_reps)-1] if len(z_reps) else None
-            z_params_i = link_approximator.forward(x, prev_z)
+            z_params_i = link_approximator(x, prev_z)
             posterior, posterior_log_prob = self.posterior_sample(z_params_i)
             z_samples.append(posterior)
             z_log_probas.append(posterior_log_prob)
             z_reps.append(self.rep(posterior, prev_rep=prev_z))
+            if isinstance(self, Gaussian):
+                z_params_i['scale_tril'] = torch.diag_embed(z_params_i['scale_tril'])
+            elif isinstance(self, Categorical):
+                z_params_i = {**z_params_i, **{'temperature': self.prior_temperature}}
+            else:
+                raise NotImplementedError("This function still hasn't been implemented for variables other than "
+                                          "Gaussians and Categoricals")
             for k, v in z_params_i.items():
                 z_params[k].append(z_params_i[k])
             if gt_samples is not None:
-                if isinstance(self, Gaussian):
-                    z_params_i['scale_tril'] = torch.diag_embed(z_params_i['scale_tril'])
-                elif isinstance(self, Categorical):
-                    z_params_i = {**z_params_i, **{'temperature': self.prior_temperature}}
+                if gt_samples.dtype == torch.long:
+                    print('Is long')
+                    prob = torch.sum(z_params_i['logits'] * gt_samples[len(z_reps)-1], dim=-1)
+                    gt_log_probas.append(prob)
                 else:
-                    raise NotImplementedError("This function still hasn't been implemented for variables other than "
-                                              "Gaussians and Categoricals")
-                gt_log_probas.append(self.prior(**z_params_i).log_prob(gt_samples[len(z_reps)-1]))
+                    gt_log_probas.append(self.prior(**z_params_i).log_prob(gt_samples[len(z_reps)-1]))
             else:
                 prev_zs.append(z_reps[-1])
 
         # Saving the current latent variable posterior samples in the class attributes and linking them to the
         # back-propagation graph
+        if self.inv_seq:
+            z_samples = z_samples[::-1]
+            z_reps = z_reps[::-1]
+            z_log_probas = z_log_probas[::-1]
+            z_params = {k: v[::-1] for k, v in z_params.items()}
+            if gt_samples is not None:
+                gt_log_probas = gt_log_probas[::-1]
         self.post_samples = torch.stack(z_samples, dim=-2)
         self.post_reps = torch.stack(z_reps, dim=-2)
         self.post_log_probas = torch.stack(z_log_probas, dim=-1)
-        self.post_params = {k: torch.stack(v, dim=-2) for k, v in z_params.items()}
+        self.post_params = {k: torch.stack(v, dim=-1-self.prior_params[k].ndim) for k, v in z_params.items()}
         if gt_samples is not None:
             self.post_gt_log_probas = torch.stack(gt_log_probas, dim=-1)
         else:
             self.post_gt_log_probas = None
 
     def _forward(self, link_approximator, inputs, prior=None, gt_samples=None):
-        self.post_params = link_approximator.forward(inputs)
+        self.post_params = link_approximator(inputs)
         self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
         self.post_reps = self.rep(self.post_samples, step_wise=False)
-        if gt_samples:
-            self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
+        if gt_samples is not None:
+            if isinstance(self, Gaussian):
+                self.post_params['scale_tril'] = torch.diag_embed(self.post_params['scale_tril'])
+                self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
+            elif isinstance(self, Categorical):
+                self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
+                if gt_samples.dtype == torch.long:
+                    gt_samples = F.one_hot(gt_samples, self.size).float()
+                    self.post_gt_log_probas = torch.sum(self.post_params['logits'] * gt_samples, dim=-1)
+                else:
+                    self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
+            else:
+                raise NotImplementedError("This function still hasn't been implemented for variables other than "
+                                          "Gaussians and Categoricals")
 
 
 # ======================================================================================================================
@@ -198,18 +242,19 @@ class Gaussian(BaseLatentVariable):
     parameters = {'loc': nn.Sequential(), 'scale_tril': torch.exp}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False):
         self.prior_loc = torch.zeros(size).to(device)
         self.prior_cov_tril = torch.eye(size).to(device)
         super(Gaussian, self).__init__(MultivariateNormal, size, {'loc': self.prior_loc,
                                                                   'scale_tril': self.prior_cov_tril},
-                                       name, prior_sequential_link, posterior, markovian, allow_prior)
+                                       name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
+                                       inv_seq, stl)
 
     def infer(self, x_params):
         return x_params['loc']
 
     def posterior_sample(self, x_params):
-        x_params['scale_tril'] = torch.diag_embed(x_params['scale_tril'])
+        x_params = {**x_params, 'scale_tril': torch.diag_embed(x_params['scale_tril'])}
         return super(Gaussian, self).posterior_sample(x_params)
 
     def rep(self, samples, step_wise=True, prev_rep=None):
@@ -220,7 +265,11 @@ class Gaussian(BaseLatentVariable):
             if step_wise:
                 reps = self.rep_net(samples.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
             else:
+                if prev_rep:
+                    samples = torch.flip(samples, dims=[-2])
                 reps = self.rep_net(samples, hx=prev_rep)[0]
+                if prev_rep:
+                    reps = torch.flip(reps, dims=[-2])
         return reps
 
 
@@ -228,14 +277,15 @@ class Categorical(BaseLatentVariable):
     parameters = {'logits': nn.Sequential()}
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
         self.prior_temperature = torch.tensor([1.0]).to(device)
         super(Categorical, self).__init__(RelaxedOneHotCategorical, size, {'logits': self.prior_logits,
                                                                            'temperature': self.prior_temperature},
-                                          name, prior_sequential_link, posterior, markovian, allow_prior)
+                                          name, prior_sequential_link, posterior, markovian, allow_prior,
+                                          is_placeholder, inv_seq, stl)
         self.embedding = embedding
         if self.rep_net is not None:
             embedding_size = embedding.weight.shape[1]
@@ -250,6 +300,7 @@ class Categorical(BaseLatentVariable):
     def posterior_sample(self, x_params):
         if 'temperature' not in x_params:
             x_params = {**x_params, **{'temperature': self.prior_temperature}}
+        #return torch.log(torch.softmax(x_params['logits'], dim=-1)), super(Categorical, self).posterior_sample(x_params)[1]
         return super(Categorical, self).posterior_sample(x_params)
 
     def rep(self, samples, step_wise=True, prev_rep=None):
@@ -264,5 +315,21 @@ class Categorical(BaseLatentVariable):
             if step_wise:
                 reps = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
             else:
+                if prev_rep:
+                    embedded = torch.flip(embedded, dims=[-2])
                 reps = self.rep_net(embedded, hx=prev_rep)[0]
+                if prev_rep:
+                    reps = torch.flip(reps, dims=[-2])
         return reps
+
+
+class SoftmaxBottleneck(nn.Module):
+    def __init__(self, n_experts):
+        super(SoftmaxBottleneck, self).__init__()
+        self.n_experts = n_experts
+
+    def forward(self, inputs):
+        pass
+
+
+

@@ -90,4 +90,4 @@ class BayesNet(nn.Module):
         for lv in roots:
             inputs[lv.name] = lv.prior_sample(sample_shape)[0]
 
-        self.forward(inputs)
+        self(inputs)

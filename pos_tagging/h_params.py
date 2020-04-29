@@ -19,9 +19,9 @@ class DefaultHParams:
                  n_epochs,
                  device=None,
                  test_name='default',
-                 embedding_dim=100,
-                 pos_embedding_dim=20,
-                 z_size=200,
+                 embedding_dim=300,
+                 pos_embedding_dim=100,
+                 z_size=500,
                  encoder_h=128,
                  encoder_l=2,
                  decoder_h=32,
@@ -34,7 +34,8 @@ class DefaultHParams:
                  training_iw_samples=10,
                  testing_iw_samples=100,
                  test_prior_samples=5,
-                 is_weighted=None):
+                 is_weighted=None,
+                 graph_generator=None):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -67,11 +68,13 @@ class DefaultHParams:
         self.decoder_h = decoder_h
         self.decoder_l = decoder_l
 
+        self.graph_generator = graph_generator
+
         # Specifying losses
         self.losses = losses or [ELBo]
         self.loss_params = loss_params or [
             1]  # [weight] for unsupervised losses, and [weight, supervised_z_index] for the supervised losses
-        self.is_weighted = is_weighted or ['x']
+        self.is_weighted = is_weighted or []
 
         # Optimization hyper-parameters
         self.optimizer = optimizer
@@ -98,8 +101,9 @@ class DefaultSSVariationalHParams(DefaultHParams):
                           'n_epochs': n_epochs,
                           'test_name': 'defaultSSV',
                           'device': device or torch.device('cpu'),
-                          'losses': [Supervision, ELBo],
-                          'loss_params': [1, 1]}
+                          'losses': [ELBo],#[Supervision, ELBo],
+                          'loss_params': [1],#, 1]
+                          }
         kwargs = {**default_kwargs, **kwargs}
         super(DefaultSSVariationalHParams, self).__init__(**kwargs)
         self.vocab_ignore_index = vocab_ignore_index

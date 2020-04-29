@@ -4,6 +4,7 @@ from collections import defaultdict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 # ============================================== BASE CLASSES ==========================================================
@@ -31,7 +32,7 @@ class MLPLink(BaseLink):
         super(MLPLink, self).__init__(input_size, output_size, z_size, depth, params, embedding)
 
         self.mlp = nn.ModuleList([nn.Linear(input_size, output_size)] +
-                                 [nn.Linear(output_size, output_size) for _ in range(depth-1)])
+                                 [nn.Linear(input_size + output_size*i, output_size) for i in range(1, depth)])
         if embedding is not None:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size * depth, embedding.weight.shape[1])
                                                      for param in params})
@@ -40,8 +41,10 @@ class MLPLink(BaseLink):
 
     def forward(self, x, z_prev=None):
         outputs = []
+        input = x
         for layer in self.mlp:
-            outputs.append(layer(outputs[-1] if len(outputs) else x))
+            outputs.append(layer(F.tanh(input)))# if len(outputs) else x)
+            input = torch.cat([input, outputs[-1]], dim=-1)
 
         outputs = torch.cat(outputs, dim=-1)
         z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in

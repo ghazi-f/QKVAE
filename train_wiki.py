@@ -5,33 +5,33 @@ from torch import device
 import torch
 import numpy as np
 
-from data_prep import UDPoSDaTA as Data
+from data_prep import Wiki2Data as Data
 from pos_tagging.models import SSPoSTag as Model
 from pos_tagging.h_params import DefaultSSVariationalHParams as HParams
 from pos_tagging.vertices import *
 
 MAX_LEN = 20
-BATCH_SIZE = 32
-N_EPOCHS = 15000
+BATCH_SIZE = 10
+N_EPOCHS = 200
 TEST_FREQ = 10
-COMPLETE_TEST_FREQ = TEST_FREQ * 2
+COMPLETE_TEST_FREQ = TEST_FREQ * 5
 DEVICE = device('cuda:0')
 
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
-h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,
-                   device=DEVICE, pos_ignore_index=data.tags.stoi['<pad>'],
-                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=64, decoder_l=4, encoder_h=64, encoder_l=4,
-                   test_name='TestsOverfit/StructuredTestoverfitminimal22', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-4},
-                   is_weighted=[], graph_generator=get_graph_minimal_sequencial)
+h_params = HParams(len(data.vocab.itos), 0, MAX_LEN, BATCH_SIZE, N_EPOCHS,
+                   device=DEVICE, pos_ignore_index=None,
+                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=4, encoder_h=512, encoder_l=4,
+                   test_name='Wikigen/test1', grad_accumulation_steps=8, optimizer_kwargs={'lr': 1e-4/8},
+                   is_weighted=[], graph_generator=get_graph_minimal_sequencial, z_size=500, embedding_dim=300)
 val_iterator = iter(data.val_iter)
-print("Words: ", len(data.vocab.itos), "Target tags: ", len(data.tags.itos), " On device: ", DEVICE.type)
+print("Words: ", len(data.vocab.itos), "Target tags: ", 0, " On device: ", DEVICE.type)
 model = Model(data.vocab, data.tags, h_params)
 if DEVICE.type == 'cuda':
     model.cuda(DEVICE)
 
 current_time = time()
 replace = False
-print(model)
+#print(model)
 
 while data.train_iter is not None:
     for training_batch in data.train_iter:
@@ -41,8 +41,8 @@ while data.train_iter is not None:
             interest = torch.unique(training_batch.text).view(-1)
         else:
             pass
-            #training_batch = batch
-        loss = model.opt_step({'x': training_batch.text, 'y': training_batch.label})
+            # training_batch = batch
+        loss = model.opt_step({'x': training_batch.text})
         print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
         if model.step % TEST_FREQ == TEST_FREQ-1:
             try:
@@ -51,8 +51,7 @@ while data.train_iter is not None:
                 print("Reinitialized test data iterator")
                 val_iterator = iter(data.val_iter)
                 test_batch = next(val_iterator)
-            test_batch = training_batch
-            model({'x': test_batch.text, 'y': test_batch.label})
+            model({'x': test_batch.text})
             model.dump_test_viz(complete=model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
         current_time = time()
         if model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ - 1:
