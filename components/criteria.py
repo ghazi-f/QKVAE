@@ -124,7 +124,7 @@ class ELBo(BaseCriterion):
         self.valid_n_samples = torch.sum(self.sequence_mask)
         '''self.log_p_z = sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]) * self.sequence_mask
         self.log_q_zIx = sum([self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()]) * self.sequence_mask'''
-        thr = 6*(1 - torch.sigmoid(torch.tensor(self.model.step/200-0.5))) + 0.001
+        thr = 6*(1 - torch.sigmoid(torch.tensor(self.model.step/2000-0.5))) + 0.02
         thr = torch.tensor([thr]).to(self.h_params.device)
         # thr = None #torch.tensor([6.]).to(self.h_params.device)
         if actual:
