@@ -17,7 +17,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     parameters = {}
 
     def __init__(self, prior, size, prior_params, name, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None):
         # IDEA: Lock latent variable behaviour according to it's role in the bayesian network
         super(BaseLatentVariable, self).__init__()
         assert len(self.parameters) > 0
@@ -38,7 +38,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                 # Wait for the Categorical constructor to instanciate a GRU with the right size
                 self.rep_net = True
             else:
-                self.rep_net = nn.GRU(self.size, self.size, 1, batch_first=True)
+                self.rep_net = repnet or nn.GRU(self.size, self.size, 1, batch_first=True)
 
         self.prior_params = prior_params
         self.prior_samples = None
@@ -242,13 +242,13 @@ class Gaussian(BaseLatentVariable):
     parameters = {'loc': nn.Sequential(), 'scale_tril': torch.exp}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None):
         self.prior_loc = torch.zeros(size).to(device)
         self.prior_cov_tril = torch.eye(size).to(device)
         super(Gaussian, self).__init__(MultivariateNormal, size, {'loc': self.prior_loc,
                                                                   'scale_tril': self.prior_cov_tril},
                                        name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
-                                       inv_seq, stl)
+                                       inv_seq, stl, repnet)
 
     def infer(self, x_params):
         return x_params['loc']
@@ -277,7 +277,7 @@ class Categorical(BaseLatentVariable):
     parameters = {'logits': nn.Sequential()}
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
@@ -285,11 +285,11 @@ class Categorical(BaseLatentVariable):
         super(Categorical, self).__init__(RelaxedOneHotCategorical, size, {'logits': self.prior_logits,
                                                                            'temperature': self.prior_temperature},
                                           name, prior_sequential_link, posterior, markovian, allow_prior,
-                                          is_placeholder, inv_seq, stl)
+                                          is_placeholder, inv_seq, stl, repnet)
         self.embedding = embedding
         if self.rep_net is not None:
             embedding_size = embedding.weight.shape[1]
-            self.rep_net = nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
+            self.rep_net = repnet or nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
 
     def infer(self, x_params):
         if 'temperature' not in x_params:

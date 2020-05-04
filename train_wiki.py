@@ -5,7 +5,7 @@ from torch import device
 import torch
 import numpy as np
 
-from data_prep import Wiki2Data as Data
+from data_prep import NLIGenData as Data
 from pos_tagging.models import SSPoSTag as Model
 from pos_tagging.h_params import DefaultSSVariationalHParams as HParams
 from pos_tagging.vertices import *
@@ -20,8 +20,8 @@ DEVICE = device('cuda:0')
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), 0, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                    device=DEVICE, pos_ignore_index=None,
-                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=4, encoder_h=512, encoder_l=4,
-                   test_name='Wikigen/test1', grad_accumulation_steps=8, optimizer_kwargs={'lr': 1e-4/8},
+                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=512, decoder_l=6, encoder_h=512, encoder_l=6,
+                   test_name='Wikigen/nli2', grad_accumulation_steps=8, optimizer_kwargs={'lr': 1e-3/8},
                    is_weighted=[], graph_generator=get_graph_minimal_sequencial, z_size=500, embedding_dim=300)
 val_iterator = iter(data.val_iter)
 print("Words: ", len(data.vocab.itos), "Target tags: ", 0, " On device: ", DEVICE.type)
@@ -32,6 +32,8 @@ if DEVICE.type == 'cuda':
 current_time = time()
 replace = False
 #print(model)
+
+print("Number of parameters: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
 
 while data.train_iter is not None:
     for training_batch in data.train_iter:

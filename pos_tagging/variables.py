@@ -1,5 +1,5 @@
 # This files serves defining latent variables for PoS tagging
-
+import torch.nn as nn
 
 from components.latent_variables import Categorical, Gaussian
 from components import links
@@ -9,8 +9,10 @@ MARKOVIAN = False
 
 class XInfer(Categorical):
     def __init__(self, h_params, word_embeddings):
+        repnet = nn.LSTM(word_embeddings.weight.shape[1], int(word_embeddings.weight.shape[1]/2), 5, batch_first=True,
+                        bidirectional=True)
         super(XInfer, self).__init__(word_embeddings.weight.shape[0], 'x', h_params.device, word_embeddings,
-                                     h_params.vocab_ignore_index, markovian=MARKOVIAN)
+                                     h_params.vocab_ignore_index, markovian=MARKOVIAN, repnet=repnet)
 
 
 class XGen(Categorical):
@@ -21,8 +23,9 @@ class XGen(Categorical):
 
 class XPrevGen(Categorical):
     def __init__(self, h_params, word_embeddings):
+        repnet = nn.LSTM(word_embeddings.weight.shape[1], int(word_embeddings.weight.shape[1]/2), 5, batch_first=True)
         super(XPrevGen, self).__init__(word_embeddings.weight.shape[0], 'x_prev', h_params.device, word_embeddings,
-                                       h_params.vocab_ignore_index, markovian=True, is_placeholder=True)
+                                       h_params.vocab_ignore_index, markovian=False, is_placeholder=True, repnet=repnet)
 
 
 class ZInfer(Gaussian):
