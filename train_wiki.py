@@ -21,7 +21,7 @@ data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), 0, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                    device=DEVICE, pos_ignore_index=None,
                    vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=1000, decoder_l=6, encoder_h=1000, encoder_l=6,
-                   test_name='Wikigen/nlimin14', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-3},
+                   test_name='Wikigen/nlimin14', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-4},
                    is_weighted=[], graph_generator=get_graph_vsl, z_size=200, embedding_dim=600, anneal_kl=[1000, 4500],
                    grad_clip=10., kl_th=1/1000,
                    highway=True)
@@ -42,6 +42,8 @@ waiting_time = 1000
 
 while data.train_iter is not None:
     for training_batch in data.train_iter:
+        if model.step == h_params.anneal_kl[0]:
+            model.optimizer = h_params.optimizer(model.parameters(), **h_params.optimizer_kwargs)
         if replace:
             batch = training_batch
             replace = False
