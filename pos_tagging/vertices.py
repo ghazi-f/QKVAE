@@ -84,15 +84,15 @@ def get_graph_vsl(h_params, word_embeddings, pos_embeddings):
     # Generation
     x_prev_gen = XPrevGen(h_params, word_embeddings)
     x_gen, y_gen, z_gen = XGen(h_params, word_embeddings), YGen(h_params, pos_embeddings), ZGen(h_params)
-    z_to_x = MLPLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l, Categorical.parameters,
+    z_xprev_to_x = MLPLink(zin_size+xin_size, h_params.decoder_h, xout_size, h_params.decoder_l, Categorical.parameters,
                            word_embeddings, highway=h_params.highway, sbn=None)#SoftmaxBottleneck())
     xprev_to_z = GRULink(xin_size, h_params.decoder_h, zout_size, h_params.decoder_l, Gaussian.parameters,
                          highway=h_params.highway)
 
     return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_to_z, z_inf])]),
-            'gen':   nn.ModuleList([nn.ModuleList([z_gen, z_to_x, x_gen]),
+            'gen':   nn.ModuleList([nn.ModuleList([z_gen, z_xprev_to_x, x_gen]),
                                     nn.ModuleList([x_prev_gen, xprev_to_z, z_gen]),
-                                    #nn.ModuleList([x_prev_gen, z_xprev_to_x, x_gen])
+                                    nn.ModuleList([x_prev_gen, z_xprev_to_x, x_gen])
                                     ])}, y_inf, x_gen
 
 

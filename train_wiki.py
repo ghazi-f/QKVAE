@@ -20,10 +20,11 @@ DEVICE = device('cuda:0')
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), 0, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                    device=DEVICE, pos_ignore_index=None,
-                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=1500, decoder_l=4, encoder_h=1500, encoder_l=4,
-                   test_name='Wikigen/nlimin12', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-3},
-                   is_weighted=[], graph_generator=get_graph_vsl, z_size=150, embedding_dim=100, anneal_kl=[2000, 5500],
-                   grad_clip=10., kl_th=1/1000, highway=True)
+                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=1000, decoder_l=6, encoder_h=1000, encoder_l=6,
+                   test_name='Wikigen/nlimin14', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-3},
+                   is_weighted=[], graph_generator=get_graph_vsl, z_size=200, embedding_dim=600, anneal_kl=[1000, 4500],
+                   grad_clip=10., kl_th=1/1000,
+                   highway=True)
 val_iterator = iter(data.val_iter)
 print("Words: ", len(data.vocab.itos), "Target tags: ", 0, " On device: ", DEVICE.type)
 model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
