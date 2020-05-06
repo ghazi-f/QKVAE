@@ -35,7 +35,11 @@ class DefaultHParams:
                  testing_iw_samples=100,
                  test_prior_samples=5,
                  is_weighted=None,
-                 graph_generator=None):
+                 graph_generator=None,
+                 anneal_kl=None,
+                 grad_clip=None,
+                 kl_th=None,
+                 highway=True):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -69,6 +73,7 @@ class DefaultHParams:
         self.decoder_l = decoder_l
 
         self.graph_generator = graph_generator
+        self.highway = highway
 
         # Specifying losses
         self.losses = losses or [ELBo]
@@ -80,6 +85,9 @@ class DefaultHParams:
         self.optimizer = optimizer
         self.optimizer_kwargs = optimizer_kwargs or {'lr': 1e-3}
         self.grad_accumulation_steps = grad_accumulation_steps
+        self.anneal_kl = anneal_kl
+        self.grad_clip = grad_clip
+        self.kl_th = kl_th
 
         # Sampling hyper_parameters
         self.training_iw_samples = training_iw_samples

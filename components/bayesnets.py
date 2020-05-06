@@ -40,13 +40,16 @@ class BayesNet(nn.Module):
         self.variables = set(list(self.parent.keys()) + list(self.child.keys()))
         self.log_proba = {lv: None for lv in self.variables}
 
+        self.iw = any([lv.iw for lv in self.variables])
+
     def clear_values(self):
         self.variables_hat = {}
         self.variables_star = {}
         self.log_proba = {lv: None for lv in self.variables}
 
-    def forward(self, inputs):
+    def forward(self, inputs, n_iw=None):
         # The forward pass propagates the root variable values yielding
+        assert n_iw is not None or not self.iw, "You didn't provide a number of importance weights."
 
         # Loading the inputs into the network
         self.clear_values()
@@ -59,12 +62,14 @@ class BayesNet(nn.Module):
             assert lv in self.variables_star, "You didn't provide a value for {} ".format(lv.name)
             if lv.allow_prior:
                 self.log_proba[lv] = lv.prior_log_prob(self.variables_star[lv])
+                print('haha')
 
         # Ancestral sampling from the network
         while any([lv not in self.variables_hat for lv in self.parent.keys()]):
             # Going through all the unfilled child variables
             for lv in self.parent.keys():
-                parents_available = all([p in self.variables_star or p in self.variables_hat for p in self.parent[lv]])
+                parents_available = all([(p in self.variables_star) or (p in self.variables_hat)
+                                         for p in self.parent[lv]])
                 still_unfilled = lv not in self.variables_hat
                 if parents_available and still_unfilled:
                     lv_conditions = torch.cat([p.rep(self.variables_star[p], step_wise=False)
@@ -72,6 +77,11 @@ class BayesNet(nn.Module):
                                               dim=-1)
 
                     gt_lv = self.variables_star[lv] if lv in self.variables_star else None
+                    if lv.iw:
+                        repeat_arg = [n_iw]+[1]*lv_conditions.ndim
+                        lv_conditions = lv_conditions.unsqueeze(0).repeat(repeat_arg)
+                        if gt_lv is not None:
+                            gt_lv = gt_lv.unsqueeze(0).repeat(repeat_arg)
                     lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv)
                     self.variables_hat[lv] = lv.post_samples
                     self.log_proba[lv] = lv.post_gt_log_probas if gt_lv is not None else lv.post_log_probas

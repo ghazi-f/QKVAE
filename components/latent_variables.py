@@ -17,7 +17,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     parameters = {}
 
     def __init__(self, prior, size, prior_params, name, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
         # IDEA: Lock latent variable behaviour according to it's role in the bayesian network
         super(BaseLatentVariable, self).__init__()
         assert len(self.parameters) > 0
@@ -29,6 +29,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.is_placeholder = is_placeholder
         self.inv_seq = inv_seq
         self.stl = stl
+        self.iw = iw
 
         # If the representation is non Markovian an LSTM is added to represent the variable
         if markovian:
@@ -189,7 +190,6 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                 z_params[k].append(z_params_i[k])
             if gt_samples is not None:
                 if gt_samples.dtype == torch.long:
-                    print('Is long')
                     prob = torch.sum(z_params_i['logits'] * gt_samples[len(z_reps)-1], dim=-1)
                     gt_log_probas.append(prob)
                 else:
@@ -219,6 +219,8 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.post_params = link_approximator(inputs)
         self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
         self.post_reps = self.rep(self.post_samples, step_wise=False)
+        if isinstance(self, Gaussian):
+            self.post_params['scale_tril'] = torch.diag_embed(self.post_params['scale_tril'])
         if gt_samples is not None:
             if isinstance(self, Gaussian):
                 self.post_params['scale_tril'] = torch.diag_embed(self.post_params['scale_tril'])
@@ -242,13 +244,13 @@ class Gaussian(BaseLatentVariable):
     parameters = {'loc': nn.Sequential(), 'scale_tril': torch.exp}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
         self.prior_loc = torch.zeros(size).to(device)
         self.prior_cov_tril = torch.eye(size).to(device)
         super(Gaussian, self).__init__(MultivariateNormal, size, {'loc': self.prior_loc,
                                                                   'scale_tril': self.prior_cov_tril},
                                        name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
-                                       inv_seq, stl, repnet)
+                                       inv_seq, stl, repnet, iw)
 
     def infer(self, x_params):
         return x_params['loc']
@@ -277,15 +279,16 @@ class Categorical(BaseLatentVariable):
     parameters = {'logits': nn.Sequential()}
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
         self.prior_temperature = torch.tensor([1.0]).to(device)
+        self.sbn_experts = sbn_experts
         super(Categorical, self).__init__(RelaxedOneHotCategorical, size, {'logits': self.prior_logits,
                                                                            'temperature': self.prior_temperature},
                                           name, prior_sequential_link, posterior, markovian, allow_prior,
-                                          is_placeholder, inv_seq, stl, repnet)
+                                          is_placeholder, inv_seq, stl, repnet, iw)
         self.embedding = embedding
         if self.rep_net is not None:
             embedding_size = embedding.weight.shape[1]
@@ -324,12 +327,21 @@ class Categorical(BaseLatentVariable):
 
 
 class SoftmaxBottleneck(nn.Module):
-    def __init__(self, n_experts):
+    def __init__(self, n_experts=4):
         super(SoftmaxBottleneck, self).__init__()
         self.n_experts = n_experts
+        self.exp_weights = torch.nn.Parameter(torch.randn(n_experts), requires_grad=True)
 
-    def forward(self, inputs):
-        pass
+    def forward(self, inputs, weights):
+        assert weights.shape[1] % self.n_experts == 0, "logits size {} is indivisible by numbert of " \
+                                                       "experts".format(weights.shape[1], self.n_experts)
+        weights = weights.transpose(0, 1).reshape(self.n_experts, int(weights.shape[1]/self.n_experts), weights.shape[0])
+        experts = []
+        for weight, exp_w in zip(weights, self.exp_weights):
+            experts.append(torch.matmul(inputs, weight) * exp_w)
+        outputs = torch.sum(torch.softmax(torch.stack(experts), dim=-1), dim=0)/torch.sum(self.exp_weights)
+
+        return torch.log(outputs+1e-8)
 
 
 

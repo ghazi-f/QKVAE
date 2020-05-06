@@ -9,11 +9,13 @@ from components.criteria import Supervision
 # ==================================================== BASE MODEL CLASS ================================================
 
 class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
-    def __init__(self, vocab_index, tag_index, h_params, autoload=True):
+    def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None):
         super(SSPoSTag, self).__init__()
 
         self.h_params = h_params
         self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
+        if wvs is not None:
+            self.word_embeddings.weight.data.copy_(torch.from_numpy(wvs))
         self.pos_embeddings = nn.Embedding(h_params.tag_size, h_params.pos_embedding_dim)
 
         # Getting vertices
@@ -34,6 +36,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
         # The Optimizer
         self.optimizer = h_params.optimizer(self.parameters(), **h_params.optimizer_kwargs)
+
         # Getting the Summary writer
         self.writer = SummaryWriter(h_params.viz_path)
         self.step = 0
@@ -51,9 +54,6 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         infer_inputs = {'x': samples['x'][..., 1:]}
         if self.generate:
             self.infer_bn(infer_inputs)
-            go_symbol = torch.ones(samples['x'].shape[:-1]).long()*self.index[self.generated_v].stoi['.']
-            go_symbol = go_symbol.to(self.h_params.device)
-            x_prev = torch.cat([go_symbol.unsqueeze(-1), samples['x'][:, :-1]], dim=-1)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
             self.gen_bn(gen_inputs)
@@ -72,7 +72,8 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             sum(losses_sup).backward()
 
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
-            # Applying gradients if accumulation is over
+            # Applying gradients and gradient clipping if accumulation is over
+            torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
             self.optimizer.step()
         self.step += 1
 
@@ -95,9 +96,6 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         if self.generate:
             self.infer_bn(infer_inputs)
 
-            go_symbol = torch.ones(samples['x'].shape[:-1]).long()*self.index[self.generated_v].stoi['<go>']
-            go_symbol = go_symbol.to(self.h_params.device)
-            x_prev = torch.cat([go_symbol.unsqueeze(-1), samples['x'][:, :-1]], dim=-1)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
             self.gen_bn(gen_inputs)
@@ -116,8 +114,10 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
     def _dump_train_viz(self):
         # Dumping gradient norm
-        grad_norm = 0
-        for module, name in zip([self, self.infer_bn, self.gen_bn], ['overall', 'inference', 'generation']):
+        z_gen = [var for var in self.gen_bn.variables if var.name == 'z'][0]
+        for module, name in zip([self, self.infer_bn, self.gen_bn, self.gen_bn.approximator[z_gen]],
+                                ['overall', 'inference', 'generation', 'prior']):
+            grad_norm = 0
             for p in module.parameters():
                 if p.grad is not None:
                     param_norm = p.grad.data.norm(2)
@@ -158,13 +158,11 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             x_prev = go_symbol
             for _ in range(self.h_params.max_len):
                 self.gen_bn({'x_prev': x_prev})
-                x_prev = torch.cat([go_symbol, torch.argmax(self.generated_v.post_params['logits'], dim=-1)], dim=-1)
+                x_prev = torch.cat([go_symbol, torch.argmax(self.generated_v.post_samples, dim=-1)], dim=-1)
 
 
-            '''summary_triplets.append(
-                ('text', '/prior_sample', self.decode_to_text(self.gen_bn.variables_hat[self.generated_v])))'''
             summary_triplets.append(
-                ('text', '/prior_sample', self.decode_to_text(self.generated_v.post_params['logits'])))
+                ('text', '/prior_sample', self.decode_to_text(self.generated_v.post_samples)))
 
         return summary_triplets
 
@@ -218,6 +216,10 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             print("Loaded model at step", self.step)
         else:
             print("Save file doesn't exist, the model will be trained from scratch.")
+
+    def reduce_lr(self, factor):
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] /= factor
 
     '''def initialize(self):
         for name, param in self.named_parameters():

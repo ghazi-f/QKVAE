@@ -141,6 +141,8 @@ class NLIGenData:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
+        #ftxt = FastText()
+        self.wvs = None#ftxt.get_vecs_by_tokens(self.vocab.itos)
 
     def reinit_iterator(self, split):
         if split == 'train':

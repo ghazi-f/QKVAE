@@ -124,29 +124,41 @@ class ELBo(BaseCriterion):
         self.valid_n_samples = torch.sum(self.sequence_mask)
         '''self.log_p_z = sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]) * self.sequence_mask
         self.log_q_zIx = sum([self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()]) * self.sequence_mask'''
-        thr = 6*(1 - torch.sigmoid(torch.tensor(self.model.step/2000-0.5))) + 0.02
-        thr = torch.tensor([thr]).to(self.h_params.device)
-        # thr = None #torch.tensor([6.]).to(self.h_params.device)
-        if actual:
+        # Applying KL Thresholding (Free Bits)
+        if self.h_params.kl_th is None or actual:
             thr = None
+        else:
+            thr = torch.tensor([self.h_params.kl_th]).to(self.h_params.device)
         kl = sum([kullback_liebler(ilv.post_params, glv.post_params, thr=thr) for ilv, glv in zip(self.infer_lvs.values(),
                                                                                          self.gen_lvs.values())])
         kl *= self.sequence_mask
 
-        loss = - torch.sum(self.log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
-        if actual and thr is None:
-            unweighted_loss = loss
+        # Applying KL Annealing
+        if self.h_params.anneal_kl and not actual:
+            anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+            coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step > anl0 else 1
+            coeff = torch.tensor(coeff)
         else:
-            un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
-                                                      self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                                      ).view(self.gen_net.variables_star[self.generated_v].shape)
-            un_log_p_xIz *= self.sequence_mask
-            kl = sum([kullback_liebler(ilv.post_params, glv.post_params, thr=None) for ilv, glv in
-                      zip(self.infer_lvs.values(),
-                          self.gen_lvs.values())]) * self.sequence_mask
-            unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
+            coeff = torch.tensor(1)
+        if coeff == 0:
+            kl = 0
 
-        self._prepare_metrics(unweighted_loss)
+        loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
+
+        with torch.no_grad():
+            if actual and thr is None:
+                unweighted_loss = loss
+            else:
+                un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
+                                                          self.gen_net.variables_star[self.generated_v].reshape(-1)
+                                                          ).view(self.gen_net.variables_star[self.generated_v].shape)
+                un_log_p_xIz *= self.sequence_mask
+                kl = sum([kullback_liebler(ilv.post_params, glv.post_params, thr=None) for ilv, glv in
+                          zip(self.infer_lvs.values(),
+                              self.gen_lvs.values())]) * self.sequence_mask
+                unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
+            self._prepare_metrics(unweighted_loss)
+
         return loss
 
     def _prepare_metrics(self, loss):
