@@ -53,6 +53,7 @@ class UDPoSDaTA:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
+        self.wvs = None
 
     def reinit_iterator(self, split):
         if split == 'train':
@@ -97,6 +98,7 @@ class Wiki2Data:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
+        self.wvs = None
 
     def reinit_iterator(self, split):
         if split == 'train':
