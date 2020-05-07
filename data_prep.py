@@ -11,7 +11,7 @@ from torchtext.vocab import FastText
 class IMDBData:
     def __init__(self, max_len, batch_size, device):
         text_field = data.Field(lower=True, include_lengths=True, batch_first=True, fix_length=max_len)
-        label_field = data.Field(sequential=False)
+        label_field = data.Field(sequential=False, fix_length=max_len-1)
 
         # make splits for data
         train, test = datasets.IMDB.splits(text_field, label_field)
@@ -30,7 +30,7 @@ class UDPoSDaTA:
     def __init__(self, max_len, batch_size, max_epochs, device):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, init_token='<go>',
                                 eos_token='<eos>')
-        label_field = data.Field(sequential=True, fix_length=max_len, batch_first=True)
+        label_field = data.Field(sequential=True, fix_length=max_len-1, batch_first=True)
 
         # make splits for data
         train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))

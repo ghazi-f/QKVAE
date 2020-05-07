@@ -129,8 +129,8 @@ class ELBo(BaseCriterion):
             thr = None
         else:
             thr = torch.tensor([self.h_params.kl_th]).to(self.h_params.device)
-        kl = sum([kullback_liebler(ilv.post_params, glv.post_params, thr=thr) for ilv, glv in zip(self.infer_lvs.values(),
-                                                                                         self.gen_lvs.values())])
+        kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
+                  for lv_n in self.infer_lvs.keys()])
         kl *= self.sequence_mask
 
         # Applying KL Annealing
@@ -153,9 +153,8 @@ class ELBo(BaseCriterion):
                                                           self.gen_net.variables_star[self.generated_v].reshape(-1)
                                                           ).view(self.gen_net.variables_star[self.generated_v].shape)
                 un_log_p_xIz *= self.sequence_mask
-                kl = sum([kullback_liebler(ilv.post_params, glv.post_params, thr=None) for ilv, glv in
-                          zip(self.infer_lvs.values(),
-                              self.gen_lvs.values())]) * self.sequence_mask
+                kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=None)
+                          for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
                 unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
             self._prepare_metrics(unweighted_loss)
 
@@ -220,8 +219,7 @@ def kullback_liebler(params0, params1, thr=None):
             kl_per_dim = torch.max(kl_per_dim, thr)
         return torch.sum(kl_per_dim, dim=-1)
     else:
-        params0 = {**params0, 'temperature': Categorical.parameters['temperature']}
-        params1 = {**params1, 'temperature': Categorical.parameters['temperature']}
+
         # The categorical case
         logit0, logit1 = params0['logits'], params1['logits']
         kl_per_dim = torch.softmax(logit0, dim=-1)*(torch.log_softmax(logit1, dim=-1) -

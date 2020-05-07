@@ -73,6 +73,7 @@ class GRULink(SequentialLink):
         self.rnn = nn.GRU(input_size, output_size, depth, batch_first=True)
         rnn_output_size = (output_size*depth) if highway else output_size
         if embedding is not None:
+            self.sbn = sbn
             self.project_z_prev = nn.Linear(embedding.weight.shape[1], output_size * depth)
             if sbn is not None:
                 z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)

@@ -150,7 +150,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             summary_triplets = [
                 ('text', '/ground_truth', self.decode_to_text(self.gen_bn.variables_star[self.generated_v])),
-                ('text', '/reconstructions', self.decode_to_text(self.gen_bn.variables_hat[self.generated_v])),
+                ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits'])),
             ]
 
             go_symbol = torch.ones([self.h_params.test_prior_samples]).long() * self.index[self.generated_v].stoi['<go>']
@@ -158,11 +158,12 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             x_prev = go_symbol
             for _ in range(self.h_params.max_len):
                 self.gen_bn({'x_prev': x_prev})
-                x_prev = torch.cat([go_symbol, torch.argmax(self.generated_v.post_samples, dim=-1)], dim=-1)
+                x_prev = torch.cat([x_prev, torch.argmax(self.generated_v.post_samples, dim=-1)[..., -1].unsqueeze(-1)],
+                                   dim=-1)
 
 
             summary_triplets.append(
-                ('text', '/prior_sample', self.decode_to_text(self.generated_v.post_samples)))
+                ('text', '/prior_sample', self.decode_to_text(self.generated_v.post_params['logits'])))
 
         return summary_triplets
 

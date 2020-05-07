@@ -10,8 +10,8 @@ from pos_tagging.models import SSPoSTag as Model
 from pos_tagging.h_params import DefaultSSVariationalHParams as HParams
 from pos_tagging.vertices import *
 
-MAX_LEN = 20
-BATCH_SIZE = 64
+MAX_LEN = 40
+BATCH_SIZE = 32
 N_EPOCHS = 200
 TEST_FREQ = 10
 COMPLETE_TEST_FREQ = TEST_FREQ * 5
@@ -20,11 +20,11 @@ DEVICE = device('cuda:0')
 data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
 h_params = HParams(len(data.vocab.itos), 0, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                    device=DEVICE, pos_ignore_index=None,
-                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=1000, decoder_l=6, encoder_h=1000, encoder_l=6,
-                   test_name='Wikigen/nlimin14', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-4},
-                   is_weighted=[], graph_generator=get_graph_vsl, z_size=200, embedding_dim=600, anneal_kl=[1000, 4500],
+                   vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=500, decoder_l=3, encoder_h=500, encoder_l=3,
+                   test_name='Wikigen/wiki1RMS', grad_accumulation_steps=1, optimizer_kwargs={'lr': 1e-4},
+                   is_weighted=[], graph_generator=get_graph_vsl, z_size=100, embedding_dim=500, anneal_kl=[1000, 4500],
                    grad_clip=10., kl_th=1/1000,
-                   highway=True)
+                   highway=True, optimizer=torch.optim.RMSprop)
 val_iterator = iter(data.val_iter)
 print("Words: ", len(data.vocab.itos), "Target tags: ", 0, " On device: ", DEVICE.type)
 model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
@@ -44,6 +44,7 @@ while data.train_iter is not None:
     for training_batch in data.train_iter:
         if model.step == h_params.anneal_kl[0]:
             model.optimizer = h_params.optimizer(model.parameters(), **h_params.optimizer_kwargs)
+            print('Refreshed optimizer !')
         if replace:
             batch = training_batch
             replace = False
@@ -71,7 +72,8 @@ while data.train_iter is not None:
                 print("Reinitialized test data iterator")
                 val_iterator = iter(data.val_iter)
                 test_batch = next(val_iterator)
-            model({'x': test_batch.text})
+            with torch.no_grad():
+                model({'x': test_batch.text})
             model.dump_test_viz(complete=model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
 
         current_time = time()
