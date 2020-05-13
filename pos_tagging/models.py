@@ -93,7 +93,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         self.step += 1
 
         self._dump_train_viz()
-        total_loss = (sum(losses_uns) if self.generate else 0) + \
+        total_loss = (sum(losses_uns) if (self.generate and not(self.supervised_v.name in samples)) else 0) + \
                      (sum(losses_sup) if (self.supervise and self.supervised_v.name in samples) else 0)
 
         return total_loss

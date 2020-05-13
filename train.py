@@ -46,8 +46,8 @@ parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
 
-# Manual Settings
-if True:
+# Manual Settings, Deactivate before pushing
+if False:
     flags.losses = 'S'
     flags.batch_size = 80
     flags.grad_accu = 1
@@ -65,6 +65,7 @@ LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
           'SSIWAE': [Supervision, IWLBo]}[flags.losses]
+ANNEAL_KL = [flags.anneal_kl0, flags.anneal_kl1] if flags.losses != 'S' else [0, 0]
 LOSS_PARAMS = [1] if flags.losses == 'S' else [2, 1]
 PIWO = flags.losses == 'SSPIWO'
 
@@ -79,14 +80,14 @@ def main():
                        optimizer_kwargs={'lr': flags.lr/GRAD_ACCU, 'weight_decay': 0., 'betas': (0.9, 0.9)},
                        is_weighted=[], graph_generator=get_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
-                       pos_l=flags.pos_l, anneal_kl=[flags.anneal_kl0, flags.anneal_kl1], grad_clip=flags.grad_clip,
+                       pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip,
                        kl_th=flags.kl_th, highway=False, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
                        loss_params=LOSS_PARAMS, piwo=PIWO)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
-    print("Words: ", len(data.vocab.itos), "Target tags: ", len(data.tags.itos), " On device: ", DEVICE.type)
-    print("Loss Type: ", flags.losses, "Supervision proportion: ", SUP_PROPORTION)
+    print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
+    print("Loss Type: ", flags.losses, ", Supervision proportion: ", SUP_PROPORTION)
     model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
