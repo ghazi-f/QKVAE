@@ -1,4 +1,5 @@
 from torch.utils.tensorboard import SummaryWriter
+import torch
 from tqdm import tqdm
 
 from pos_tagging.h_params import *
@@ -32,7 +33,12 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         # The losses
         self.losses = [loss(self, w) for loss, w in zip(h_params.losses, h_params.loss_params)]
         self.generate = any([not isinstance(loss, Supervision) for loss in self.losses])
+        self.iw = any([isinstance(loss, IWLBo) for loss in self.losses])
+        if self.iw:
+            assert any([lv.iw for lv in self.infer_bn.variables]), "When using IWLBo, at least a variable in the " \
+                                                                   "inference graph must be importance weighted."
         self.supervise = any([isinstance(loss, Supervision) for loss in self.losses])
+        self.is_supervised_batch = True
 
         # The Optimizer
         self.optimizer = h_params.optimizer(self.parameters(), **h_params.optimizer_kwargs)
@@ -51,12 +57,21 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             self.optimizer.zero_grad()
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
+        self.is_supervised_batch = 'y' in samples
         infer_inputs = {'x': samples['x'][..., 1:]}
         if self.generate:
-            self.infer_bn(infer_inputs)
+            if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
+                self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples)
+            else:
+                self.infer_bn(infer_inputs)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
-            self.gen_bn(gen_inputs)
+            if self.iw:
+                gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
+            if self.step < self.h_params.anneal_kl[0]:
+                self.gen_bn(gen_inputs, target=self.generated_v)
+            else:
+                self.gen_bn(gen_inputs)
 
             # Loss computation and backward pass
             losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -65,7 +80,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
             infer_inputs = {**infer_inputs, self.supervised_v.name: samples[self.supervised_v.name]}
-            self.infer_bn(infer_inputs)
+            self.infer_bn(infer_inputs, target=self.supervised_v)
 
             # Loss computation and backward pass
             losses_sup = [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
@@ -80,11 +95,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         self._dump_train_viz()
         total_loss = (sum(losses_uns) if self.generate else 0) + \
                      (sum(losses_sup) if (self.supervise and self.supervised_v.name in samples) else 0)
-        '''for p in self.word_embeddings.parameters():
-            print('WE grad', p.grad)
 
-        for p in self.infer_bn.parameters():
-            print('BN grad', p.grad)'''
         return total_loss
 
     def forward(self, samples):
@@ -92,13 +103,21 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
+        self.is_supervised_batch = 'y' in samples
         infer_inputs = {'x': samples['x'][..., 1:]}
         if self.generate:
-            self.infer_bn(infer_inputs)
-
+            if self.iw :#and (self.step >= self.h_params.anneal_kl[0]):
+                self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples)
+            else:
+                self.infer_bn(infer_inputs)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
-            self.gen_bn(gen_inputs)
+            if self.iw:
+                gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
+            if self.step < self.h_params.anneal_kl[0]:
+                self.gen_bn(gen_inputs, target=self.generated_v)
+            else:
+                self.gen_bn(gen_inputs)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -107,28 +126,30 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
             infer_inputs = {**infer_inputs, self.supervised_v.name: samples[self.supervised_v.name]}
-            self.infer_bn(infer_inputs)
+            self.infer_bn(infer_inputs, target=self.supervised_v)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
 
     def _dump_train_viz(self):
         # Dumping gradient norm
-        z_gen = [var for var in self.gen_bn.variables if var.name == 'z'][0]
-        for module, name in zip([self, self.infer_bn, self.gen_bn, self.gen_bn.approximator[z_gen]],
-                                ['overall', 'inference', 'generation', 'prior']):
-            grad_norm = 0
-            for p in module.parameters():
-                if p.grad is not None:
-                    param_norm = p.grad.data.norm(2)
-                    grad_norm += param_norm.item() ** 2
-            grad_norm = grad_norm ** (1. / 2)
-            self.writer.add_scalar('train' + '/' + '_'.join([name, 'grad_norm']), grad_norm, self.step)
+        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps - 1):
+            z_gen = [var for var in self.gen_bn.variables if var.name == 'z'][0]
+            for module, name in zip([self, self.infer_bn, self.gen_bn, self.gen_bn.approximator[z_gen]],
+                                    ['overall', 'inference', 'generation', 'prior']):
+                grad_norm = 0
+                for p in module.parameters():
+                    if p.grad is not None:
+                        param_norm = p.grad.data.norm(2)
+                        grad_norm += param_norm.item() ** 2
+                grad_norm = grad_norm ** (1. / 2)
+                self.writer.add_scalar('train' + '/' + '_'.join([name, 'grad_norm']), grad_norm, self.step)
 
         # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
         for loss in self.losses:
-            for name, metric in loss.metrics().items():
-                self.writer.add_scalar('train' + name, metric, self.step)
+            if not isinstance(loss, Supervision) or self.is_supervised_batch:
+                for name, metric in loss.metrics().items():
+                    self.writer.add_scalar('train' + name, metric, self.step)
 
     def dump_test_viz(self, complete=False):
         # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
@@ -141,7 +162,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
         # We limit the generation of these samples to the less frequent "complete" test visualisations because their
         # computational cost may be high, and because the make the log file a lot larger.
-        if complete:
+        if complete and any([isinstance(loss, ELBo) for loss in self.losses]):
             for summary_type, summary_name, summary_data in self.data_specific_metrics():
                 summary_dumpers[summary_type]('test'+summary_name, summary_data, self.step)
 
@@ -170,8 +191,24 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
     def decode_to_text(self, x_hat_params):
         # It is assumed that this function is used at test time for display purposes
         # Getting the argmax from the one hot if it's not done
+        if x_hat_params.ndim > 3:
+            max_param = torch.max(x_hat_params)
+            x_hat_params = torch.exp(x_hat_params-max_param)
+            while x_hat_params.ndim > 3:
+                x_hat_params = torch.mean(x_hat_params, dim=0)
+
         if x_hat_params.shape[-1] == self.h_params.vocab_size:
+            if x_hat_params.ndim > 3:
+                max_param = torch.max(x_hat_params)
+                x_hat_params = torch.exp(x_hat_params - max_param)
+                while x_hat_params.ndim > 3:
+                    x_hat_params = torch.mean(x_hat_params, dim=0)
             x_hat_params = torch.argmax(x_hat_params, dim=-1)
+        else:
+            if x_hat_params.ndim > 2:
+                while x_hat_params.ndim > 2:
+                    x_hat_params = x_hat_params[0]
+
         text = ' |||| '.join([' '.join([self.index[self.generated_v].itos[x_i_h_p_j]
                                         for x_i_h_p_j in x_i_h_p]).split('<eos>')[0]
                           for x_i_h_p in x_hat_params]).replace('<pad>', '_').replace('<unk>', '<?>')
@@ -188,17 +225,41 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                 except AttributeError:
                     self({'x': batch.text})
                 elbo = -sum([loss.get_loss(actual=True)
-                                                   for loss in self.losses if isinstance(loss, ELBo)])
+                             for loss in self.losses if isinstance(loss, ELBo)])
                 neg_log_perplexity_lb.append(elbo)
 
                 total_samples.append(torch.sum(batch.text != self.h_params.vocab_ignore_index))
 
             total_samples = torch.Tensor(total_samples)
-            neg_log_perplexity_lb = torch.Tensor(neg_log_perplexity_lb)/torch.sum(total_samples)*total_samples
+            neg_log_perplexity_lb = torch.Tensor(neg_log_perplexity_lb) / torch.sum(total_samples) * total_samples
             neg_log_perplexity_lb = torch.sum(neg_log_perplexity_lb)
             perplexity_ub = torch.exp(- neg_log_perplexity_lb)
 
             self.writer.add_scalar('test/PerplexityUB', perplexity_ub, self.step)
+
+    def get_overall_accuracy(self, iterator):
+        with torch.no_grad():
+            accurate_preds = 0
+            total_samples = 0
+            for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
+
+                try:
+                    self({'x': batch.text, 'y': batch.label})
+                except AttributeError:
+                    self({'x': batch.text})
+
+                num_classes = self.supervised_v.size
+                predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)
+                target = self.infer_bn.variables_star[self.supervised_v].view(-1)
+                prediction_mask = (target != self.supervised_v.ignore).float()
+                accurate_preds += torch.sum((torch.argmax(predictions, dim=-1) == target).float() * prediction_mask)
+
+                total_samples += torch.sum(prediction_mask)
+
+            accuracy = accurate_preds/total_samples
+
+            self.writer.add_scalar('test/OverallAccuracy', accuracy, self.step)
+            return accuracy
 
     def save(self):
         root = ''
@@ -221,6 +282,19 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
     def reduce_lr(self, factor):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] /= factor
+
+    def _harmonize_input_shapes(self, gen_inputs, n_iw):
+        # This function repeats inputs to the generation network so that they all have the same shape
+        if self.iw:
+            max_n_dims = max([val.ndim for val in gen_inputs.values()])
+            for k, v in gen_inputs.items():
+                actual_v_ndim = v.ndim + (1 if v.dtype == torch.long else 0)
+                for _ in range(max_n_dims-actual_v_ndim):
+                    expand_arg = [n_iw]+list(gen_inputs[k].shape)
+                    gen_inputs[k] = gen_inputs[k].unsqueeze(0).expand(expand_arg)
+            return gen_inputs
+        else:
+            return gen_inputs
 
     '''def initialize(self):
         for name, param in self.named_parameters():

@@ -41,15 +41,33 @@ class BayesNet(nn.Module):
         self.log_proba = {lv: None for lv in self.variables}
 
         self.iw = any([lv.iw for lv in self.variables])
+        if self.iw:
+            # Building duplication levels with regard to importance weighted variables
+            self.dp_lvl = {}
+            for lv in self.variables:
+                lvl = 0
+                if lv in self.parent:
+                    lvl = max([self._get_max_iw_path(p, lvl) for p in self.parent[lv]])
+                self.dp_lvl[lv] = lvl
+        else:
+            self.dp_lvl = {lv: 0 for lv in self.variables}
+
+    def _get_max_iw_path(self, lv, lvl):
+        if lv.iw:
+            lvl += 1
+        if lv not in self.parent:
+            return lvl
+        else:
+            return max([self._get_max_iw_path(p, lvl) for p in self.parent[lv]])
 
     def clear_values(self):
         self.variables_hat = {}
         self.variables_star = {}
         self.log_proba = {lv: None for lv in self.variables}
 
-    def forward(self, inputs, n_iw=None):
+    def forward(self, inputs, n_iw=None, target=None):
         # The forward pass propagates the root variable values yielding
-        assert n_iw is not None or not self.iw, "You didn't provide a number of importance weights."
+        # assert n_iw is not None or not self.iw, "You didn't provide a number of importance weights."
 
         # Loading the inputs into the network
         self.clear_values()
@@ -62,33 +80,62 @@ class BayesNet(nn.Module):
             assert lv in self.variables_star, "You didn't provide a value for {} ".format(lv.name)
             if lv.allow_prior:
                 self.log_proba[lv] = lv.prior_log_prob(self.variables_star[lv])
-                print('haha')
+        if target is not None:
+            # Collecting requirements to estimate the target
+            lvs_to_fill = [target]
+            collected = False
+            while not collected:
+                collected = True
+                for lv in lvs_to_fill:
+                    for p in self.parent[lv]:
+                        if (p not in lvs_to_fill) and (p not in self.variables_star):
+                            collected = False
+                            lvs_to_fill.append(p)
+        else:
+            lvs_to_fill = self.parent.keys()
 
         # Ancestral sampling from the network
-        while any([lv not in self.variables_hat for lv in self.parent.keys()]):
+        while any([lv not in self.variables_hat for lv in lvs_to_fill]):
             # Going through all the unfilled child variables
-            for lv in self.parent.keys():
+            for lv in lvs_to_fill:
                 parents_available = all([(p in self.variables_star) or (p in self.variables_hat)
                                          for p in self.parent[lv]])
                 still_unfilled = lv not in self.variables_hat
                 if parents_available and still_unfilled:
-                    lv_conditions = torch.cat([p.rep(self.variables_star[p], step_wise=False)
-                                               if p in self.variables_star else p.post_reps for p in self.parent[lv]],
+                    # Gathering conditioning variables
+                    max_cond_lvl = max([self.dp_lvl[p] for p in self.parent[lv]])
+                    lv_conditions = torch.cat([self._ready_condition(p, n_iw, max_cond_lvl) for p in self.parent[lv]],
                                               dim=-1)
 
+                    # Setting up ground truth to be injected if any
                     gt_lv = self.variables_star[lv] if lv in self.variables_star else None
-                    if lv.iw:
-                        repeat_arg = [n_iw]+[1]*lv_conditions.ndim
-                        lv_conditions = lv_conditions.unsqueeze(0).repeat(repeat_arg)
+
+                    # Repeating inputs if the latent variable is importance weighted
+                    if lv.iw and n_iw is not None:
+                        expand_arg = [n_iw]+list(lv_conditions.shape)
+                        lv_conditions = lv_conditions.unsqueeze(0).expand(expand_arg)
                         if gt_lv is not None:
-                            gt_lv = gt_lv.unsqueeze(0).repeat(repeat_arg)
+                            expand_arg = [n_iw]+list(gt_lv.shape)
+                            gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
+                            for _ in range(max_cond_lvl):
+                                expand_arg = [n_iw]+list(gt_lv.shape)
+                                gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
                     lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv)
                     self.variables_hat[lv] = lv.post_samples
                     self.log_proba[lv] = lv.post_gt_log_probas if gt_lv is not None else lv.post_log_probas
 
-        assert all([lv in self.variables_hat or lv in self.variables_star for lv in self.variables])
-        assert all([lv in self.log_proba or (lv in self.input_variables and not lv.allow_prior)
-                    for lv in self.variables])
+        if target is None:
+            assert all([lv in self.variables_hat or lv in self.variables_star for lv in self.variables])
+            assert all([lv in self.log_proba or (lv in self.input_variables and not lv.allow_prior)
+                        for lv in self.variables])
+
+    def _ready_condition(self, lv, n_iw, max_lvl):
+        value = lv.rep(self.variables_star[lv], step_wise=False) if lv in self.variables_star else lv.post_reps
+        if n_iw is not None and n_iw > 1:
+            for _ in range(self.dp_lvl[lv], max_lvl):
+                expand_arg = [n_iw] + list(value.shape)
+                value = value.unsqueeze(0).expand(expand_arg)
+        return value
 
     def prior_sample(self, sample_shape):
         self.clear_values()

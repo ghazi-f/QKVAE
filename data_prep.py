@@ -40,10 +40,10 @@ class UDPoSDaTA:
         label_field.build_vocab(train)
 
         # make iterator for splits
-        self.train_iter, self.val_iter,  self.test_iter = data.BucketIterator.splits(
+        self.train_iter, _,  _ = data.BucketIterator.splits(
             (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
-        self.val_iter.shuffle = False
-        self.test_iter.shuffle = False
+        self.sup_iter, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=int(batch_size/4), device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab
         self.tags = label_field.vocab

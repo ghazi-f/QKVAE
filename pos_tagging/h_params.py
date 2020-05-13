@@ -20,15 +20,18 @@ class DefaultHParams:
                  device=None,
                  test_name='default',
                  embedding_dim=300,
-                 pos_embedding_dim=100,
+                 pos_embedding_dim=20,
                  z_size=500,
                  encoder_h=128,
                  encoder_l=2,
+                 pos_h=128,
+                 pos_l=2,
                  decoder_h=32,
                  decoder_l=2,
                  losses=None,
                  loss_params=None,
-                 optimizer=optim.Adam,
+                 piwo=False,
+                 optimizer=optim.AdamW,
                  optimizer_kwargs=None,
                  grad_accumulation_steps=1,
                  training_iw_samples=10,
@@ -39,7 +42,9 @@ class DefaultHParams:
                  anneal_kl=None,
                  grad_clip=None,
                  kl_th=None,
-                 highway=True):
+                 highway=True,
+                 dropout=0.,
+                 input_dimensions=2):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -55,6 +60,7 @@ class DefaultHParams:
         # Corpus related hyper-parameters
         self.vocab_size = vocab_size
         self.tag_size = tag_size
+        self.input_dimensions = input_dimensions
 
         # Architectural hyper-parameters
         self.max_len = max_len
@@ -65,6 +71,8 @@ class DefaultHParams:
 
         self.encoder_h = encoder_h
         self.encoder_l = encoder_l
+        self.pos_h = pos_h
+        self.pos_l = pos_l
 
         # IDEA: Maybe define z variables through a dictionary to describe tree structured latent variables
         # IDEA: Allow for unallocated bits on the supervised variable
@@ -77,9 +85,9 @@ class DefaultHParams:
 
         # Specifying losses
         self.losses = losses or [ELBo]
-        self.loss_params = loss_params or [
-            1]  # [weight] for unsupervised losses, and [weight, supervised_z_index] for the supervised losses
+        self.loss_params = loss_params or [1]*len(self.losses)  # [weight] for unsupervised losses, and [weight, supervised_z_index] for the supervised losses
         self.is_weighted = is_weighted or []
+        self.piwo = piwo
 
         # Optimization hyper-parameters
         self.optimizer = optimizer
@@ -88,6 +96,7 @@ class DefaultHParams:
         self.anneal_kl = anneal_kl
         self.grad_clip = grad_clip
         self.kl_th = kl_th
+        self.dropout = dropout
 
         # Sampling hyper_parameters
         self.training_iw_samples = training_iw_samples
@@ -129,7 +138,6 @@ class DefaultSSPoSTagHParams(DefaultHParams):
                           'test_name': 'defaultSSV',
                           'device': device or torch.device('cpu'),
                           'losses': [Supervision, ELBo],
-                          'loss_params': [1, 1]
                           }
         kwargs = {**default_kwargs, **kwargs}
         super(DefaultSSPoSTagHParams, self).__init__(**kwargs)

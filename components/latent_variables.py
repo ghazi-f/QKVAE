@@ -161,16 +161,20 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         z_samples = []
         prev_zs = [prior] if prior else []
         if gt_samples is not None:
-            prev_zs = self.rep(gt_samples, step_wise=False).transpose(0, -2)
+            prev_zs = self.rep(gt_samples, step_wise=False)
+            for i in range(prev_zs.ndim - 2):
+                prev_zs = prev_zs.transpose(-3 - i, -2 - i)
             if gt_samples.dtype == torch.long and isinstance(self, Categorical):
                 gt_samples = F.one_hot(gt_samples, self.size).float()
-                gt_samples = gt_samples.transpose(0, -2)
-            else:
-                gt_samples = gt_samples.transpose(0, -2)
+            for i in range(gt_samples.ndim - 2):
+                gt_samples = gt_samples.transpose(-3 - i, -2 - i)
             gt_log_probas = []
         z_reps = []
 
-        for x in inputs.transpose(0, -2):
+        x_seq_first = inputs.transpose(-3, -2)
+        for i in range(1, x_seq_first.ndim - 2):
+            x_seq_first = x_seq_first.transpose(-3 - i, -2 - i)
+        for x in x_seq_first:
             # Inputs are unsqueezed to have single element time-step dimension, while previous outputs are unsqueezed to
             # have a single element num_layers*num_directions dimension (to be changed for multilayer GRUs)
             prev_z = prev_zs[len(z_reps)-1] if len(z_reps) else None
@@ -223,7 +227,6 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             self.post_params['scale_tril'] = torch.diag_embed(self.post_params['scale_tril'])
         if gt_samples is not None:
             if isinstance(self, Gaussian):
-                self.post_params['scale_tril'] = torch.diag_embed(self.post_params['scale_tril'])
                 self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
             elif isinstance(self, Categorical):
                 self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
@@ -263,15 +266,27 @@ class Gaussian(BaseLatentVariable):
         if self.rep_net is None:
             reps = samples
         else:
-            prev_rep = prev_rep.unsqueeze(0).squeeze(-2) if prev_rep is not None else prev_rep
+            depth, directions = self.rep_net.num_layers, 2 if self.rep_net.bidirectional else 1
+            prev_rep = prev_rep.view(depth*directions, -1, prev_rep.shape[-1]) if prev_rep is not None else None
+
             if step_wise:
+                flatten = samples.ndim > 2
+                if flatten:
+                    orig_shape = samples.shape
+                    samples = samples.view(-1, orig_shape[-1])
                 reps = self.rep_net(samples.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
             else:
-                if prev_rep:
+                flatten = samples.ndim > 3
+                if flatten:
+                    orig_shape = samples.shape
+                    samples = samples.view(-1, *orig_shape[-2:])
+                if self.inv_seq:
                     samples = torch.flip(samples, dims=[-2])
                 reps = self.rep_net(samples, hx=prev_rep)[0]
-                if prev_rep:
+                if self.inv_seq:
                     reps = torch.flip(reps, dims=[-2])
+            if flatten:
+                reps = reps.view(*orig_shape[:-1], reps.shape[-1])
         return reps
 
 
@@ -307,6 +322,7 @@ class Categorical(BaseLatentVariable):
         return super(Categorical, self).posterior_sample(x_params)
 
     def rep(self, samples, step_wise=True, prev_rep=None):
+
         if samples.shape[-1] == self.size and samples.dtype != torch.long:
             embedded = torch.matmul(samples, self.embedding.weight)
         else:
@@ -314,15 +330,27 @@ class Categorical(BaseLatentVariable):
         if self.rep_net is None:
             reps = embedded
         else:
-            prev_rep = prev_rep.unsqueeze(0).squeeze(-2) if prev_rep is not None else prev_rep
+            depth, directions = self.rep_net.num_layers, 2 if self.rep_net.bidirectional else 1
+            prev_rep = prev_rep.view(depth*directions, -1, prev_rep.shape[-1]) if prev_rep is not None else None
+
             if step_wise:
+                flatten = embedded.ndim > 2
+                if flatten:
+                    orig_shape = embedded.shape
+                    embedded = embedded.view(-1, orig_shape[-1])
                 reps = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
             else:
-                if prev_rep:
+                flatten = embedded.ndim > 3
+                if flatten:
+                    orig_shape = embedded.shape
+                    embedded = embedded.view(-1, *orig_shape[-2:])
+                if self.inv_seq:
                     embedded = torch.flip(embedded, dims=[-2])
                 reps = self.rep_net(embedded, hx=prev_rep)[0]
-                if prev_rep:
+                if self.inv_seq:
                     reps = torch.flip(reps, dims=[-2])
+            if flatten:
+                reps = reps.view(*orig_shape[:-1], reps.shape[-1])
         return reps
 
 
