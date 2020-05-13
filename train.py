@@ -32,7 +32,7 @@ parser.add_argument("--pos_h", default=400, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
 parser.add_argument("--decoder_h", default=1000, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)
-parser.add_argument("--losses", default='SSVAE', choices=["SS", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
+parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
 parser.add_argument("--grad_accumulation_steps", default=5, type=int)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
@@ -46,6 +46,13 @@ parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
 
+# Manual Settings
+if True:
+    flags.losses = 'S'
+    flags.batch_size = 80
+    flags.grad_accu = 1
+    flags.test_name = "Supervised/0.1"
+    flags.supervision_proportion = 0.1
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -54,11 +61,11 @@ TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
 SUP_PROPORTION = flags.supervision_proportion
 DEVICE = device(flags.device)
-LOSSES = {'SS': [Supervision],
+LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
           'SSIWAE': [Supervision, IWLBo]}[flags.losses]
-LOSS_PARAMS = [1] if flags.losses == 'SS' else [2, 1]
+LOSS_PARAMS = [1] if flags.losses == 'S' else [2, 1]
 PIWO = flags.losses == 'SSPIWO'
 
 
@@ -79,13 +86,13 @@ def main():
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Words: ", len(data.vocab.itos), "Target tags: ", len(data.tags.itos), " On device: ", DEVICE.type)
+    print("Loss Type: ", flags.losses, "Supervision proportion: ", SUP_PROPORTION)
     model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
     total_train_samples = len(data.train_iter.dataset.examples)
     current_time = time()
-    replace = False
     #print(model)
 
     print("Number of parameters: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
@@ -103,16 +110,10 @@ def main():
                 if model.step != 0 and not torch.isnan(loss):
                     model.save()
                     print('Saved model after it\'s pure reconstruction phase')
-            if replace:
-                batch = training_batch
-                replace = False
-                interest = torch.unique(training_batch.text).view(-1)
-            else:
-                pass
-                # training_batch = batch
+
             supervised_batch = next(supervised_iterator)
-            loss = model.opt_step({'x': training_batch.text})
-            loss = model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
+            loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
+            loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
             sup_samples_count += BATCH_SIZE
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))

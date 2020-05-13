@@ -59,7 +59,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         # Forward pass
         self.is_supervised_batch = 'y' in samples
         infer_inputs = {'x': samples['x'][..., 1:]}
-        if self.generate:
+        if self.generate and not (self.supervised_v.name in samples):
             if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
                 self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples)
             else:
