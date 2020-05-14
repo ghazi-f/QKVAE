@@ -19,8 +19,8 @@ parser.add_argument("--max_len", default=32, type=int)
 parser.add_argument("--batch_size", default=10, type=int)
 parser.add_argument("--grad_accu", default=8, type=int)
 parser.add_argument("--n_epochs", default=100, type=int)
-parser.add_argument("--test_freq", default=50, type=int)
-parser.add_argument("--complete_test_freq", default=10, type=int)
+parser.add_argument("--test_freq", default=16, type=int)
+parser.add_argument("--complete_test_freq", default=16, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=200, type=int)
@@ -50,11 +50,11 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.losses = 'S'
-    flags.batch_size = 80
-    flags.grad_accu = 1
-    flags.test_name = "Supervised/0.03"
-    flags.supervision_proportion = 0.03
+    flags.losses = 'SSVAE'
+    flags.batch_size = 10
+    flags.grad_accu = 8
+    flags.test_name = "SSVAE/0.1test"
+    flags.supervision_proportion = 0.1
 
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
@@ -130,7 +130,8 @@ def main():
             sup_samples_count += BATCH_SIZE
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
-            if int(model.step/GRAD_ACCU / (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
+            if int(model.step/ (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
+                print('haha')
                 model.eval()
                 try:
                     test_batch = limited_next(val_iterator)
@@ -140,7 +141,7 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     model({'x': test_batch.text, 'y': test_batch.label})
-                model.dump_test_viz(complete=int(model.step/GRAD_ACCU / (1 if flags.losses == 'S' else 2)) %
+                model.dump_test_viz(complete=int(model.step/ (1 if flags.losses == 'S' else 2)) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
 
