@@ -57,6 +57,16 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.post_log_probas = None
         self.post_gt_log_probas = None
 
+    def clear_values(self):
+        self.prior_samples = None
+        self.prior_reps = None
+        self.prior_log_probas = None
+        self.post_params = None
+        self.post_samples = None
+        self.post_reps = None
+        self.post_log_probas = None
+        self.post_gt_log_probas = None
+
     @abc.abstractmethod
     def infer(self, x_params):
         # Returns z = argmax P(z|x)
@@ -197,6 +207,18 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                     prob = torch.sum(z_params_i['logits'] * gt_samples[len(z_reps)-1], dim=-1)
                     gt_log_probas.append(prob)
                 else:
+                    # Dealing with exploding memory for text probability assessment
+                    '''if gt_samples.ndim > 3 and self.size > 2000 and isinstance(self, Categorical):
+                        orig_shape = gt_samples[len(z_reps)-1].shape[:-1]
+                        flat_gt_i = gt_samples[len(z_reps)-1].view(-1, *gt_samples[len(z_reps)-1].shape[-2:])
+                        z_params_i['logits'] = z_params_i['logits'].view(-1, *z_params_i['logits'].shape[-2:],)
+                        gt_log_proba_i = [self.prior(**{'logits': z_params_ij,
+                                                        'temperature': torch.tensor(1.)}).log_prob(flat_gt_ij)
+                                          for z_params_ij, flat_gt_ij in zip(z_params_i['logits'], flat_gt_i)]
+                        gt_log_proba_i = torch.stack(gt_log_proba_i).view(orig_shape)
+                        gt_log_probas.append(gt_log_proba_i)
+
+                    else:'''
                     gt_log_probas.append(self.prior(**z_params_i).log_prob(gt_samples[len(z_reps)-1]))
             else:
                 prev_zs.append(z_reps[-1])
@@ -220,6 +242,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             self.post_gt_log_probas = None
 
     def _forward(self, link_approximator, inputs, prior=None, gt_samples=None):
+
         self.post_params = link_approximator(inputs)
         self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
         self.post_reps = self.rep(self.post_samples, step_wise=False)

@@ -97,14 +97,14 @@ def get_graph_vsl(h_params, word_embeddings, pos_embeddings):
 
 
 def get_graph_postag(h_params, word_embeddings, pos_embeddings):
-    xin_size, yin_size, zin_size = h_params.embedding_dim, h_params.pos_embedding_dim, h_params.z_size
+    xin_size, yin_size, zin_size = h_params.text_rep_h, h_params.pos_embedding_dim, h_params.z_size
     xout_size, yout_size, zout_size = h_params.vocab_size, h_params.tag_size, h_params.z_size
 
     # Inference
     x_inf, y_inf, z_inf = XInfer(h_params, word_embeddings), YInfer(h_params, pos_embeddings), ZInfer(h_params)
     x_to_z = GRULink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameters,
                      highway=h_params.highway, dropout=h_params.dropout)
-    x_to_y = GRULink(xin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameters,
+    x_to_y = MLPLink(xin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameters,
                      embedding=pos_embeddings, highway=h_params.highway, dropout=h_params.dropout)
 
     # Generation
@@ -112,9 +112,9 @@ def get_graph_postag(h_params, word_embeddings, pos_embeddings):
     x_gen, y_gen, z_gen = XGen(h_params, word_embeddings), YGen(h_params, pos_embeddings), ZGen(h_params)
     xprev_to_z = GRULink(xin_size, h_params.decoder_h, zout_size, h_params.decoder_l, Gaussian.parameters,
                          highway=h_params.highway, dropout=h_params.dropout)
-    xprev_z_to_y = GRULink(xin_size+zin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameters,
-                         embedding=pos_embeddings, highway=h_params.highway, dropout=h_params.dropout)
-    z_xprev_y_to_x = MLPLink(zin_size+xin_size+yin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+    xprev_z_to_y = MLPLink(xin_size+zin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameters,
+                           embedding=pos_embeddings, highway=h_params.highway, dropout=h_params.dropout)
+    z_xprev_y_to_x = GRULink(zin_size+xin_size+yin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
                              Categorical.parameters, word_embeddings, highway=h_params.highway, sbn=None,
                              dropout=h_params.dropout)
 

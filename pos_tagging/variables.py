@@ -10,8 +10,8 @@ MARKOVIAN = False
 
 class XInfer(Categorical):
     def __init__(self, h_params, word_embeddings):
-        repnet = nn.LSTM(word_embeddings.weight.shape[1], int(word_embeddings.weight.shape[1]/2), 3, batch_first=True,
-                         bidirectional=True, dropout=h_params.dropout)
+        repnet = nn.LSTM(word_embeddings.weight.shape[1], int(h_params.text_rep_h/2),
+                         h_params.text_rep_l, batch_first=True, bidirectional=True, dropout=h_params.dropout)
         super(XInfer, self).__init__(word_embeddings.weight.shape[0], 'x', h_params.device, word_embeddings,
                                      h_params.vocab_ignore_index, markovian=MARKOVIAN, repnet=repnet)
 
@@ -24,7 +24,8 @@ class XGen(Categorical):
 
 class XPrevGen(Categorical):
     def __init__(self, h_params, word_embeddings):
-        repnet = nn.LSTM(word_embeddings.weight.shape[1], int(word_embeddings.weight.shape[1]), 2, batch_first=True,
+        repnet = nn.LSTM(word_embeddings.weight.shape[1], int(h_params.text_rep_h), h_params.text_rep_l,
+                         batch_first=True,
                          dropout=h_params.dropout)
         super(XPrevGen, self).__init__(word_embeddings.weight.shape[0], 'x_prev', h_params.device, word_embeddings,
                                        h_params.vocab_ignore_index, markovian=False, is_placeholder=True, repnet=repnet)

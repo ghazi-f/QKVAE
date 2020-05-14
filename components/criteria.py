@@ -53,7 +53,7 @@ class Supervision(BaseCriterion):
     def get_loss(self):
         num_classes = self.supervised_lv.size
         predictions = self.supervised_lv.post_params['logits'].view(-1, num_classes)
-        target = self.net.variables_star[self.supervised_lv].view(-1)
+        target = self.net.variables_star[self.supervised_lv].reshape(-1)
         loss = self.criterion(predictions, target)
 
         self._prepare_metrics(loss)
@@ -65,7 +65,7 @@ class Supervision(BaseCriterion):
         with torch.no_grad():
             num_classes = self.supervised_lv.size
             predictions = self.supervised_lv.post_params['logits'].view(-1, num_classes)
-            target = self.net.variables_star[self.supervised_lv].view(-1)
+            target = self.net.variables_star[self.supervised_lv].reshape(-1)
             prediction_mask = (target != self.supervised_lv.ignore).float()
             accuracy = torch.sum((torch.argmax(predictions, dim=-1) == target).float()*prediction_mask)
             accuracy /= torch.sum(prediction_mask)

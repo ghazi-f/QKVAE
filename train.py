@@ -15,44 +15,47 @@ parser = argparse.ArgumentParser()
 
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--max_len", default=25, type=int)
+parser.add_argument("--max_len", default=32, type=int)
 parser.add_argument("--batch_size", default=10, type=int)
-parser.add_argument("--grad_accu", default=5, type=int)
+parser.add_argument("--grad_accu", default=8, type=int)
 parser.add_argument("--n_epochs", default=100, type=int)
-parser.add_argument("--test_freq", default=10, type=int)
-parser.add_argument("--complete_test_freq", default=50, type=int)
+parser.add_argument("--test_freq", default=50, type=int)
+parser.add_argument("--complete_test_freq", default=10, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=300, type=int)
-parser.add_argument("--pos_embedding_dim", default=100, type=int)
-parser.add_argument("--z_size", default=200, type=int)
-parser.add_argument("--encoder_h", default=1000, type=int)
+parser.add_argument("--embedding_dim", default=200, type=int)
+parser.add_argument("--pos_embedding_dim", default=50, type=int)
+parser.add_argument("--z_size", default=100, type=int)
+parser.add_argument("--text_rep_l", default=2, type=int)
+parser.add_argument("--text_rep_h", default=500, type=int)
+parser.add_argument("--encoder_h", default=500, type=int)
 parser.add_argument("--encoder_l", default=1, type=int)
 parser.add_argument("--pos_h", default=400, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=1000, type=int)
-parser.add_argument("--decoder_l", default=3, type=int)
+parser.add_argument("--decoder_h", default=500, type=int)
+parser.add_argument("--decoder_l", default=2, type=int)
+parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
-parser.add_argument("--grad_accumulation_steps", default=5, type=int)
-parser.add_argument("--training_iw_samples", default=5, type=int)
+parser.add_argument("--training_iw_samples", default=5 , type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
 parser.add_argument("--anneal_kl0", default=5000, type=int)
 parser.add_argument("--anneal_kl1", default=25000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
-parser.add_argument("--dropout", default=0.3, type=float)
+parser.add_argument("--dropout", default=0.33, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'S'
     flags.batch_size = 80
     flags.grad_accu = 1
-    flags.test_name = "Supervised/1."
+    flags.test_name = "Supervised/1.0"
     flags.supervision_proportion = 1.
+
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -77,12 +80,13 @@ def main():
                        device=DEVICE, pos_ignore_index=data.tags.stoi['<pad>'],
                        vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
+                       text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs={'lr': flags.lr/GRAD_ACCU, 'weight_decay': 0., 'betas': (0.9, 0.9)},
+                       optimizer_kwargs={'lr': flags.lr/GRAD_ACCU, 'weight_decay': 0.0, 'betas': (0.9, 0.9)},
                        is_weighted=[], graph_generator=get_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip,
-                       kl_th=flags.kl_th, highway=False, losses=LOSSES, dropout=flags.dropout,
+                       kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
                        loss_params=LOSS_PARAMS, piwo=PIWO)
     val_iterator = iter(data.val_iter)
@@ -106,6 +110,9 @@ def main():
 
     while data.train_iter is not None:
         for training_batch in data.train_iter:
+            if len(training_batch.text[0]) > MAX_LEN:
+                training_batch.text = training_batch.text[:, :MAX_LEN]
+                training_batch.text = training_batch.label[:, :MAX_LEN-2]
             if model.step == h_params.anneal_kl[0]:
                 model.optimizer = h_params.optimizer(model.parameters(), **h_params.optimizer_kwargs)
                 print('Refreshed optimizer !')
@@ -113,7 +120,11 @@ def main():
                     model.save()
                     print('Saved model after it\'s pure reconstruction phase')
 
-            supervised_batch = next(supervised_iterator)
+            supervised_batch = limited_next(supervised_iterator)
+            #print('heyheyhey', supervised_batch.text.shape, supervised_batch.label.shape)
+            '''print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
+                   text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])'''
+
             loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
             loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
             sup_samples_count += BATCH_SIZE
@@ -122,11 +133,11 @@ def main():
             if int(model.step/GRAD_ACCU / (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
                 model.eval()
                 try:
-                    test_batch = next(val_iterator)
+                    test_batch = limited_next(val_iterator)
                 except StopIteration:
                     print("Reinitialized test data iterator")
                     val_iterator = iter(data.val_iter)
-                    test_batch = next(val_iterator)
+                    test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     model({'x': test_batch.text, 'y': test_batch.label})
                 model.dump_test_viz(complete=int(model.step/GRAD_ACCU / (1 if flags.losses == 'S' else 2)) %
@@ -138,8 +149,6 @@ def main():
                 print("Reinitialized supervised training iterator")
                 supervised_iterator = iter(data.sup_iter)
                 sup_samples_count = 0
-
-            #print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text])
 
         data.reinit_iterator('valid')
         if model.step > h_params.anneal_kl[0]:
@@ -167,6 +176,14 @@ def main():
         data.reinit_iterator('valid')
         data.reinit_iterator('train')
     print("Finished training")
+
+
+def limited_next(iterator):
+    batch = next(iterator)
+    if len(batch.text[0]) > MAX_LEN:
+        batch.text = batch.text[:, :MAX_LEN]
+        batch.label = batch.label[:, :MAX_LEN-2]
+    return batch
 
 
 if __name__ == '__main__':

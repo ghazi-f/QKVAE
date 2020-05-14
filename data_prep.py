@@ -1,7 +1,6 @@
 # This file is destined to wrap all the data pipelining utilities (reading, tokenizing, padding, batchifying .. )
 import io
 
-import torchtext
 import torchtext.data as data
 import torchtext.datasets as datasets
 from torchtext.vocab import FastText
@@ -28,9 +27,10 @@ class IMDBData:
 
 class UDPoSDaTA:
     def __init__(self, max_len, batch_size, max_epochs, device):
-        text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, init_token='<go>',
-                                eos_token='<eos>')
-        label_field = data.Field(sequential=True, fix_length=max_len-1, batch_first=True)
+        text_field = data.Field(lower=True, batch_first=True,  # fix_length=max_len,
+                                init_token='<go>', eos_token='<eos>')
+        label_field = data.Field(sequential=True,  # fix_length=max_len-2,
+                                 batch_first=True)
 
         # make splits for data
         train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
@@ -41,8 +41,10 @@ class UDPoSDaTA:
 
         # make iterator for splits
         self.train_iter, _,  _ = data.BucketIterator.splits(
-            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
-        self.sup_iter, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=True)
+        self.sup_iter, _, _ = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
+        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
             (train, val, test), batch_size=int(batch_size/4), device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab

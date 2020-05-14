@@ -64,6 +64,8 @@ class BayesNet(nn.Module):
         self.variables_hat = {}
         self.variables_star = {}
         self.log_proba = {lv: None for lv in self.variables}
+        for var in self.variables:
+            var.clear_values()
 
     def forward(self, inputs, n_iw=None, target=None):
         # The forward pass propagates the root variable values yielding

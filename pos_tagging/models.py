@@ -79,7 +79,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
-            infer_inputs = {**infer_inputs, self.supervised_v.name: samples[self.supervised_v.name]}
+            infer_inputs = {'x': samples['x'][..., 1:-1], self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v)
 
             # Loss computation and backward pass
@@ -125,7 +125,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
-            infer_inputs = {**infer_inputs, self.supervised_v.name: samples[self.supervised_v.name]}
+            infer_inputs = {'x': samples['x'][..., 1:-1], self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v)
 
             # Loss computation and backward pass
@@ -153,7 +153,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
     def dump_test_viz(self, complete=False):
         if complete:
-            print('Permorming complete test')
+            print('Performing complete test')
         # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
         for loss in self.losses:
             for name, metric in loss.metrics().items():
@@ -244,11 +244,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             accurate_preds = 0
             total_samples = 0
             for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
-
-                try:
-                    self({'x': batch.text, 'y': batch.label})
-                except AttributeError:
-                    self({'x': batch.text})
+                self({'x': batch.text, 'y': batch.label})
 
                 num_classes = self.supervised_v.size
                 predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)
