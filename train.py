@@ -20,7 +20,7 @@ parser.add_argument("--batch_size", default=10, type=int)
 parser.add_argument("--grad_accu", default=8, type=int)
 parser.add_argument("--n_epochs", default=100, type=int)
 parser.add_argument("--test_freq", default=16, type=int)
-parser.add_argument("--complete_test_freq", default=16, type=int)
+parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=200, type=int)
@@ -39,8 +39,8 @@ parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO"
 parser.add_argument("--training_iw_samples", default=5 , type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
-parser.add_argument("--anneal_kl0", default=5000, type=int)
-parser.add_argument("--anneal_kl1", default=25000, type=int)
+parser.add_argument("--anneal_kl0", default=12000, type=int)
+parser.add_argument("--anneal_kl1", default=60000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
 parser.add_argument("--dropout", default=0.33, type=float)
@@ -49,11 +49,11 @@ parser.add_argument("--lr", default=2e-3, type=float)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'SSVAE'
     flags.batch_size = 10
     flags.grad_accu = 8
-    flags.test_name = "SSVAE/0.1test"
+    flags.test_name = "SSVAE/0.1"
     flags.supervision_proportion = 0.1
 
 MAX_LEN = flags.max_len
@@ -131,7 +131,6 @@ def main():
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
             if int(model.step/ (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
-                print('haha')
                 model.eval()
                 try:
                     test_batch = limited_next(val_iterator)
