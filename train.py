@@ -47,12 +47,12 @@ parser.add_argument("--lr", default=2e-3, type=float)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'S'
     flags.batch_size = 80
     flags.grad_accu = 1
-    flags.test_name = "Supervised/0.1"
-    flags.supervision_proportion = 0.1
+    flags.test_name = "Supervised/1."
+    flags.supervision_proportion = 1.
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -66,7 +66,8 @@ LOSSES = {'S': [Supervision],
           'SSPIWO': [Supervision, IWLBo],
           'SSIWAE': [Supervision, IWLBo]}[flags.losses]
 ANNEAL_KL = [flags.anneal_kl0, flags.anneal_kl1] if flags.losses != 'S' else [0, 0]
-LOSS_PARAMS = [1] if flags.losses == 'S' else [2, 1]
+# Changed loss params right after the beginning of SSVAE Exps
+LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1]
 PIWO = flags.losses == 'SSPIWO'
 
 
@@ -118,7 +119,7 @@ def main():
             sup_samples_count += BATCH_SIZE
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
-            if int(model.step/GRAD_ACCU) % TEST_FREQ == TEST_FREQ-1:
+            if int(model.step/GRAD_ACCU / (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
                 model.eval()
                 try:
                     test_batch = next(val_iterator)
@@ -128,7 +129,8 @@ def main():
                     test_batch = next(val_iterator)
                 with torch.no_grad():
                     model({'x': test_batch.text, 'y': test_batch.label})
-                model.dump_test_viz(complete=model.step % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
+                model.dump_test_viz(complete=int(model.step/GRAD_ACCU / (1 if flags.losses == 'S' else 2)) %
+                                    COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
 
             current_time = time()
@@ -142,11 +144,12 @@ def main():
         data.reinit_iterator('valid')
         if model.step > h_params.anneal_kl[0]:
             model.eval()
-            model.get_perplexity(data.val_iter)
-            data.reinit_iterator('valid')
+            if model.generate:
+                model.get_perplexity(data.val_iter)
+                data.reinit_iterator('valid')
             accuracy = model.get_overall_accuracy(data.val_iter)
-            print('Saving The model ..')
             if accuracy > max_acc:
+                print('Saving The model ..')
                 max_acc = accuracy
                 model.save()
                 wait_count = 0
@@ -163,6 +166,7 @@ def main():
             model.train()
         data.reinit_iterator('valid')
         data.reinit_iterator('train')
+    print("Finished training")
 
 
 if __name__ == '__main__':

@@ -152,6 +152,8 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                     self.writer.add_scalar('train' + name, metric, self.step)
 
     def dump_test_viz(self, complete=False):
+        if complete:
+            print('Permorming complete test')
         # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
         for loss in self.losses:
             for name, metric in loss.metrics().items():
