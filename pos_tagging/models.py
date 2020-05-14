@@ -222,10 +222,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             neg_log_perplexity_lb = []
             total_samples = []
             for batch in tqdm(iterator, desc="Getting Model Perplexity"):
-                try:
-                    self({'x': batch.text, 'y': batch.label})
-                except AttributeError:
-                    self({'x': batch.text})
+                self({'x': batch.text})
                 elbo = -sum([loss.get_loss(actual=True)
                              for loss in self.losses if isinstance(loss, ELBo)])
                 neg_log_perplexity_lb.append(elbo)
