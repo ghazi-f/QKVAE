@@ -49,12 +49,12 @@ parser.add_argument("--lr", default=2e-3, type=float)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.losses = 'S'
     flags.batch_size = 80
     flags.grad_accu = 1
-    flags.test_name = "Supervised/1.0"
-    flags.supervision_proportion = 1.
+    flags.test_name = "Supervised/0.03"
+    flags.supervision_proportion = 0.03
 
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
