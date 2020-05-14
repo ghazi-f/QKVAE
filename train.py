@@ -47,7 +47,7 @@ parser.add_argument("--lr", default=2e-3, type=float)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.losses = 'S'
     flags.batch_size = 80
     flags.grad_accu = 1
