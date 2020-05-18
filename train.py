@@ -4,6 +4,7 @@ import argparse
 
 from torch import device
 import torch
+from torch import optim
 import numpy as np
 
 from data_prep import UDPoSDaTA as Data
@@ -16,34 +17,34 @@ parser = argparse.ArgumentParser()
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--max_len", default=32, type=int)
-parser.add_argument("--batch_size", default=10, type=int)
-parser.add_argument("--grad_accu", default=8, type=int)
+parser.add_argument("--batch_size", default=20, type=int)
+parser.add_argument("--grad_accu", default=4, type=int)
 parser.add_argument("--n_epochs", default=100, type=int)
 parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=200, type=int)
-parser.add_argument("--pos_embedding_dim", default=50, type=int)
+parser.add_argument("--embedding_dim", default=400, type=int)
+parser.add_argument("--pos_embedding_dim", default=20, type=int)
 parser.add_argument("--z_size", default=100, type=int)
-parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=500, type=int)
-parser.add_argument("--encoder_h", default=500, type=int)
-parser.add_argument("--encoder_l", default=1, type=int)
+parser.add_argument("--text_rep_l", default=1, type=int)
+parser.add_argument("--text_rep_h", default=200, type=int)
+parser.add_argument("--encoder_h", default=1000, type=int)
+parser.add_argument("--encoder_l", default=2, type=int)
 parser.add_argument("--pos_h", default=400, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=500, type=int)
+parser.add_argument("--decoder_h", default=1000, type=int)
 parser.add_argument("--decoder_l", default=2, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
-parser.add_argument("--training_iw_samples", default=5 , type=int)
+parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
-parser.add_argument("--anneal_kl0", default=12000, type=int)
-parser.add_argument("--anneal_kl1", default=60000, type=int)
+parser.add_argument("--anneal_kl0", default=4000, type=int)
+parser.add_argument("--anneal_kl1", default=12000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
-parser.add_argument("--dropout", default=0.33, type=float)
+parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
@@ -51,8 +52,8 @@ flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
     flags.losses = 'SSVAE'
-    flags.batch_size = 10
-    flags.grad_accu = 8
+    flags.batch_size = 20
+    flags.grad_accu = 4
     flags.test_name = "SSVAE/0.1"
     flags.supervision_proportion = 0.1
 
@@ -68,6 +69,7 @@ LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
           'SSIWAE': [Supervision, IWLBo]}[flags.losses]
+#LOSSES = [ELBo]
 ANNEAL_KL = [flags.anneal_kl0, flags.anneal_kl1] if flags.losses != 'S' else [0, 0]
 # Changed loss params right after the beginning of SSVAE Exps
 LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1]
@@ -82,13 +84,13 @@ def main():
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs={'lr': flags.lr/GRAD_ACCU, 'weight_decay': 0.0, 'betas': (0.9, 0.9)},
+                       optimizer_kwargs={'lr': flags.lr/GRAD_ACCU, 'weight_decay': 0.0}, #, 'betas': (0.9, 0.9)},
                        is_weighted=[], graph_generator=get_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
-                       pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip,
+                       pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
-                       loss_params=LOSS_PARAMS, piwo=PIWO)
+                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.Adam)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
@@ -109,7 +111,7 @@ def main():
     loss = torch.tensor(1e20)
 
     while data.train_iter is not None:
-        for training_batch in data.train_iter:
+        for i, training_batch in enumerate(data.train_iter):
             if len(training_batch.text[0]) > MAX_LEN:
                 training_batch.text = training_batch.text[:, :MAX_LEN]
                 training_batch.text = training_batch.label[:, :MAX_LEN-2]
@@ -121,12 +123,16 @@ def main():
                     print('Saved model after it\'s pure reconstruction phase')
 
             supervised_batch = limited_next(supervised_iterator)
-            #print('heyheyhey', supervised_batch.text.shape, supervised_batch.label.shape)
             '''print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
                    text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])'''
+            valid = all([data.vocab.itos[t[0]] == '<go>' for t in training_batch.text])
 
-            loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
-            loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
+            '''print([' '.join(
+                [data.vocab.itos[l] for t, l in zip(text_i, lab_i)]) for
+                   text_i, lab_i in zip(training_batch.text[:2], training_batch.label[:2])])'''
+            if valid:
+                loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
+                loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
             sup_samples_count += BATCH_SIZE
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
@@ -149,7 +155,6 @@ def main():
                 print("Reinitialized supervised training iterator")
                 supervised_iterator = iter(data.sup_iter)
                 sup_samples_count = 0
-
         data.reinit_iterator('valid')
         if model.step > h_params.anneal_kl[0]:
             model.eval()
