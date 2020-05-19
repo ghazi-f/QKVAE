@@ -25,7 +25,7 @@ parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=400, type=int)
-parser.add_argument("--pos_embedding_dim", default=20, type=int)
+parser.add_argument("--pos_embedding_dim", default=100, type=int)
 parser.add_argument("--z_size", default=100, type=int)
 parser.add_argument("--text_rep_l", default=1, type=int)
 parser.add_argument("--text_rep_h", default=200, type=int)
@@ -40,11 +40,11 @@ parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO"
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
-parser.add_argument("--anneal_kl0", default=4000, type=int)
+parser.add_argument("--anneal_kl0", default=000, type=int)
 parser.add_argument("--anneal_kl1", default=12000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
-parser.add_argument("--dropout", default=0.0, type=float)
+parser.add_argument("--dropout", default=0.33, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
@@ -72,7 +72,7 @@ LOSSES = {'S': [Supervision],
 #LOSSES = [ELBo]
 ANNEAL_KL = [flags.anneal_kl0, flags.anneal_kl1] if flags.losses != 'S' else [0, 0]
 # Changed loss params right after the beginning of SSVAE Exps
-LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1]
+LOSS_PARAMS = [1] if flags.losses == 'S' else [10, 1]
 PIWO = flags.losses == 'SSPIWO'
 
 
@@ -132,6 +132,7 @@ def main():
                    text_i, lab_i in zip(training_batch.text[:2], training_batch.label[:2])])'''
             if valid:
                 loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
+
                 loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
             sup_samples_count += BATCH_SIZE
 
