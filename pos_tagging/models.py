@@ -181,9 +181,9 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             x_prev = go_symbol
             for _ in range(self.h_params.max_len):
                 self.gen_bn({'x_prev': x_prev})
-                x_prev = torch.cat([x_prev, torch.argmax(self.generated_v.post_samples, dim=-1)[..., -1].unsqueeze(-1)],
+                x_prev = torch.cat([x_prev, torch.argmax(self.generated_v.post_params['logits'],
+                                                         dim=-1)[..., -1].unsqueeze(-1)],
                                    dim=-1)
-
 
             summary_triplets.append(
                 ('text', '/prior_sample', self.decode_to_text(self.generated_v.post_params['logits'])))
@@ -235,26 +235,32 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             perplexity_ub = torch.exp(- neg_log_perplexity_lb)
 
             self.writer.add_scalar('test/PerplexityUB', perplexity_ub, self.step)
+            return perplexity_ub
 
     def get_overall_accuracy(self, iterator):
         with torch.no_grad():
-            accurate_preds = 0
-            total_samples = 0
-            for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
-                self({'x': batch.text, 'y': batch.label})
+            has_supervision = any([isinstance(l, Supervision) for l in self.losses])
+            if has_supervision:
+                accurate_preds = 0
+                total_samples = 0
+                for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
+                    self({'x': batch.text, 'y': batch.label})
 
-                num_classes = self.supervised_v.size
-                predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)
-                target = self.infer_bn.variables_star[self.supervised_v].view(-1)
-                prediction_mask = (target != self.supervised_v.ignore).float()
-                accurate_preds += torch.sum((torch.argmax(predictions, dim=-1) == target).float() * prediction_mask)
+                    num_classes = self.supervised_v.size
+                    predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)
+                    target = self.infer_bn.variables_star[self.supervised_v].view(-1)
+                    prediction_mask = (target != self.supervised_v.ignore).float()
+                    accurate_preds += torch.sum((torch.argmax(predictions, dim=-1) == target).float() * prediction_mask)
 
-                total_samples += torch.sum(prediction_mask)
+                    total_samples += torch.sum(prediction_mask)
 
-            accuracy = accurate_preds/total_samples
+                accuracy = accurate_preds/total_samples
 
-            self.writer.add_scalar('test/OverallAccuracy', accuracy, self.step)
-            return accuracy
+                self.writer.add_scalar('test/OverallAccuracy', accuracy, self.step)
+                return accuracy
+            else:
+                print('Model doesn\'t use supervision')
+                return self.step/1e6
 
     def save(self):
         root = ''
@@ -297,14 +303,6 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                 nn.init.xavier_normal_(param.data)
             else:
                 nn.init.constant_(param.data, 0)'''
-
-
-# ======================================================================================================================
-# ==================================================== AE MIX-INS ======================================================
-
-
-# ======================================================================================================================
-# ==================================================== MODEL CLASSES ===================================================
 
 
 # ======================================================================================================================

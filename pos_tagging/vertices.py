@@ -107,6 +107,7 @@ def get_graph_postag(h_params, word_embeddings, pos_embeddings):
     x_to_y = MLPLink(xin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameters,
                      embedding=pos_embeddings, highway=h_params.highway, dropout=h_params.dropout)
 
+
     # Generation
     x_prev_gen = XPrevGen(h_params, word_embeddings)
     x_gen, y_gen, z_gen = XGen(h_params, word_embeddings), YGen(h_params, pos_embeddings), ZGen(h_params)
