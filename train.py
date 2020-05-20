@@ -17,15 +17,15 @@ parser = argparse.ArgumentParser()
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--max_len", default=32, type=int)
-parser.add_argument("--batch_size", default=20, type=int)
-parser.add_argument("--grad_accu", default=4, type=int)
+parser.add_argument("--batch_size", default=40, type=int)
+parser.add_argument("--grad_accu", default=2, type=int)
 parser.add_argument("--n_epochs", default=100, type=int)
 parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=400, type=int)
-parser.add_argument("--pos_embedding_dim", default=100, type=int)
+parser.add_argument("--pos_embedding_dim", default=50, type=int)
 parser.add_argument("--z_size", default=100, type=int)
 parser.add_argument("--text_rep_l", default=1, type=int)
 parser.add_argument("--text_rep_h", default=200, type=int)
@@ -41,21 +41,22 @@ parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
 parser.add_argument("--anneal_kl0", default=000, type=int)
-parser.add_argument("--anneal_kl1", default=12000, type=int)
+parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
-parser.add_argument("--dropout", default=0.33, type=float)
+parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.losses = 'SSVAE'
-    flags.batch_size = 20
-    flags.grad_accu = 4
-    flags.test_name = "SSVAE/0.1"
+    flags.losses = 'SSPIWO'
+    flags.batch_size = 10
+    flags.grad_accu = 8
+    flags.test_name = "SSPIWO/0.1test3"
     flags.supervision_proportion = 0.1
+    flags.training_iw_samples = 1
 
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
@@ -72,7 +73,7 @@ LOSSES = {'S': [Supervision],
 #LOSSES = [ELBo]
 ANNEAL_KL = [flags.anneal_kl0, flags.anneal_kl1] if flags.losses != 'S' else [0, 0]
 # Changed loss params right after the beginning of SSVAE Exps
-LOSS_PARAMS = [1] if flags.losses == 'S' else [10, 1]
+LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1e-3]
 PIWO = flags.losses == 'SSPIWO'
 
 
@@ -137,7 +138,9 @@ def main():
             sup_samples_count += BATCH_SIZE
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
-            if int(model.step/ (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
+            if int(model.step / (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
+                if not torch.isnan(loss):
+                    model.save()
                 model.eval()
                 try:
                     test_batch = limited_next(val_iterator)
@@ -147,7 +150,7 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     model({'x': test_batch.text, 'y': test_batch.label})
-                model.dump_test_viz(complete=int(model.step/ (1 if flags.losses == 'S' else 2)) %
+                model.dump_test_viz(complete=int(model.step / (1 if flags.losses == 'S' else 2)) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
 
@@ -160,9 +163,11 @@ def main():
         if model.step > h_params.anneal_kl[0]:
             model.eval()
             if model.generate:
-                model.get_perplexity(data.val_iter)
+                pp_ub = model.get_perplexity(data.val_iter)
+                print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
                 data.reinit_iterator('valid')
             accuracy = model.get_overall_accuracy(data.val_iter)
+            print("Accuracy is {} at step {}".format(accuracy, model.step))
             if accuracy > max_acc:
                 print('Saving The model ..')
                 max_acc = accuracy

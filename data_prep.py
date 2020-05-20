@@ -28,7 +28,7 @@ class IMDBData:
 class UDPoSDaTA:
     def __init__(self, max_len, batch_size, max_epochs, device):
         text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len,
-                                init_token='<go>', eos_token='<eos>', truncate_first=True,)
+                                init_token='<go>', eos_token='<eos>')
         label_field = data.Field(sequential=True,  fix_length=max_len-2,
                                  batch_first=True)
 
@@ -41,7 +41,7 @@ class UDPoSDaTA:
 
         # make iterator for splits
         self.train_iter, _,  _ = data.BucketIterator.splits(
-            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         self.sup_iter, _, _ = data.BucketIterator.splits(
             (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
