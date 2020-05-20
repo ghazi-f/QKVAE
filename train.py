@@ -139,8 +139,6 @@ def main():
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
             if int(model.step / (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
-                if not torch.isnan(loss):
-                    model.save()
                 model.eval()
                 try:
                     test_batch = limited_next(val_iterator)
