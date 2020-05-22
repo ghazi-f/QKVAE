@@ -246,7 +246,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                 accurate_preds = 0
                 total_samples = 0
                 for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
-                    self({'x': batch.text, 'y': batch.label}, eval=True)
+                    self({'x': batch.text, 'y': batch.label}, eval=False)
 
                     num_classes = self.supervised_v.size
                     predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)

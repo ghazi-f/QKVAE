@@ -17,8 +17,8 @@ parser = argparse.ArgumentParser()
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--max_len", default=32, type=int)
-parser.add_argument("--batch_size", default=40, type=int)
-parser.add_argument("--grad_accu", default=2, type=int)
+parser.add_argument("--batch_size", default=10, type=int)
+parser.add_argument("--grad_accu", default=8, type=int)
 parser.add_argument("--n_epochs", default=100, type=int)
 parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=80, type=int)
@@ -27,36 +27,42 @@ parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "
 parser.add_argument("--embedding_dim", default=400, type=int)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)
 parser.add_argument("--z_size", default=100, type=int)
-parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=400, type=int)
-parser.add_argument("--encoder_h", default=1000, type=int)
-parser.add_argument("--encoder_l", default=3, type=int)
-parser.add_argument("--pos_h", default=400, type=int)
+parser.add_argument("--text_rep_l", default=3, type=int)
+parser.add_argument("--text_rep_h", default=200, type=int)
+parser.add_argument("--encoder_h", default=200, type=int)
+parser.add_argument("--encoder_l", default=1, type=int)
+parser.add_argument("--pos_h", default=200, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=1000, type=int)
+parser.add_argument("--decoder_h", default=600, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)
-parser.add_argument("--highway", default=True, type=bool)
+parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
-parser.add_argument("--anneal_kl0", default=800, type=int)
-parser.add_argument("--anneal_kl1", default=2400, type=int)
+parser.add_argument("--anneal_kl0", default=000, type=int)
+parser.add_argument("--anneal_kl1", default=00, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
 parser.add_argument("--dropout", default=0.33, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
+
 
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
     flags.losses = 'S'
-    flags.batch_size = 16
-    flags.grad_accu = 5
-    flags.test_name = "Supervised/1.0test2"
-    flags.supervision_proportion = 1.
-    flags.training_iw_samples = 5
+    flags.batch_size = 80
+    flags.grad_accu = 1
+    flags.test_name = "Supervised/1.0test3"
+    flags.supervision_proportion = 1.0
+if False:
+    flags.losses = 'SSPIWO'
+    flags.batch_size = 10
+    flags.grad_accu = 8
+    flags.test_name = "SSPIWO/1.0test3"
+    flags.supervision_proportion = 1.0
 
 # torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
@@ -87,13 +93,13 @@ def main():
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr,#/GRAD_ACCU,
-                                         'weight_decay': 0.0, 'betas': (0.9, 0.9)},
+                                         'weight_decay': 0.0, 'betas': (0.9, 0.85)},
                        is_weighted=[], graph_generator=get_residual_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
-                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.Adam)
+                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.AdamW)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
