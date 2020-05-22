@@ -45,7 +45,7 @@ class UDPoSDaTA:
         self.sup_iter, _, _ = data.BucketIterator.splits(
             (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
-            (train, val, test), batch_size=int(batch_size/4), device=device, shuffle=False, sort=False)
+            (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab
         self.tags = label_field.vocab
