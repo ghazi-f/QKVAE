@@ -27,37 +27,38 @@ parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "
 parser.add_argument("--embedding_dim", default=400, type=int)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)
 parser.add_argument("--z_size", default=100, type=int)
-parser.add_argument("--text_rep_l", default=1, type=int)
-parser.add_argument("--text_rep_h", default=200, type=int)
+parser.add_argument("--text_rep_l", default=2, type=int)
+parser.add_argument("--text_rep_h", default=400, type=int)
 parser.add_argument("--encoder_h", default=1000, type=int)
-parser.add_argument("--encoder_l", default=2, type=int)
+parser.add_argument("--encoder_l", default=3, type=int)
 parser.add_argument("--pos_h", default=400, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
 parser.add_argument("--decoder_h", default=1000, type=int)
-parser.add_argument("--decoder_l", default=2, type=int)
-parser.add_argument("--highway", default=False, type=bool)
+parser.add_argument("--decoder_l", default=3, type=int)
+parser.add_argument("--highway", default=True, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
-parser.add_argument("--testing_iw_samples", default=20, type=int)
+parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
-parser.add_argument("--anneal_kl0", default=000, type=int)
-parser.add_argument("--anneal_kl1", default=6000, type=int)
+parser.add_argument("--anneal_kl0", default=800, type=int)
+parser.add_argument("--anneal_kl1", default=2400, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
-parser.add_argument("--dropout", default=0.3, type=float)
+parser.add_argument("--dropout", default=0.33, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.losses = 'SSPIWO'
-    flags.batch_size = 10
-    flags.grad_accu = 8
-    flags.test_name = "SSPIWO/0.1test3"
-    flags.supervision_proportion = 0.1
-    flags.training_iw_samples = 1
+    flags.losses = 'S'
+    flags.batch_size = 16
+    flags.grad_accu = 5
+    flags.test_name = "Supervised/1.0test2"
+    flags.supervision_proportion = 1.
+    flags.training_iw_samples = 5
 
+# torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -70,10 +71,10 @@ LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
           'SSIWAE': [Supervision, IWLBo]}[flags.losses]
-#LOSSES = [ELBo]
-ANNEAL_KL = [flags.anneal_kl0, flags.anneal_kl1] if flags.losses != 'S' else [0, 0]
+#  LOSSES = [IWLBo]
+ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
 # Changed loss params right after the beginning of SSVAE Exps
-LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1e-3]
+LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1e-2]
 PIWO = flags.losses == 'SSPIWO'
 
 
@@ -85,8 +86,9 @@ def main():
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs={'lr': flags.lr/GRAD_ACCU, 'weight_decay': 0.0}, #, 'betas': (0.9, 0.9)},
-                       is_weighted=[], graph_generator=get_graph_postag, z_size=flags.z_size,
+                       optimizer_kwargs={'lr': flags.lr,#/GRAD_ACCU,
+                                         'weight_decay': 0.0, 'betas': (0.9, 0.9)},
+                       is_weighted=[], graph_generator=get_residual_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
@@ -133,7 +135,6 @@ def main():
                    text_i, lab_i in zip(training_batch.text[:2], training_batch.label[:2])])'''
             if valid:
                 loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
-
                 loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
             sup_samples_count += BATCH_SIZE
 
