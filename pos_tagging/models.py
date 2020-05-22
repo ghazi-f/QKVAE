@@ -99,7 +99,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
         return total_loss
 
-    def forward(self, samples):
+    def forward(self, samples, eval=False):
         # Just propagating values through the bayesian networks to get summaries
 
         #                          ----------- Unsupervised Forward/Backward ----------------
@@ -108,17 +108,17 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         infer_inputs = {'x': samples['x'][..., 1:],  'x_prev': samples['x'][..., :-1]}
         if self.generate:
             if self.iw :#and (self.step >= self.h_params.anneal_kl[0]):
-                self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples)
+                self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval)
             else:
-                self.infer_bn(infer_inputs)
+                self.infer_bn(infer_inputs, eval=eval)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
             if self.iw:
                 gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
             if self.step < self.h_params.anneal_kl[0]:
-                self.gen_bn(gen_inputs, target=self.generated_v)
+                self.gen_bn(gen_inputs, target=self.generated_v, eval=eval)
             else:
-                self.gen_bn(gen_inputs)
+                self.gen_bn(gen_inputs, eval=eval)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -128,7 +128,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             # Forward pass
             infer_inputs = {'x': samples['x'][..., 1:-1], 'x_prev': samples['x'][..., :-2],
                             self.supervised_v.name: samples[self.supervised_v.name]}
-            self.infer_bn(infer_inputs, target=self.supervised_v)
+            self.infer_bn(infer_inputs, target=self.supervised_v, eval=eval)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
@@ -246,7 +246,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                 accurate_preds = 0
                 total_samples = 0
                 for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
-                    self({'x': batch.text, 'y': batch.label})
+                    self({'x': batch.text, 'y': batch.label}, eval=True)
 
                     num_classes = self.supervised_v.size
                     predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)

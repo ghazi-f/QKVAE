@@ -5,7 +5,7 @@ from collections import defaultdict
 import torch
 import torch.nn as nn
 
-from components.latent_variables import BaseLatentVariable, Categorical
+from components.latent_variables import BaseLatentVariable, Categorical, Gaussian
 from components.links import BaseLink
 
 
@@ -67,7 +67,7 @@ class BayesNet(nn.Module):
         for var in self.variables:
             var.clear_values()
 
-    def forward(self, inputs, n_iw=None, target=None):
+    def forward(self, inputs, n_iw=None, target=None, eval=False):
         # The forward pass propagates the root variable values yielding
         # assert n_iw is not None or not self.iw, "You didn't provide a number of importance weights."
 
@@ -123,7 +123,17 @@ class BayesNet(nn.Module):
                                 expand_arg = [n_iw]+list(gt_lv.shape)
                                 gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
                     lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv)
-                    self.variables_hat[lv] = lv.post_samples
+                    if eval:
+                        if isinstance(lv, Categorical):
+                            self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],
+                                                                                              dim=-1), lv.size)
+                        elif isinstance(lv, Gaussian):
+                            self.variables_hat[lv] = lv.post_params['loc']
+                        else:
+                            raise NotImplementedError('Unidentifiable latent variable type {} for variable '
+                                                      '{}'.format(type(lv), lv.name))
+                    else:
+                        self.variables_hat[lv] = lv.post_samples
                     self.log_proba[lv] = lv.post_gt_log_probas if gt_lv is not None else lv.post_log_probas
 
         if target is None:
