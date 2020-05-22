@@ -58,7 +58,15 @@ class Supervision(BaseCriterion):
 
         self._prepare_metrics(loss)
 
-        return loss
+        # Trying to anneal this loss too
+        if self.h_params.anneal_kl:
+            anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+            coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
+            coeff = torch.tensor(coeff)
+        else:
+            coeff = torch.tensor(1)
+
+        return loss * coeff
 
     def _prepare_metrics(self, loss):
         ce = loss
@@ -242,11 +250,8 @@ class IWLBo(ELBo):
                 while exp_log_wi.ndim > self.input_dimensions:
                     n_samples_correction *= exp_log_wi.shape[0]
                     exp_log_wi = torch.mean(exp_log_wi, dim=0)
-                torch.logsumexp()
-                # summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
-                summed_log_wi = log_wi.squeeze(0)
+                summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
                 unweighted_loss = - torch.sum(summed_log_wi)/(self.valid_n_samples/n_samples_correction)
-                #print(n_samples_correction, self.valid_n_samples)
             self._prepare_metrics(unweighted_loss)
 
         return loss
