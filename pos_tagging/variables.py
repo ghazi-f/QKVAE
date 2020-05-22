@@ -45,15 +45,21 @@ class ZGen(Gaussian):
                                    markovian=MARKOVIAN, allow_prior=False)
 
 
-class YInfer(Categorical):
-    def __init__(self, h_params, pos_embeddings):
+class YEmbInfer(Gaussian):
+    def __init__(self, h_params):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.piwo
-        super(YInfer, self).__init__(pos_embeddings.weight.shape[0], 'y', h_params.device, pos_embeddings,
-                                     h_params.pos_ignore_index, markovian=MARKOVIAN, stl=True, iw=iw)
+        super(YEmbInfer, self).__init__(h_params.pos_embedding_dim, 'yemb', h_params.device,
+                                        h_params.pos_ignore_index, markovian=MARKOVIAN, stl=True, iw=iw)
 
 
-class YGen(Categorical):
+class YEmbGen(Gaussian):
+    def __init__(self, h_params):
+        super(YEmbGen, self).__init__(h_params.pos_embedding_dim, 'yemb', h_params.device,
+                                      h_params.pos_ignore_index, markovian=MARKOVIAN)
+
+
+class YvalInfer(Categorical):
     def __init__(self, h_params, pos_embeddings):
-        super(YGen, self).__init__(pos_embeddings.weight.shape[0], 'y', h_params.device, pos_embeddings,
-                                   h_params.pos_ignore_index, markovian=MARKOVIAN)
+        super(YvalInfer, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
+                                        h_params.pos_ignore_index, markovian=MARKOVIAN, is_placeholder=True)
 

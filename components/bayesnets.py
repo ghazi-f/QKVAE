@@ -105,17 +105,17 @@ class BayesNet(nn.Module):
                 still_unfilled = lv not in self.variables_hat
                 if parents_available and still_unfilled:
                     # Gathering conditioning variables
-                    max_cond_lvl = max([self.dp_lvl[p] for p in self.parent[lv]])
-                    lv_conditions = torch.cat([self._ready_condition(p, n_iw, max_cond_lvl) for p in self.parent[lv]],
-                                              dim=-1)
+                    max_cond_lvl = self.dp_lvl[lv] # max([self.dp_lvl[p] for p in self.parent[lv]])
+                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl) for p in self.parent[lv]}
 
                     # Setting up ground truth to be injected if any
                     gt_lv = self.variables_star[lv] if lv in self.variables_star else None
 
                     # Repeating inputs if the latent variable is importance weighted
                     if lv.iw and n_iw is not None:
-                        expand_arg = [n_iw]+list(lv_conditions.shape)
-                        lv_conditions = lv_conditions.unsqueeze(0).expand(expand_arg)
+                        for k, v in lv_conditions.items():
+                            expand_arg = [n_iw]+list(v.shape)
+                            lv_conditions[k] = v.unsqueeze(0).expand(expand_arg)
                         if gt_lv is not None:
                             expand_arg = [n_iw]+list(gt_lv.shape)
                             gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
@@ -134,7 +134,7 @@ class BayesNet(nn.Module):
     def _ready_condition(self, lv, n_iw, max_lvl):
         value = lv.rep(self.variables_star[lv], step_wise=False) if lv in self.variables_star else lv.post_reps
         if n_iw is not None and n_iw > 1:
-            for _ in range(self.dp_lvl[lv], max_lvl):
+            for _ in range(self.dp_lvl[lv] + (1 if lv.iw else 0), max_lvl):
                 expand_arg = [n_iw] + list(value.shape)
                 value = value.unsqueeze(0).expand(expand_arg)
         return value

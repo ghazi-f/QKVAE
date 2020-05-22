@@ -58,7 +58,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
         self.is_supervised_batch = 'y' in samples
-        infer_inputs = {'x': samples['x'][..., 1:]}
+        infer_inputs = {'x': samples['x'][..., 1:],  'x_prev': samples['x'][..., :-1]}
         if self.generate and not (self.supervised_v.name in samples):
             if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
                 self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples)
@@ -79,7 +79,8 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
-            infer_inputs = {'x': samples['x'][..., 1:-1], self.supervised_v.name: samples[self.supervised_v.name]}
+            infer_inputs = {'x': samples['x'][..., 1:-1],  'x_prev': samples['x'][..., :-2],
+                            self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v)
 
             # Loss computation and backward pass
@@ -104,7 +105,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
         self.is_supervised_batch = 'y' in samples
-        infer_inputs = {'x': samples['x'][..., 1:]}
+        infer_inputs = {'x': samples['x'][..., 1:],  'x_prev': samples['x'][..., :-1]}
         if self.generate:
             if self.iw :#and (self.step >= self.h_params.anneal_kl[0]):
                 self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples)
@@ -125,7 +126,8 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
-            infer_inputs = {'x': samples['x'][..., 1:-1], self.supervised_v.name: samples[self.supervised_v.name]}
+            infer_inputs = {'x': samples['x'][..., 1:-1], 'x_prev': samples['x'][..., :-2],
+                            self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v)
 
             # Loss computation and backward pass

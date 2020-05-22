@@ -151,7 +151,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             return prior_distrib.log_prob(sample)
 
     def forward(self, link_approximator, inputs, prior=None, gt_samples=None):
-        if isinstance(link_approximator, SequentialLink):
+        if isinstance(link_approximator, SequentialLink) or (link_approximator.residual is not None and
+                                                             isinstance(link_approximator.residual['link'],
+                                                                        SequentialLink)):
             self._sequential_forward(link_approximator, inputs, prior, gt_samples)
         else:
             self._forward(link_approximator, inputs, prior, gt_samples)
@@ -162,10 +164,19 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         pass
 
     def _sequential_forward(self, link_approximator, inputs, prior=None, gt_samples=None):
+        if link_approximator.residual is None:
+            inputs = torch.cat(list(inputs.values()), dim=-1)
+            res_inputs = None
+        else:
+            non_res_inputs = torch.cat([v for k, v in inputs.items() if k not in link_approximator.residual['conditions']], dim=-1)
+            res_inputs = torch.cat([v for k, v in inputs.items() if k in link_approximator.residual['conditions']], dim=-1)
+            inputs = non_res_inputs
         if self.inv_seq:
             inputs = torch.flip(inputs, dims=[-2])
             if gt_samples is not None:
                 gt_samples = torch.flip(gt_samples, dims=[-2])
+            if res_inputs is not None:
+                res_inputs = torch.flip(res_inputs, dims=[-2])
         z_params = {param: [] for param in self.prior_params}
         z_log_probas = []
         z_samples = []
@@ -184,11 +195,16 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         x_seq_first = inputs.transpose(-3, -2)
         for i in range(1, x_seq_first.ndim - 2):
             x_seq_first = x_seq_first.transpose(-3 - i, -2 - i)
+        if res_inputs is not None:
+            x_res_seq_first = res_inputs.transpose(-3, -2)
+            for i in range(1, x_res_seq_first.ndim - 2):
+                x_res_seq_first = x_res_seq_first.transpose(-3 - i, -2 - i)
         for x in x_seq_first:
             # Inputs are unsqueezed to have single element time-step dimension, while previous outputs are unsqueezed to
             # have a single element num_layers*num_directions dimension (to be changed for multilayer GRUs)
             prev_z = prev_zs[len(z_reps)-1] if len(z_reps) else None
-            z_params_i = link_approximator(x, prev_z)
+            link_input = (x_res_seq_first[len(z_reps)], x) if res_inputs is not None else x
+            z_params_i = link_approximator(link_input, prev_z)
             posterior, posterior_log_prob = self.posterior_sample(z_params_i)
             z_samples.append(posterior)
             z_log_probas.append(posterior_log_prob)
@@ -242,7 +258,13 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             self.post_gt_log_probas = None
 
     def _forward(self, link_approximator, inputs, prior=None, gt_samples=None):
-
+        if link_approximator.residual is None:
+            inputs = torch.cat(list(inputs.values()), dim=-1)
+        else:
+            inputs = (torch.cat([v for k, v in inputs.items() if k in link_approximator.residual['conditions']],
+                                dim=-1),
+                      torch.cat([v for k, v in inputs.items() if k not in link_approximator.residual['conditions']],
+                                dim=-1))
         self.post_params = link_approximator(inputs)
         self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
         self.post_reps = self.rep(self.post_samples, step_wise=False)
@@ -267,7 +289,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 # ================================================ LATENT VARIABLE CLASSES =============================================
 
 class Gaussian(BaseLatentVariable):
-    parameters = {'loc': nn.Sequential(), 'scale_tril': torch.exp}
+    parameters = {'loc': nn.Sequential(), 'scale_tril': torch.nn.Softplus()}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
@@ -302,7 +324,7 @@ class Gaussian(BaseLatentVariable):
                 flatten = samples.ndim > 3
                 if flatten:
                     orig_shape = samples.shape
-                    samples = samples.view(-1, *orig_shape[-2:])
+                    samples = samples.reshape(-1, *orig_shape[-2:])
                 if self.inv_seq:
                     samples = torch.flip(samples, dims=[-2])
                 reps = self.rep_net(samples, hx=prev_rep)[0]

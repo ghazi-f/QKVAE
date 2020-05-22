@@ -10,7 +10,8 @@ import torch.nn.functional as F
 # ============================================== BASE CLASSES ==========================================================
 
 class BaseLink(nn.Module):
-    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, dropout=0.):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, dropout=0.,
+                 batchnorm=False, residual=None):
         super(BaseLink, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -20,26 +21,31 @@ class BaseLink(nn.Module):
         self.embedding = embedding
         self.highway = highway
         self.dropout = dropout
+        self.batchnorm = batchnorm
+        self.residual = residual
 
 
 class SequentialLink(BaseLink):
-    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, dropout=0.):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, dropout=0.,
+                 batchnorm=False, residual=None):
         super(SequentialLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
-                                             dropout=dropout)
+                                             dropout=dropout, batchnorm=batchnorm, residual=residual)
 
 
 # ============================================== LINK CLASSES ==========================================================
 
+
 class MLPLink(BaseLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
-                 dropout=0.):
+                 dropout=0., batchnorm=False, residual=None):
         super(MLPLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
-                                      dropout=dropout)
+                                      dropout=dropout, batchnorm=batchnorm, residual=residual)
 
         self.mlp = nn.ModuleList([nn.Linear(input_size, output_size)] +
                                  [nn.Linear((input_size + output_size*i) if self.highway else output_size, output_size)
                                   for i in range(1, depth)])
         self.drp_layer = torch.nn.Dropout(p=dropout)
+        self.bn = nn.BatchNorm1d(z_size)
 
         mlp_out_size = (output_size * depth) if self.highway else output_size
         if embedding is not None:
@@ -54,15 +60,20 @@ class MLPLink(BaseLink):
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size) for param in params})
 
     def forward(self, x, z_prev=None):
+        if self.residual is not None:
+            x_res, x = x
+            z_params_res = self.residual['link'](x_res, z_prev)
+
         outputs = []
         input = x
         for layer in self.mlp:
             outputs.append(layer(F.gelu(input)))# if len(outputs) else x)
-            if self.dropout >0:
+            if self.dropout > 0:
                 outputs[-1] = self.drp_layer(outputs[-1])
             input = torch.cat([input, outputs[-1]], dim=-1) if self.highway else outputs[-1]
 
         outputs = torch.cat(outputs, dim=-1) if self.highway else outputs[-1]
+
         z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
                     self.params.items()}
         if self.embedding is not None:
@@ -70,18 +81,29 @@ class MLPLink(BaseLink):
                 z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
             else:
                 z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale_tril'].shape
+            z_params['scale_tril'] = self.bn(z_params['scale_tril'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            for k in z_params.keys():
+                z_params[k] = z_params[k] + z_params_res[k]
 
         return z_params
 
 
 class GRULink(SequentialLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
-                 dropout=0.):
+                 dropout=0., batchnorm=False, residual=None):
         super(GRULink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
-                                      dropout=dropout)
+                                      dropout=dropout, batchnorm=batchnorm, residual=residual)
         self.rnn = nn.GRU(input_size, output_size, depth, batch_first=True, dropout=dropout)
         self.drp_layer = torch.nn.Dropout(p=dropout)
         rnn_output_size = (output_size*depth) if highway else output_size
+        self.bn = nn.BatchNorm1d(z_size)
         if embedding is not None:
             self.sbn = sbn
             self.project_z_prev = nn.Linear(embedding.weight.shape[1], output_size * depth)
@@ -96,6 +118,9 @@ class GRULink(SequentialLink):
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(rnn_output_size, z_size) for param in params})
 
     def forward(self, x, z_prev=None):
+        if self.residual is not None:
+            x_res, x = x
+            z_params_res = self.residual['link'](x_res, z_prev)
         h_prev = self.project_z_prev(z_prev) if z_prev is not None else None
         h_prev = h_prev.view(-1, self.depth, int(h_prev.shape[-1]/self.depth)).transpose(0, 1).contiguous()\
             if h_prev is not None else None
@@ -122,5 +147,17 @@ class GRULink(SequentialLink):
                 z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
             else:
                 z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale_tril'].shape
+            z_params['scale_tril'] = self.bn(z_params['scale_tril'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            for k in z_params.keys():
+                z_params[k] += z_params_res[k]
 
         return z_params
+
+
