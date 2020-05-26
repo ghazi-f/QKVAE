@@ -23,6 +23,8 @@ parser.add_argument("--n_epochs", default=100, type=int)
 parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
+parser.add_argument("--unsupervision_proportion", default=1., type=float)
+parser.add_argument("--generation_weight", default=1e-2, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=400, type=int)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)
@@ -72,6 +74,7 @@ N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
 SUP_PROPORTION = flags.supervision_proportion
+UNSUP_PROPORTION = flags.unsupervision_proportion
 DEVICE = device(flags.device)
 LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
@@ -80,7 +83,7 @@ LOSSES = {'S': [Supervision],
 #  LOSSES = [IWLBo]
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
 # Changed loss params right after the beginning of SSVAE Exps
-LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1e-2]
+LOSS_PARAMS = [1] if flags.losses == 'S' else [1, flags.generation_weight]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
 PIWO = flags.losses == 'SSPIWO'
@@ -166,6 +169,8 @@ def main():
                 print("Reinitialized supervised training iterator")
                 supervised_iterator = iter(data.sup_iter)
                 sup_samples_count = 0
+            if i >= (total_train_samples * UNSUP_PROPORTION):
+                break
         data.reinit_iterator('valid')
         if model.step > h_params.anneal_kl[0]:
             model.eval()
