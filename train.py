@@ -81,6 +81,8 @@ LOSSES = {'S': [Supervision],
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
 # Changed loss params right after the beginning of SSVAE Exps
 LOSS_PARAMS = [1] if flags.losses == 'S' else [1, 1e-2]
+if flags.grad_accu > 1:
+    LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
 PIWO = flags.losses == 'SSPIWO'
 
 
