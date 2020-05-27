@@ -24,7 +24,7 @@ parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
-parser.add_argument("--generation_weight", default=1e-2, type=float)
+parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=400, type=int)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)
@@ -37,7 +37,7 @@ parser.add_argument("--pos_h", default=100, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
 parser.add_argument("--decoder_h", default=300, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)
-parser.add_argument("--highway", default=True, type=bool)
+parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
@@ -50,7 +50,7 @@ parser.add_argument("--kl_th", default=None, type=float or None)
 parser.add_argument("--dropout", default=0.33, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=3., type=float)
-parser.add_argument("--wait_epochs", default=15, type=float)
+parser.add_argument("--wait_epochs", default=20, type=float)
 
 
 flags = parser.parse_args()
@@ -64,8 +64,8 @@ if False:
     flags.supervision_proportion = 1.0
 if False:
     flags.losses = 'SSVAE'
-    flags.batch_size = 20
-    flags.grad_accu = 8
+    flags.batch_size = 40
+    flags.grad_accu = 4
     flags.test_name = "SSVAE/0.03equal"
     flags.supervision_proportion = 0.03
 
