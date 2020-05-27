@@ -285,7 +285,8 @@ def kullback_liebler(params0, params1, thr=None):
         return 0
     if 'loc' in params0:
         # The gaussian case
-        sig0, sig1 = params0['scale'], params1['scale']
+        epsilon = 1e-8
+        sig0, sig1 = params0['scale']+1e-8, params1['scale']+1e-8
 
         mu0, mu1 = params0['loc'], params1['loc']
 
