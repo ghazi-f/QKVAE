@@ -22,7 +22,7 @@ class XGen(Categorical):
 
 class XPrevGen(Categorical):
     def __init__(self, h_params, word_embeddings):
-        repnet = nn.GRU(word_embeddings.weight.shape[1], h_params.text_rep_h, h_params.text_rep_l,
+        repnet = nn.GRU(word_embeddings.weight.shape[1], h_params.text_rep_h*3, h_params.text_rep_l*3,
                          batch_first=True,
                          dropout=h_params.dropout)
         super(XPrevGen, self).__init__(word_embeddings.weight.shape[0], 'x_prev', h_params.device, word_embeddings,
