@@ -46,7 +46,8 @@ class DefaultHParams:
                  kl_th=None,
                  highway=True,
                  dropout=0.,
-                 input_dimensions=2):
+                 input_dimensions=2,
+                 markovian=True):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -86,6 +87,7 @@ class DefaultHParams:
 
         self.graph_generator = graph_generator
         self.highway = highway
+        self.markovian = markovian
 
         # Specifying losses
         self.losses = losses or [ELBo]
