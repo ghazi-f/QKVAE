@@ -23,6 +23,7 @@
 "--highway", default=False
 "--markovian", default=False
 "--losses", default='SSVAE'
+"--l2_reg", default=0.0
 "--training_iw_samples", default=5
 "--testing_iw_samples", default=5
 "--test_prior_samples", default=5

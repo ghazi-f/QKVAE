@@ -26,17 +26,17 @@ parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=400, type=int)
-parser.add_argument("--pos_embedding_dim", default=50, type=int)
-parser.add_argument("--z_size", default=300, type=int)
+parser.add_argument("--embedding_dim", default=200, type=int)
+parser.add_argument("--pos_embedding_dim", default=100, type=int)
+parser.add_argument("--z_size", default=400, type=int)
 parser.add_argument("--text_rep_l", default=1, type=int)
-parser.add_argument("--text_rep_h", default=300, type=int)
-parser.add_argument("--encoder_h", default=300, type=int)
-parser.add_argument("--encoder_l", default=3, type=int)
+parser.add_argument("--text_rep_h", default=200, type=int)
+parser.add_argument("--encoder_h", default=100, type=int)
+parser.add_argument("--encoder_l", default=1, type=int)
 parser.add_argument("--pos_h", default=20, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
 parser.add_argument("--decoder_h", default=600, type=int)
-parser.add_argument("--decoder_l", default=3, type=int)
+parser.add_argument("--decoder_l", default=2, type=int)
 parser.add_argument("--highway", default=True, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
@@ -48,6 +48,7 @@ parser.add_argument("--anneal_kl1", default=2400, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
 parser.add_argument("--dropout", default=0.5, type=float)
+parser.add_argument("--l2_reg", default=1e-4, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=3., type=float)
 parser.add_argument("--wait_epochs", default=20, type=float)
@@ -67,7 +68,7 @@ if False:
     flags.losses = 'SSVAE'
     flags.batch_size = 80
     flags.grad_accu = 2
-    flags.test_name = "SSVAE/0.03equal"
+    flags.test_name = "SSVAE/0.03equalL2halfRes"
     flags.supervision_proportion = 0.03
 
 # torch.autograd.set_detect_anomaly(True)
@@ -100,9 +101,9 @@ def main():
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs={'lr': flags.lr,#/GRAD_ACCU,
-                                         'weight_decay': 0.0, 'betas': (0.9, 0.85)},
-                       is_weighted=[], graph_generator=get_residual_graph_postag, z_size=flags.z_size,
+                       optimizer_kwargs={'lr': flags.lr,
+                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
+                       is_weighted=[], graph_generator=get_half_residual_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
