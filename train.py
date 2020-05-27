@@ -33,7 +33,7 @@ parser.add_argument("--text_rep_l", default=1, type=int)
 parser.add_argument("--text_rep_h", default=300, type=int)
 parser.add_argument("--encoder_h", default=300, type=int)
 parser.add_argument("--encoder_l", default=3, type=int)
-parser.add_argument("--pos_h", default=100, type=int)
+parser.add_argument("--pos_h", default=20, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
 parser.add_argument("--decoder_h", default=600, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)
@@ -63,7 +63,7 @@ if False:
     flags.grad_accu = 1
     flags.test_name = "Supervised/1.0test3"
     flags.supervision_proportion = 1.0
-if True:
+if False:
     flags.losses = 'SSVAE'
     flags.batch_size = 80
     flags.grad_accu = 2
