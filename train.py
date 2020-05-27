@@ -10,7 +10,7 @@ import numpy as np
 from data_prep import UDPoSDaTA as Data
 from pos_tagging.models import SSPoSTag as Model
 from pos_tagging.h_params import DefaultSSPoSTagHParams as HParams
-from pos_tagging.vertices import *
+from pos_tagging.graphs import *
 from components.criteria import *
 parser = argparse.ArgumentParser()
 
@@ -28,26 +28,29 @@ parser.add_argument("--generation_weight", default=1e-2, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=400, type=int)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)
-parser.add_argument("--z_size", default=100, type=int)
+parser.add_argument("--z_size", default=500, type=int)
 parser.add_argument("--text_rep_l", default=3, type=int)
-parser.add_argument("--text_rep_h", default=200, type=int)
-parser.add_argument("--encoder_h", default=200, type=int)
-parser.add_argument("--encoder_l", default=1, type=int)
-parser.add_argument("--pos_h", default=200, type=int)
+parser.add_argument("--text_rep_h", default=1000, type=int)
+parser.add_argument("--encoder_h", default=300, type=int)
+parser.add_argument("--encoder_l", default=3, type=int)
+parser.add_argument("--pos_h", default=100, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=600, type=int)
+parser.add_argument("--decoder_h", default=300, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)
-parser.add_argument("--highway", default=False, type=bool)
+parser.add_argument("--highway", default=True, type=bool)
+parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
-parser.add_argument("--anneal_kl0", default=800, type=int)
+parser.add_argument("--anneal_kl0", default=000, type=int)
 parser.add_argument("--anneal_kl1", default=2400, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
 parser.add_argument("--dropout", default=0.33, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
+parser.add_argument("--lr_reduction", default=3., type=float)
+parser.add_argument("--wait_epochs", default=15, type=float)
 
 
 flags = parser.parse_args()
@@ -60,11 +63,11 @@ if False:
     flags.test_name = "Supervised/1.0test3"
     flags.supervision_proportion = 1.0
 if False:
-    flags.losses = 'SSPIWO'
-    flags.batch_size = 10
+    flags.losses = 'SSVAE'
+    flags.batch_size = 20
     flags.grad_accu = 8
-    flags.test_name = "SSPIWO/1.0test3"
-    flags.supervision_proportion = 1.0
+    flags.test_name = "SSVAE/0.03equal"
+    flags.supervision_proportion = 0.03
 
 # torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
@@ -82,7 +85,6 @@ LOSSES = {'S': [Supervision],
           'SSIWAE': [Supervision, IWLBo]}[flags.losses]
 #  LOSSES = [IWLBo]
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
-# Changed loss params right after the beginning of SSVAE Exps
 LOSS_PARAMS = [1] if flags.losses == 'S' else [1, flags.generation_weight]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
@@ -104,7 +106,7 @@ def main():
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
-                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.AdamW)
+                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.AdamW, markovian=flags.markovian)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
@@ -116,11 +118,10 @@ def main():
     total_train_samples = len(data.train_iter.dataset.examples)
     current_time = time()
     #print(model)
-
-    print("Number of parameters: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
+    number_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print("Number of parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     max_acc = 0
     wait_count = 0
-    waiting_epochs = 5
     sup_samples_count = 0
     loss = torch.tensor(1e20)
 
@@ -188,11 +189,11 @@ def main():
             else:
                 wait_count += 1
 
-            if wait_count == waiting_epochs:
-                model.reduce_lr(10.)
+            if wait_count == flags.wait_epochs:
+                model.reduce_lr(flags.lr_reduction)
                 print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
-            if wait_count == waiting_epochs*2:
+            if wait_count == flags.wait_epochs*2:
                 break
 
             model.train()

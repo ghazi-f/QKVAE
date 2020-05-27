@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-python train.py --losses "SSVAE" --test_name "SSVAE/UnsupVar0.03" --unsupervision_proportion 0.03 --supervision_proportion 0.03 --grad_accu 16
-python train.py --losses "SSVAE" --test_name "SSVAE/UnsupVar0.1" --unsupervision_proportion 0.1 --supervision_proportion 0.03 --grad_accu 16
-python train.py --losses "SSVAE" --test_name "SSVAE/UnsupVar0.3" --unsupervision_proportion 0.3 --supervision_proportion 0.03 --grad_accu 16
-#python train.py --losses "SSVAE" --test_name "SSVAE/UnsupVar1.0" --unsupervision_proportion 1.0 --supervision_proportion 0.03 --grad_accu 16
+python train.py --losses "SSVAE" --test_name "SSVAE/0.03equal" --supervision_proportion 0.03 --batch_size 20 --grad_accu 8
+python train.py --losses "SSVAE" --test_name "SSVAE/0.1equal" --supervision_proportion 0.1 ----batch_size 20 grad_accu 8
+python train.py --losses "SSVAE" --test_name "SSVAE/0.3equal" --supervision_proportion 0.3 --batch_size 20 --grad_accu 8
+python train.py --losses "SSVAE" --test_name "SSVAE/1.0equal" --supervision_proportion 1.0 --batch_size 20 --grad_accu 8
