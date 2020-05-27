@@ -285,8 +285,7 @@ def kullback_liebler(params0, params1, thr=None):
         return 0
     if 'loc' in params0:
         # The gaussian case
-        sig0, sig1 = torch.diagonal(params0['scale_tril'], dim1=-2, dim2=-1)**2, \
-                     torch.diagonal(params1['scale_tril'], dim1=-2, dim2=-1)**2
+        sig0, sig1 = params0['scale'], params1['scale']
 
         mu0, mu1 = params0['loc'], params1['loc']
 

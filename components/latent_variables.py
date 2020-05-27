@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torch.distributions import MultivariateNormal, RelaxedOneHotCategorical
+from torch.distributions import MultivariateNormal, RelaxedOneHotCategorical, Normal, Independent
 
 from components.links import SequentialLink
 
@@ -75,16 +75,13 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 
     def posterior_sample(self, x_params):
         # Returns a sample from P(z|x). x is a dictionary containing the distribution's parameters.
-        if self.posterior.has_rsample:
-            sample = self.posterior(**x_params).rsample()
-            # Applying STL
-            if self.stl:
-                prior = self.posterior(**{k: v.detach() for k, v in x_params.items()})
-            else:
-                prior = self.posterior(**{k: v for k, v in x_params.items()})
-            return sample, prior.log_prob(sample)
+        sample = self.posterior(**x_params).rsample()
+        # Applying STL
+        if self.stl:
+            prior = self.posterior(**{k: v.detach() for k, v in x_params.items()})
         else:
-            raise NotImplementedError('Distribution {} has no reparametrized sampling method.')
+            prior = self.posterior(**{k: v for k, v in x_params.items()})
+        return sample, prior.log_prob(sample)
 
     def prior_sample(self, sample_shape):
         assert not self.inv_seq, "Reversed priors are still not permitted"
@@ -104,9 +101,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                     self.prior_reps.append(self.rep(self.prior_samples[-1], prev_rep=prev_rep))
                     prev_rep = self.prior_reps[-1]
                     prior_params_i = self.prior_sequential_link(prev_rep, prev_rep)
-                    if isinstance(self, Gaussian):
-                        prior_params_i['scale_tril'] = torch.diag_embed(prior_params_i['scale_tril'])
-                    elif isinstance(self, Categorical):
+                    if isinstance(self, Categorical):
                         prior_params_i = {**prior_params_i, **{'temperature': self.prior_temperature}}
                 self.prior_samples = torch.stack(self.prior_samples, dim=-2)
                 self.prior_log_probas = torch.stack(self.prior_log_probas, dim=-1)
@@ -140,7 +135,6 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                 prior_distrib = self.prior(**prior_params_i)
                 prior_log_probas.append(prior_distrib.log_prob(sample_i))
                 prior_params_i = self.prior_sequential_link(sample_rep_i, sample_rep_i)
-                prior_params_i['scale_tril'] = torch.diag_embed(prior_params_i['scale_tril'])
             for k, v in z_params.items():
                 z_params[k] = torch.stack(v, dim=-1-self.prior_params[k].ndim)
             self.post_params = z_params
@@ -209,13 +203,8 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             z_samples.append(posterior)
             z_log_probas.append(posterior_log_prob)
             z_reps.append(self.rep(posterior, prev_rep=prev_z))
-            if isinstance(self, Gaussian):
-                z_params_i['scale_tril'] = torch.diag_embed(z_params_i['scale_tril'])
-            elif isinstance(self, Categorical):
+            if isinstance(self, Categorical):
                 z_params_i = {**z_params_i, **{'temperature': self.prior_temperature}}
-            else:
-                raise NotImplementedError("This function still hasn't been implemented for variables other than "
-                                          "Gaussians and Categoricals")
             for k, v in z_params_i.items():
                 z_params[k].append(z_params_i[k])
             if gt_samples is not None:
@@ -268,8 +257,6 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.post_params = link_approximator(inputs)
         self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
         self.post_reps = self.rep(self.post_samples, step_wise=False)
-        if isinstance(self, Gaussian):
-            self.post_params['scale_tril'] = torch.diag_embed(self.post_params['scale_tril'])
         if gt_samples is not None:
             if isinstance(self, Gaussian):
                 self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
@@ -289,14 +276,14 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 # ================================================ LATENT VARIABLE CLASSES =============================================
 
 class Gaussian(BaseLatentVariable):
-    parameters = {'loc': nn.Sequential(), 'scale_tril': torch.nn.Softplus()}
+    parameters = {'loc': nn.Sequential(), 'scale': torch.nn.Softplus()}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
         self.prior_loc = torch.zeros(size).to(device)
-        self.prior_cov_tril = torch.eye(size).to(device)
-        super(Gaussian, self).__init__(MultivariateNormal, size, {'loc': self.prior_loc,
-                                                                  'scale_tril': self.prior_cov_tril},
+        self.prior_cov = torch.ones(size).to(device)
+        super(Gaussian, self).__init__(diag_normal, size, {'loc': self.prior_loc,
+                                                                  'scale': self.prior_cov},
                                        name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
                                        inv_seq, stl, repnet, iw)
 
@@ -304,7 +291,6 @@ class Gaussian(BaseLatentVariable):
         return x_params['loc']
 
     def posterior_sample(self, x_params):
-        x_params = {**x_params, 'scale_tril': torch.diag_embed(x_params['scale_tril'])}
         return super(Gaussian, self).posterior_sample(x_params)
 
     def rep(self, samples, step_wise=True, prev_rep=None):
@@ -397,6 +383,10 @@ class Categorical(BaseLatentVariable):
             if flatten:
                 reps = reps.view(*orig_shape[:-1], reps.shape[-1])
         return reps
+
+
+def diag_normal(loc, scale):
+    return Independent(Normal(loc, scale), 1)
 
 
 class SoftmaxBottleneck(nn.Module):
