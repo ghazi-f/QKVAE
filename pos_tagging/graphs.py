@@ -51,7 +51,6 @@ def get_graph_postag(h_params, word_embeddings, pos_embeddings):
                                     ])}, yval_inf, x_gen
 
 
-
 def get_residual_graph_postag(h_params, word_embeddings, pos_embeddings):
     xin_size, yembin_size, yvalin_size, zin_size = h_params.text_rep_h, h_params.pos_embedding_dim, \
                                                    h_params.pos_embedding_dim, h_params.z_size
