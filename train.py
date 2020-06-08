@@ -16,44 +16,42 @@ parser = argparse.ArgumentParser()
 
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--max_len", default=32, type=int)
+parser.add_argument("--max_len", default=70, type=int)
 parser.add_argument("--batch_size", default=10, type=int)
 parser.add_argument("--grad_accu", default=8, type=int)
-parser.add_argument("--n_epochs", default=100, type=int)
+parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=80, type=int)
 parser.add_argument("--supervision_proportion", default=1., type=float)
-parser.add_argument("--unsupervision_proportion", default=1., type=float)
+parser.add_argument("--unsupervision_proportion", default=1, type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=200, type=int)
-parser.add_argument("--pos_embedding_dim", default=100, type=int)
-parser.add_argument("--z_size", default=400, type=int)
+parser.add_argument("--embedding_dim", default=400, type=int)
+parser.add_argument("--pos_embedding_dim", default=20, type=int)
+parser.add_argument("--z_size", default=200, type=int)
 parser.add_argument("--text_rep_l", default=1, type=int)
-parser.add_argument("--text_rep_h", default=300, type=int)
-parser.add_argument("--encoder_h", default=100, type=int)
+parser.add_argument("--text_rep_h", default=1500, type=int)
+parser.add_argument("--encoder_h", default=1000, type=int)
 parser.add_argument("--encoder_l", default=1, type=int)
-parser.add_argument("--pos_h", default=20, type=int)
+parser.add_argument("--pos_h", default=200, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=600, type=int)
-parser.add_argument("--decoder_l", default=3, type=int)
+parser.add_argument("--decoder_h", default=1000, type=int)
+parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=True, type=bool)
-parser.add_argument("--markovian", default=True, type=bool)
-parser.add_argument("--losses", default='SSVAE', choices=["S", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
+parser.add_argument("--markovian", default=False, type=bool)
+parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=5, type=int)
 parser.add_argument("--anneal_kl0", default=000, type=int)
-parser.add_argument("--anneal_kl1", default=2400, type=int)
+parser.add_argument("--anneal_kl1", default=000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=None, type=float or None)
-parser.add_argument("--dropout", default=0.5, type=float)
-parser.add_argument("--l2_reg", default=1e-4, type=float)
+parser.add_argument("--dropout", default=0.3, type=float)
+parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=3., type=float)
-parser.add_argument("--wait_epochs", default=20, type=float)
-
-
+parser.add_argument("--wait_epochs", default=5, type=float)
 
 flags = parser.parse_args()
 
@@ -64,11 +62,11 @@ if False:
     flags.grad_accu = 1
     flags.test_name = "Supervised/1.0test3"
     flags.supervision_proportion = 1.0
-if False:
-    flags.losses = 'SSVAE'
+if True:
+    flags.losses = 'VAE'
     flags.batch_size = 80
-    flags.grad_accu = 2
-    flags.test_name = "SSVAE/0.03equalL2halfRes"
+    flags.grad_accu = 1
+    flags.test_name = "SSVAE/0.03Gen/Gen_wiki"
     flags.supervision_proportion = 0.03
 
 # torch.autograd.set_detect_anomaly(True)
@@ -84,10 +82,11 @@ DEVICE = device(flags.device)
 LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
-          'SSIWAE': [Supervision, IWLBo]}[flags.losses]
+          'SSIWAE': [Supervision, IWLBo],
+          'VAE': [ELBo]}[flags.losses]
 #  LOSSES = [IWLBo]
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
-LOSS_PARAMS = [1] if flags.losses == 'S' else [1, flags.generation_weight]
+LOSS_PARAMS = [1] if 'SS' not in flags.losses else [1, flags.generation_weight]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
 PIWO = flags.losses == 'SSPIWO'
@@ -103,7 +102,7 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr,
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
-                       is_weighted=[], graph_generator=get_half_residual_graph_postag, z_size=flags.z_size,
+                       is_weighted=[], graph_generator=get_residual_reversed_graph_postag, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
@@ -117,12 +116,16 @@ def main():
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
-    total_train_samples = len(data.train_iter.dataset.examples)
+    total_unsupervised_train_samples = len(data.train_iter.dataset.examples)
+    total_supervised_train_samples = len(data.sup_iter.dataset.examples)
+    print("Unsupervised training examples: ", total_unsupervised_train_samples*UNSUP_PROPORTION,
+          ", Supervised training examples: ", total_supervised_train_samples*SUP_PROPORTION)
     current_time = time()
     #print(model)
     number_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("Number of parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     max_acc = 0
+    min_perp = 1e20
     wait_count = 0
     sup_samples_count = 0
     loss = torch.tensor(1e20)
@@ -141,7 +144,7 @@ def main():
 
             supervised_batch = limited_next(supervised_iterator)
             '''print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
-                   text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])'''
+                   text_i, lab_i in zip(training_batch.text[:2], supervised_batch.label[:2])])'''
             valid = all([data.vocab.itos[t[0]] == '<go>' for t in training_batch.text])
 
             '''print([' '.join(
@@ -149,11 +152,12 @@ def main():
                    text_i, lab_i in zip(training_batch.text[:2], training_batch.label[:2])])'''
             if valid:
                 loss = model.opt_step({'x': training_batch.text}) if flags.losses != 'S' else 0
-                loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label})
+                loss += model.opt_step({'x': supervised_batch.text, 'y': supervised_batch.label}) if 'S' in flags.losses \
+                    else 0
             sup_samples_count += BATCH_SIZE
 
             print("step:{}, loss:{}, seconds/step:{}".format(model.step, loss, time()-current_time))
-            if int(model.step / (1 if flags.losses == 'S' else 2)) % TEST_FREQ == TEST_FREQ-1:
+            if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1:
                 model.eval()
                 try:
                     test_batch = limited_next(val_iterator)
@@ -163,16 +167,17 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     model({'x': test_batch.text, 'y': test_batch.label})
-                model.dump_test_viz(complete=int(model.step / (1 if flags.losses == 'S' else 2)) %
+                model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
 
             current_time = time()
-            if sup_samples_count >= (total_train_samples * SUP_PROPORTION):
+            if sup_samples_count >= (total_supervised_train_samples * SUP_PROPORTION):
                 print("Reinitialized supervised training iterator")
                 supervised_iterator = iter(data.sup_iter)
                 sup_samples_count = 0
-            if i >= (total_train_samples * UNSUP_PROPORTION):
+            if (i*BATCH_SIZE) >= (total_unsupervised_train_samples * UNSUP_PROPORTION):
+                print('reinitializing unsupervised training data')
                 break
         data.reinit_iterator('valid')
         if model.step > h_params.anneal_kl[0]:
@@ -181,15 +186,24 @@ def main():
                 pp_ub = model.get_perplexity(data.val_iter)
                 print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
                 data.reinit_iterator('valid')
-            accuracy = model.get_overall_accuracy(data.val_iter)
-            print("Accuracy is {} at step {}".format(accuracy, model.step))
-            if accuracy > max_acc:
-                print('Saving The model ..')
-                max_acc = accuracy
-                model.save()
-                wait_count = 0
+            if 'S' in flags.losses:
+                accuracy = model.get_overall_accuracy(data.val_iter)
+                print("Accuracy is {} at step {}".format(accuracy, model.step))
+                if accuracy > max_acc:
+                    print('Saving The model ..')
+                    max_acc = accuracy
+                    model.save()
+                    wait_count = 0
+                else:
+                    wait_count += 1
             else:
-                wait_count += 1
+                if pp_ub < min_perp:
+                    print('Saving The model ..')
+                    min_perp = pp_ub
+                    model.save()
+                    wait_count = 0
+                else:
+                    wait_count += 1
 
             if wait_count == flags.wait_epochs:
                 model.reduce_lr(flags.lr_reduction)

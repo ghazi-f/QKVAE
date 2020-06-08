@@ -118,8 +118,9 @@ class ELBo(BaseCriterion):
         vocab_size = self.generated_v.size
         criterion = self._unweighted_criterion if actual else self.criterion
         self.sequence_mask = (self.gen_net.variables_star[self.generated_v] != self.generated_v.ignore).float()
+        temp = 1
 
-        self.log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
+        self.log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
                                      self.gen_net.variables_star[self.generated_v].reshape(-1)
                                      ).view(self.gen_net.variables_star[self.generated_v].shape) * self.sequence_mask
 
@@ -149,7 +150,7 @@ class ELBo(BaseCriterion):
             if actual and thr is None:
                 unweighted_loss = loss
             else:
-                un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
+                un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
                                                           self.gen_net.variables_star[self.generated_v].reshape(-1)
                                                           ).view(self.gen_net.variables_star[self.generated_v].shape)
                 un_log_p_xIz *= self.sequence_mask
@@ -285,8 +286,7 @@ def kullback_liebler(params0, params1, thr=None):
         return 0
     if 'loc' in params0:
         # The gaussian case
-        epsilon = 1e-8
-        sig0, sig1 = params0['scale']**2+epsilon, params1['scale']**2+epsilon
+        sig0, sig1 = params0['scale']**2, params1['scale']**2
 
         mu0, mu1 = params0['loc'], params1['loc']
 

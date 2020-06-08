@@ -33,15 +33,16 @@ class UDPoSDaTA:
                                  batch_first=True)
 
         # make splits for data
+        unsup_train, unsup_val, unsup_test = MyWikiText2.splits(text_field)
         train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
 
         # build the vocabulary
-        text_field.build_vocab(train)  # , vectors="fasttext.simple.300d")
+        text_field.build_vocab(unsup_train)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
 
         # make iterator for splits
         self.train_iter, _,  _ = data.BucketIterator.splits(
-            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         self.sup_iter, _, _ = data.BucketIterator.splits(
             (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
@@ -187,12 +188,13 @@ class LanguageModelingDataset(data.Dataset):
         examples = []
         seq_lens = []
         with io.open(path, encoding=encoding) as f:
-            for line in f:
+            for i, line in enumerate(f):
                 processed_line = text_field.preprocess(line)
                 seq_lens.append(len(processed_line))
-                if len(processed_line) > 1:
-                    examples.append(data.Example.fromlist([processed_line], fields))
-                #break
+                for sentence in ' '.join(processed_line).split('.'):
+                    if len(sentence) > 1 and '=' not in sentence:
+                        examples.append(data.Example.fromlist([(sentence+'.').split(' ')], fields))
+
         super(LanguageModelingDataset, self).__init__(
             examples, fields, **kwargs)
 

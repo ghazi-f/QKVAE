@@ -39,7 +39,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                 # Wait for the Categorical constructor to instanciate a GRU with the right size
                 self.rep_net = True
             else:
-                self.rep_net = repnet or nn.GRU(self.size, self.size, 1, batch_first=True)
+                self.rep_net = repnet or nn.GRU(self.size, self.size, 2, batch_first=True)
 
         self.prior_params = prior_params
         self.prior_samples = None
@@ -336,7 +336,7 @@ class Categorical(BaseLatentVariable):
                                           name, prior_sequential_link, posterior, markovian, allow_prior,
                                           is_placeholder, inv_seq, stl, repnet, iw)
         self.embedding = embedding
-        if self.rep_net is not None:
+        if self.rep_net is not None and not markovian:
             embedding_size = embedding.weight.shape[1]
             self.rep_net = repnet or nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
 
