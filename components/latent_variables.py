@@ -39,7 +39,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                 # Wait for the Categorical constructor to instanciate a GRU with the right size
                 self.rep_net = True
             else:
-                self.rep_net = repnet or nn.GRU(self.size, self.size, 2, batch_first=True)
+                self.rep_net = repnet or nn.GRU(self.size, self.size, 1, batch_first=True)
 
         self.prior_params = prior_params
         self.prior_samples = None

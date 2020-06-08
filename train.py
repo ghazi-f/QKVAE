@@ -51,7 +51,7 @@ parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=3., type=float)
-parser.add_argument("--wait_epochs", default=5, type=float)
+parser.add_argument("--wait_epochs", default=20, type=float)
 
 flags = parser.parse_args()
 
@@ -64,10 +64,10 @@ if False:
     flags.supervision_proportion = 1.0
 if True:
     flags.losses = 'VAE'
-    flags.batch_size = 40
+    flags.batch_size = 60
     flags.grad_accu = 2
     flags.max_len = 70
-    flags.test_name = "SSVAE/0.03Gen/Gen_wiki"
+    flags.test_name = "SSVAE/0.03Gen/Gen_Penn"
     flags.supervision_proportion = 0.03
 
 # torch.autograd.set_detect_anomaly(True)
@@ -184,7 +184,7 @@ def main():
         if model.step > h_params.anneal_kl[0]:
             model.eval()
             if model.generate:
-                pp_ub = model.get_perplexity(data.val_iter)
+                pp_ub = model.get_perplexity(data.unsup_val_iter)
                 print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
                 data.reinit_iterator('valid')
             if 'S' in flags.losses:
@@ -215,6 +215,7 @@ def main():
 
             model.train()
         data.reinit_iterator('valid')
+        data.reinit_iterator('unsup_valid')
         data.reinit_iterator('train')
     print("Finished training")
 
