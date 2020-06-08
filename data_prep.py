@@ -191,7 +191,8 @@ class LanguageModelingDataset(data.Dataset):
             for i, line in enumerate(f):
                 processed_line = text_field.preprocess(line)
                 seq_lens.append(len(processed_line))
-                for sentence in ' '.join(processed_line).split('.'):
+                for sentence in ' '.join(processed_line).replace('! ', '<spl>')\
+                        .replace('? ', '<spl>').replace('. ', '<spl>').split('<spl>'):
                     if len(sentence) > 1 and '=' not in sentence:
                         examples.append(data.Example.fromlist([(sentence+'.').split(' ')], fields))
 

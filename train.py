@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser()
 
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--max_len", default=70, type=int)
+parser.add_argument("--max_len", default=32, type=int)
 parser.add_argument("--batch_size", default=10, type=int)
 parser.add_argument("--grad_accu", default=8, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
@@ -64,8 +64,9 @@ if False:
     flags.supervision_proportion = 1.0
 if True:
     flags.losses = 'VAE'
-    flags.batch_size = 80
-    flags.grad_accu = 1
+    flags.batch_size = 40
+    flags.grad_accu = 2
+    flags.max_len = 70
     flags.test_name = "SSVAE/0.03Gen/Gen_wiki"
     flags.supervision_proportion = 0.03
 
