@@ -4,6 +4,7 @@ import io
 import torchtext.data as data
 import torchtext.datasets as datasets
 from torchtext.vocab import FastText
+import numpy as np
 
 
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
@@ -193,10 +194,14 @@ class LanguageModelingDataset(data.Dataset):
             for i, line in enumerate(f):
                 processed_line = text_field.preprocess(line)
                 seq_lens.append(len(processed_line))
-                for sentence in ' '.join(processed_line).replace('! ', '<spl>')\
-                        .replace('? ', '<spl>').replace('. ', '<spl>').split('<spl>'):
-                    if len(sentence) > 1 and '=' not in sentence:
-                        examples.append(data.Example.fromlist([(sentence+'.').split(' ')], fields))
+                #for sentence in ' '.join(processed_line).replace('! ', '<spl>')\
+                #        .replace('? ', '<spl>').replace('. ', '<spl>').split('<spl>'):
+                #    if len(sentence) > 1 and '=' not in sentence:
+                #        examples.append(data.Example.fromlist([(sentence+'.').split(' ')], fields))
+                if len(processed_line) > 1 and not any(['=' in tok for tok in  processed_line]):
+                    examples.append(data.Example.fromlist([processed_line], fields))
+            print("Mean length: ", sum(seq_lens)/len(seq_lens), ' Quantiles .25, 0.5, 0.7, and 0.9 :',
+                  np.quantile(seq_lens, [0.25, 0.5, 0.7, 0.9, 0.95, 0.99]))
 
         super(LanguageModelingDataset, self).__init__(
             examples, fields, **kwargs)
