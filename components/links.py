@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 EPSILON = 1e-8
 
+
 # ============================================== BASE CLASSES ==========================================================
 
 class BaseLink(nn.Module):
@@ -65,15 +66,15 @@ class MLPLink(BaseLink):
     def forward(self, x, z_prev=None):
         if self.residual is not None:
             x_res, x = x
+            x_res = self.drp_layer(x_res)
             z_params_res = self.residual['link'](x_res, z_prev)
 
+        x = self.drp_layer(x)
         outputs = []
         input = x
         for layer in self.mlp:
-            outputs.append(layer(F.gelu(input)))# if len(outputs) else x)
-            if self.dropout > 0 and 'loc' in self.hidden_to_z_params:
-                outputs[-1] = self.drp_layer(outputs[-1])
-            input = torch.cat([input, outputs[-1]], dim=-1) if self.highway else outputs[-1]
+            outputs.append(layer(input))# if len(outputs) else x)
+            input = torch.cat([input, self.drp_layer(F.gelu(outputs[-1]))], dim=-1) if self.highway else outputs[-1]
 
         outputs = torch.cat(outputs, dim=-1) if self.highway else outputs[-1]
 
@@ -123,7 +124,9 @@ class GRULink(SequentialLink):
     def forward(self, x, z_prev=None):
         if self.residual is not None:
             x_res, x = x
+            x_res = self.drp_layer(x_res)
             z_params_res = self.residual['link'](x_res, z_prev)
+        x = self.drp_layer(x)
         h_prev = self.project_z_prev(z_prev) if z_prev is not None else None
         h_prev = h_prev.view(-1, self.depth, int(h_prev.shape[-1]/self.depth)).transpose(0, 1).contiguous()\
             if h_prev is not None else None
@@ -141,8 +144,7 @@ class GRULink(SequentialLink):
         if flatten:
             reshaped_h = reshaped_h.view(*orig_shape[:-1], reshaped_h.shape[-1])
 
-        if self.dropout > 0.:
-            reshaped_h = self.drp_layer(reshaped_h)
+        reshaped_h = self.drp_layer(reshaped_h)
         z_params = {param: activation(self.hidden_to_z_params[param](reshaped_h))+EPSILON
                     for param, activation in self.params.items()}
         if self.embedding is not None:
