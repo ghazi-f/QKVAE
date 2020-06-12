@@ -157,8 +157,8 @@ def get_residual_reversed_graph_postag(h_params, word_embeddings, pos_embeddings
     xprev_yemb_to_z = MLPLink(xin_size+yembin_size, h_params.decoder_h, zout_size, h_params.decoder_l, Gaussian.parameters,
                               highway=h_params.highway, dropout=h_params.dropout)
     xprev_z_to_x = MLPLink(xin_size+zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
-                                Categorical.parameters, word_embeddings, highway=h_params.highway, sbn=None,
-                                dropout=h_params.dropout)
+                           Categorical.parameters, word_embeddings, highway=h_params.highway, sbn=None,
+                           dropout=h_params.dropout)
 
     # Inference
     yval_inf = YvalInfer(h_params, pos_embeddings)

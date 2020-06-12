@@ -25,7 +25,11 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
         # Instanciating inference and generation networks
         self.infer_bn = BayesNet(vertices['infer'])
+        self.infer_last_states = None
+        self.infer_last_states_test = None
         self.gen_bn = BayesNet(vertices['gen'])
+        self.gen_last_states = None
+        self.gen_last_states_test = None
 
         # Setting up categorical variable indexes
         self.index = {self.generated_v: vocab_index, self.supervised_v: tag_index}
@@ -57,29 +61,32 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             self.optimizer.zero_grad()
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
-        self.is_supervised_batch = 'y' in samples
-        infer_inputs = {'x': samples['x'][..., 1:],  'x_prev': samples['x'][..., :-1]}
+        self.is_supervised_batch = self.supervised_v.name in samples
+        infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
         if self.generate and not (self.supervised_v.name in samples):
             if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
-                self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples)
+                self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
+                                                       prev_states=self.infer_last_states)
             else:
-                self.infer_bn(infer_inputs)
+                self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
-                          **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
+                          **{'x': samples['x'], 'x_prev': samples['x_prev']}}
             if self.iw:
                 gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
             if self.step < self.h_params.anneal_kl[0]:
-                self.gen_bn(gen_inputs, target=self.generated_v)
+                self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
+                                                   prev_states=self.gen_last_states)
             else:
-                self.gen_bn(gen_inputs)
+                self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
 
             # Loss computation and backward pass
             losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
             sum(losses_uns).backward()
+            self.infer_last_states, self.gen_last_states = None, None
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
-            infer_inputs = {'x': samples['x'][..., 1:-1],  'x_prev': samples['x'][..., :-2],
+            infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev'],
                             self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v)
 
@@ -99,26 +106,31 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
 
         return total_loss
 
-    def forward(self, samples, eval=False):
+    def forward(self, samples, eval=False, prev_states=None):
         # Just propagating values through the bayesian networks to get summaries
+        if prev_states:
+            infer_prev, gen_prev = prev_states
+        else:
+            infer_prev, gen_prev = None, None
 
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
-        self.is_supervised_batch = 'y' in samples
-        infer_inputs = {'x': samples['x'][..., 1:],  'x_prev': samples['x'][..., :-1]}
+        self.is_supervised_batch = self.supervised_v.name in samples
+        infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
         if self.generate:
-            if self.iw :#and (self.step >= self.h_params.anneal_kl[0]):
-                self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval)
+            if self.iw:
+                infer_prev = self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval,
+                                           prev_states=infer_prev)
             else:
-                self.infer_bn(infer_inputs, eval=eval)
+                infer_prev = self.infer_bn(infer_inputs, eval=eval, prev_states=infer_prev)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
-                          **{'x': samples['x'][..., 1:], 'x_prev': samples['x'][..., :-1]}}
+                          **{'x': samples['x'], 'x_prev': samples['x_prev']}}
             if self.iw:
                 gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
             if self.step < self.h_params.anneal_kl[0]:
-                self.gen_bn(gen_inputs, target=self.generated_v, eval=eval)
+                gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev)
             else:
-                self.gen_bn(gen_inputs, eval=eval)
+                gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -126,12 +138,15 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
-            infer_inputs = {'x': samples['x'][..., 1:-1], 'x_prev': samples['x'][..., :-2],
+            infer_inputs = {'x': samples['x'], 'x_prev': samples['x_prev'],
                             self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v, eval=eval)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
+
+        if self.generate:
+            return None, None # infer_prev, gen_prev
 
     def _dump_train_viz(self):
         # Dumping gradient norm
@@ -178,12 +193,12 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                 ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits'])),
             ]
 
-            go_symbol = torch.ones([self.h_params.test_prior_samples]).long() * self.index[self.generated_v].stoi['<go>']
+            go_symbol = torch.ones([self.h_params.test_prior_samples]).long() * self.index[self.generated_v].stoi['<eos>']
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
             x_prev = go_symbol
             for _ in range(self.h_params.max_len):
                 self.gen_bn({'x_prev': x_prev})
-                x_prev = torch.cat([x_prev, torch.argmax(self.generated_v.post_params['logits'],
+                x_prev = torch.cat([x_prev, torch.argmax(self.generated_v.post_samples,
                                                          dim=-1)[..., -1].unsqueeze(-1)],
                                    dim=-1)
 
@@ -214,17 +229,18 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                     x_hat_params = x_hat_params[0]
 
         text = ' |||| '.join([' '.join([self.index[self.generated_v].itos[x_i_h_p_j]
-                                        for x_i_h_p_j in x_i_h_p]).split('<eos>')[0]
-                          for x_i_h_p in x_hat_params]).replace('<pad>', '_').replace('<unk>', '<?>')
+                                        for x_i_h_p_j in x_i_h_p])#.split('<eos>')[0]
+                          for x_i_h_p in x_hat_params]).replace('<pad>', '_').replace('<unk>', '<?>').replace('<eos>',
+                                                                                                              '\n')
         return text
 
     def get_perplexity(self, iterator):
-        # TODO: adapt to the new workflow
         with torch.no_grad():
             neg_log_perplexity_lb = []
             total_samples = []
+            infer_prev, gen_prev = None, None
             for batch in tqdm(iterator, desc="Getting Model Perplexity"):
-                self({'x': batch.text})
+                infer_prev, gen_prev = self({'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev))
                 elbo = -sum([loss.get_loss(actual=True)
                              for loss in self.losses if isinstance(loss, ELBo)])
                 neg_log_perplexity_lb.append(elbo)
@@ -246,7 +262,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
                 accurate_preds = 0
                 total_samples = 0
                 for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
-                    self({'x': batch.text, 'y': batch.label}, eval=False)
+                    self({'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1], 'y': batch.label}, eval=False)
 
                     num_classes = self.supervised_v.size
                     predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)

@@ -14,7 +14,8 @@ class XInfer(Categorical):
         else:
             repnet = None
         super(XInfer, self).__init__(word_embeddings.weight.shape[0], 'x', h_params.device, word_embeddings,
-                                     h_params.vocab_ignore_index, markovian=not has_rep, repnet=repnet)
+                                     h_params.vocab_ignore_index, markovian=not has_rep, repnet=repnet,
+                                     word_dropout=h_params.word_dropout)
 
 
 class XGen(Categorical):
@@ -33,7 +34,7 @@ class XPrevGen(Categorical):
             repnet = None
         super(XPrevGen, self).__init__(word_embeddings.weight.shape[0], 'x_prev', h_params.device, word_embeddings,
                                        h_params.vocab_ignore_index, markovian=not has_rep, is_placeholder=True,
-                                       repnet=repnet)
+                                       repnet=repnet, word_dropout=h_params.word_dropout)
 
 
 class ZInfer(Gaussian):
@@ -45,9 +46,21 @@ class ZInfer(Gaussian):
 
 class ZGen(Gaussian):
     def __init__(self, h_params, repnet):
-        #prior_seq_link = links.GRULink(h_params.z_size, h_params.z_size*5, h_params.z_size, 4, Gaussian.parameters)
-        super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device, #prior_sequential_link=prior_seq_link,
+        super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
                                    markovian=h_params.markovian, allow_prior=False, repnet=repnet)
+
+
+class ZSInfer(Gaussian):
+    def __init__(self, h_params, repnet):
+        iw = any([l == IWLBo for l in h_params.losses])
+        super(ZSInfer, self).__init__(h_params.z_size, 'zs', h_params.device, markovian=h_params.markovian, inv_seq=True,
+                                      stl=True, iw=iw, repnet=repnet)
+
+
+class ZSGen(Gaussian):
+    def __init__(self, h_params, repnet):
+        super(ZSGen, self).__init__(h_params.z_size, 'zs', h_params.device,
+                                    markovian=h_params.markovian, allow_prior=False, repnet=repnet)
 
 
 class YEmbInfer(Gaussian):

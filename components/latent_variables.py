@@ -57,6 +57,8 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.post_log_probas = None
         self.post_gt_log_probas = None
 
+        self.prev_state = None
+
     def clear_values(self):
         self.prior_samples = None
         self.prior_reps = None
@@ -325,7 +327,8 @@ class Categorical(BaseLatentVariable):
     parameters = {'logits': nn.Sequential()}
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1,
+                 word_dropout=None):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
@@ -336,6 +339,7 @@ class Categorical(BaseLatentVariable):
                                           name, prior_sequential_link, posterior, markovian, allow_prior,
                                           is_placeholder, inv_seq, stl, repnet, iw)
         self.embedding = embedding
+        self.w_drp = nn.Dropout(word_dropout) if word_dropout is not None else None
         if self.rep_net is not None and not markovian:
             embedding_size = embedding.weight.shape[1]
             self.rep_net = repnet or nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
@@ -358,18 +362,24 @@ class Categorical(BaseLatentVariable):
             embedded = torch.matmul(samples, self.embedding.weight)
         else:
             embedded = self.embedding(samples)
+
+        if self.w_drp is not None:
+            drp_mask = self.w_drp(torch.ones(embedded.shape[:-1], device=self.prior_logits.device)).unsqueeze(-1)
+            embedded = embedded*drp_mask*(1-self.w_drp.p)
+
         if self.rep_net is None:
             reps = embedded
         else:
-            depth, directions = self.rep_net.num_layers, 2 if self.rep_net.bidirectional else 1
-            prev_rep = prev_rep.view(depth*directions, -1, prev_rep.shape[-1]) if prev_rep is not None else None
-
             if step_wise:
+                depth, directions = self.rep_net.num_layers, 2 if self.rep_net.bidirectional else 1
+                if prev_rep is not None and len(prev_rep.shape) != 3:
+                    prev_rep = prev_rep.view(depth * directions, -1, prev_rep.shape[-1])
                 flatten = embedded.ndim > 2
                 if flatten:
                     orig_shape = embedded.shape
                     embedded = embedded.view(-1, orig_shape[-1])
-                reps = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep)[0].squeeze(1)
+                reps, self.prev_state = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep)
+                reps = reps.squeeze(1)
             else:
                 flatten = embedded.ndim > 3
                 if flatten:
@@ -377,7 +387,7 @@ class Categorical(BaseLatentVariable):
                     embedded = embedded.view(-1, *orig_shape[-2:])
                 if self.inv_seq:
                     embedded = torch.flip(embedded, dims=[-2])
-                reps = self.rep_net(embedded, hx=prev_rep)[0]
+                reps, self.prev_state = self.rep_net(embedded, hx=prev_rep)
                 if self.inv_seq:
                     reps = torch.flip(reps, dims=[-2])
             if flatten:

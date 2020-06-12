@@ -42,7 +42,7 @@ class Supervision(BaseCriterion):
         if self.supervised_lv.name in self.h_params.is_weighted:
             counts = [model.index[self.supervised_lv].freqs[w] for w in self.model.index[self.supervised_lv].itos]
             freqs = torch.sqrt(torch.Tensor([1/c if c != 0 else 0 for c in counts]).to(self.h_params.device))
-            criterion_params['weight'] = freqs/torch.sum(freqs)
+            criterion_params['weight'] = freqs/torch.sum(freqs)*len(freqs)
 
         if isinstance(self.supervised_lv, Categorical):
             self.criterion = nn.CrossEntropyLoss(**criterion_params)
@@ -101,7 +101,7 @@ class ELBo(BaseCriterion):
         if self.generated_v.name in self.h_params.is_weighted:
             counts = [model.index[self.generated_v].freqs[w] for w in self.model.index[self.generated_v].itos]
             freqs = torch.sqrt(torch.Tensor([1/c if c != 0 else 0 for c in counts]).to(self.h_params.device))
-            criterion_params['weight'] = freqs/torch.sum(freqs)
+            criterion_params['weight'] = freqs/torch.sum(freqs)*len(freqs)
         self.criterion = nn.CrossEntropyLoss(**criterion_params)
         if self.generated_v.name in self.h_params.is_weighted:
             criterion_params.pop('weight')

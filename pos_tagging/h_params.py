@@ -47,7 +47,8 @@ class DefaultHParams:
                  highway=True,
                  dropout=0.,
                  input_dimensions=2,
-                 markovian=True):
+                 markovian=True,
+                 word_dropout=0.0):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -103,6 +104,7 @@ class DefaultHParams:
         self.grad_clip = grad_clip
         self.kl_th = kl_th
         self.dropout = dropout
+        self.word_dropout = word_dropout
 
         # Sampling hyper_parameters
         self.training_iw_samples = training_iw_samples

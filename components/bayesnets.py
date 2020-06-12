@@ -67,9 +67,10 @@ class BayesNet(nn.Module):
         for var in self.variables:
             var.clear_values()
 
-    def forward(self, inputs, n_iw=None, target=None, eval=False):
+    def forward(self, inputs, n_iw=None, target=None, eval=False, prev_states=None):
         # The forward pass propagates the root variable values yielding
-        # assert n_iw is not None or not self.iw, "You didn't provide a number of importance weights."
+        if prev_states is None:
+            prev_states = {v: None for v in self.variables}
 
         # Loading the inputs into the network
         self.clear_values()
@@ -106,7 +107,8 @@ class BayesNet(nn.Module):
                 if parents_available and still_unfilled:
                     # Gathering conditioning variables
                     max_cond_lvl = self.dp_lvl[lv] # max([self.dp_lvl[p] for p in self.parent[lv]])
-                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl) for p in self.parent[lv]}
+                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl, prev_states)
+                                     for p in self.parent[lv]}
 
                     # Setting up ground truth to be injected if any
                     gt_lv = self.variables_star[lv] if lv in self.variables_star else None
@@ -140,9 +142,13 @@ class BayesNet(nn.Module):
             assert all([lv in self.variables_hat or lv in self.variables_star for lv in self.variables])
             assert all([lv in self.log_proba or (lv in self.input_variables and not lv.allow_prior)
                         for lv in self.variables])
+        new_prev_state = {v: tuple(v_i.detach() for v_i in v.prev_state) if v.prev_state is not None else None
+                          for v in self.variables}
+        return new_prev_state
 
-    def _ready_condition(self, lv, n_iw, max_lvl):
-        value = lv.rep(self.variables_star[lv], step_wise=False) if lv in self.variables_star else lv.post_reps
+    def _ready_condition(self, lv, n_iw, max_lvl, prev_states):
+        value = lv.rep(self.variables_star[lv], step_wise=False, prev_rep=prev_states[lv])\
+                if lv in self.variables_star else lv.post_reps
         if n_iw is not None and n_iw > 1:
             for _ in range(self.dp_lvl[lv] + (1 if lv.iw else 0), max_lvl):
                 expand_arg = [n_iw] + list(value.shape)
