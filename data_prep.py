@@ -28,18 +28,23 @@ class IMDBData:
 
 class UDPoSDaTA:
     def __init__(self, max_len, batch_size, max_epochs, device):
-        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len,
-                                init_token='<go>', eos_token='<eos>')
-        label_field = data.Field(sequential=True,  fix_length=max_len-2,
-                                 batch_first=True)
+        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, pad_token='<unk>', init_token='<eos>'
+                                , is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        label_field = data.Field(fix_length=max_len-1, batch_first=True)
 
         # make splits for data
-        unsup_train, unsup_val, unsup_test = MyPennTreebank.splits(text_field)
+        #unsup_train, unsup_val, unsup_test = MyPennTreebank.splits(text_field)
+        #unsup_train, unsup_val, unsup_test = datasets.PennTreebank.splits(text_field)
+        #unsup_train, unsup_val, unsup_test = datasets.WikiText2.splits(text_field)
+        unsup_train, unsup_val, unsup_test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
         train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
 
         # build the vocabulary
         text_field.build_vocab(unsup_train)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
+        #self.train_iter, self.unsup_val_iter,  _ = data.BPTTIterator.splits((unsup_train, unsup_val, unsup_test),
+        #                                                                    batch_size=batch_size, bptt_len=max_len,
+        #                                                                    device=device, repeat=False)
 
         # make iterator for splits
         self.train_iter, self.unsup_val_iter,  _ = data.BucketIterator.splits(
@@ -192,6 +197,8 @@ class LanguageModelingDataset(data.Dataset):
         seq_lens = []
         with io.open(path, encoding=encoding) as f:
             for i, line in enumerate(f):
+                #if 'unk' in line: print(line)
+                #line.replace('<unk>', '<xxx>')
                 processed_line = text_field.preprocess(line)
                 seq_lens.append(len(processed_line))
                 #for sentence in ' '.join(processed_line).replace('! ', '<spl>')\
