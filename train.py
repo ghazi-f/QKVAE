@@ -26,16 +26,16 @@ parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=100, type=int)
+parser.add_argument("--embedding_dim", default=20, type=int)
 parser.add_argument("--pos_embedding_dim", default=100, type=int)
 parser.add_argument("--z_size", default=200, type=int)
-parser.add_argument("--text_rep_l", default=1, type=int)
-parser.add_argument("--text_rep_h", default=256, type=int)
-parser.add_argument("--encoder_h", default=128, type=int)
+parser.add_argument("--text_rep_l", default=3, type=int)
+parser.add_argument("--text_rep_h", default=512, type=int)
+parser.add_argument("--encoder_h", default=512, type=int)
 parser.add_argument("--encoder_l", default=1, type=int)
-parser.add_argument("--pos_h", default=128, type=int)
+parser.add_argument("--pos_h", default=512, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=128, type=int)
+parser.add_argument("--decoder_h", default=512, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=False, type=bool)
@@ -46,8 +46,8 @@ parser.add_argument("--test_prior_samples", default=2, type=int)
 parser.add_argument("--anneal_kl0", default=000, type=int)
 parser.add_argument("--anneal_kl1", default=000, type=int)
 parser.add_argument("--grad_clip", default=10, type=float)
-parser.add_argument("--kl_th", default=0.1/32, type=float or None)
-parser.add_argument("--dropout", default=0.3, type=float)
+parser.add_argument("--kl_th", default=0.0/32, type=float or None)
+parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=1e-6, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
@@ -63,13 +63,13 @@ if False:
     flags.grad_accu = 1
     flags.test_name = "Supervised/1.0test3"
     flags.supervision_proportion = 1.0
-if False:
-    flags.losses = 'SSVAE'
-    flags.batch_size = 80
-    flags.grad_accu = 1
-    flags.max_len = 40
-    flags.test_name = "SSVAE/0.03Gen/Gen_UD"
-    flags.supervision_proportion = 0.03
+if True:
+    flags.losses = 'VAE'
+    flags.batch_size = 32
+    flags.grad_accu = 10
+    flags.max_len = 96
+    flags.test_name = "SSVAE/0.03Gen/Gen_wiki"
+    flags.supervision_proportion = 1
 
 # torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
@@ -141,15 +141,14 @@ def main():
 
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
+            if training_batch.text.shape[1] < 2: continue
             """if data.vocab.stoi['<xxx>'] not in training_batch.text[:2]:
                 continue
             else:
                 print([' '.join([data.vocab.itos[t] for t in text_i[1:]]) for
                        text_i in training_batch.text[:2]])
                 continue"""
-            if len(training_batch.text[0]) > MAX_LEN:
-                training_batch.text = training_batch.text[:, :MAX_LEN]
-                training_batch.text = training_batch.label[:, :MAX_LEN-2]
+
             if model.step == h_params.anneal_kl[0]:
                 model.optimizer = h_params.optimizer(model.parameters(), **h_params.optimizer_kwargs)
                 print('Refreshed optimizer !')
@@ -195,7 +194,7 @@ def main():
                 print('reinitializing unsupervised training data')
                 break
         data.reinit_iterator('valid')
-        if model.step > h_params.anneal_kl[0]:
+        if model.step >= h_params.anneal_kl[0]:
             model.eval()
             if model.generate:
                 pp_ub = model.get_perplexity(data.unsup_val_iter)

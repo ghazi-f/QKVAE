@@ -82,7 +82,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             # Loss computation and backward pass
             losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
             sum(losses_uns).backward()
-            self.infer_last_states, self.gen_last_states = None, None
+            # self.infer_last_states, self.gen_last_states = None, None
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Forward pass
@@ -146,7 +146,8 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
 
         if self.generate:
-            return None, None # infer_prev, gen_prev
+            # return None, None
+            return infer_prev, gen_prev
 
     def _dump_train_viz(self):
         # Dumping gradient norm
@@ -240,6 +241,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             total_samples = []
             infer_prev, gen_prev = None, None
             for batch in tqdm(iterator, desc="Getting Model Perplexity"):
+                if batch.text.shape[1] < 2: continue
                 infer_prev, gen_prev = self({'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev))
                 elbo = -sum([loss.get_loss(actual=True)
                              for loss in self.losses if isinstance(loss, ELBo)])

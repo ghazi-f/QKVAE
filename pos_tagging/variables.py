@@ -14,8 +14,7 @@ class XInfer(Categorical):
         else:
             repnet = None
         super(XInfer, self).__init__(word_embeddings.weight.shape[0], 'x', h_params.device, word_embeddings,
-                                     h_params.vocab_ignore_index, markovian=not has_rep, repnet=repnet,
-                                     word_dropout=h_params.word_dropout)
+                                     h_params.vocab_ignore_index, markovian=not has_rep, repnet=repnet)
 
 
 class XGen(Categorical):
@@ -40,7 +39,7 @@ class XPrevGen(Categorical):
 class ZInfer(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses])
-        super(ZInfer, self).__init__(h_params.z_size, 'z', h_params.device, markovian=h_params.markovian, inv_seq=True,
+        super(ZInfer, self).__init__(h_params.z_size, 'z', h_params.device, markovian=h_params.markovian,
                                      stl=True, iw=iw, repnet=repnet)
 
 
@@ -53,7 +52,7 @@ class ZGen(Gaussian):
 class ZSInfer(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses])
-        super(ZSInfer, self).__init__(h_params.z_size, 'zs', h_params.device, markovian=h_params.markovian, inv_seq=True,
+        super(ZSInfer, self).__init__(h_params.z_size, 'zs', h_params.device, markovian=h_params.markovian,
                                       stl=True, iw=iw, repnet=repnet)
 
 

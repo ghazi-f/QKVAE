@@ -35,20 +35,21 @@ class UDPoSDaTA:
         # make splits for data
         #unsup_train, unsup_val, unsup_test = MyPennTreebank.splits(text_field)
         #unsup_train, unsup_val, unsup_test = datasets.PennTreebank.splits(text_field)
-        #unsup_train, unsup_val, unsup_test = datasets.WikiText2.splits(text_field)
-        unsup_train, unsup_val, unsup_test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
+        unsup_train, unsup_val, unsup_test = datasets.WikiText2.splits(text_field)
+        #unsup_train, unsup_val, unsup_test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
         train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
 
         # build the vocabulary
         text_field.build_vocab(unsup_train)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
-        #self.train_iter, self.unsup_val_iter,  _ = data.BPTTIterator.splits((unsup_train, unsup_val, unsup_test),
-        #                                                                    batch_size=batch_size, bptt_len=max_len,
-        #                                                                    device=device, repeat=False)
+        self.train_iter, self.unsup_val_iter,  _ = data.BPTTIterator.splits((unsup_train, unsup_val, unsup_test),
+                                                                            batch_size=batch_size, bptt_len=max_len,
+                                                                            device=device, repeat=False, shuffle=False,
+                                                                            sort=False)
 
-        # make iterator for splits
-        self.train_iter, self.unsup_val_iter,  _ = data.BucketIterator.splits(
-            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        ## make iterator for splits
+        #self.train_iter, self.unsup_val_iter,  _ = data.BucketIterator.splits(
+        #    (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         self.sup_iter, _, _ = data.BucketIterator.splits(
             (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
