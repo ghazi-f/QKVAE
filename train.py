@@ -63,7 +63,7 @@ if False:
     flags.grad_accu = 1
     flags.test_name = "Supervised/1.0test3"
     flags.supervision_proportion = 1.0
-if True:
+if False:
     flags.losses = 'VAE'
     flags.batch_size = 120
     flags.grad_accu = 1
