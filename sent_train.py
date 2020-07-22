@@ -52,11 +52,11 @@ parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
-parser.add_argument("--wait_epochs", default=2, type=float)
+parser.add_argument("--wait_epochs", default=4, type=float)
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'SSPIWO'
     flags.batch_size = 8
     flags.grad_accu = 8
