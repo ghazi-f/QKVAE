@@ -4,7 +4,8 @@ from collections import defaultdict
 
 import torch
 import torch.nn as nn
-from torch.nn.modules.transformer import TransformerEncoder, TransformerEncoderLayer
+from torch.nn.modules.transformer import TransformerEncoder, TransformerEncoderLayer, TransformerDecoder, \
+    TransformerDecoderLayer
 import torch.nn.functional as F
 
 EPSILON = 1e-8
@@ -35,6 +36,13 @@ class SequentialLink(BaseLink):
                                              dropout=dropout, batchnorm=batchnorm, residual=residual)
 
 
+class NamedLink(BaseLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, dropout=0.,
+                 batchnorm=False, residual=None):
+        super(NamedLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
+                                             dropout=dropout, batchnorm=batchnorm, residual=residual)
+
+
 # ============================================== LINK CLASSES ==========================================================
 
 
@@ -44,22 +52,21 @@ class MLPLink(BaseLink):
         super(MLPLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
                                       dropout=dropout, batchnorm=batchnorm, residual=residual)
 
-        self.mlp = nn.ModuleList([nn.Linear(input_size, output_size)] +
-                                 [nn.Linear((input_size + output_size*i) if self.highway else output_size, output_size)
-                                  for i in range(1, depth)])
+        if depth>1:
+            self.mlp = nn.ModuleList([nn.Linear(input_size, output_size)] +
+                                     [nn.Linear((input_size + output_size*i) if self.highway else output_size, output_size)
+                                      for i in range(2, depth)])
+        else:
+            self.mlp = []
         self.drp_layer = torch.nn.Dropout(p=dropout)
         self.bn = nn.BatchNorm1d(z_size)
 
-        mlp_out_size = (output_size * depth) if self.highway else output_size
+        mlp_out_size = ((output_size * depth) if self.highway else output_size) if depth > 1 else input_size
         if embedding is not None:
-            self.sbn = sbn
-            if sbn is not None:
-                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
-            else:
-                z_params_size = embedding.weight.shape[1]
-            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_params_size)
+            assert mlp_out_size == embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size)
                                                      for param in params})
-            #self.to_emb = nn.Linear(z_params_size, embedding.weight.shape[0])
+            self.hidden_to_z_params['logits'].weight = embedding.weight
         else:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size) for param in params})
 
@@ -73,19 +80,14 @@ class MLPLink(BaseLink):
         outputs = []
         input = x
         for layer in self.mlp:
-            outputs.append(layer(input))# if len(outputs) else x)
+            outputs.append(layer(input))
             input = torch.cat([input, self.drp_layer(F.gelu(outputs[-1]))], dim=-1) if self.highway else outputs[-1]
 
-        outputs = torch.cat(outputs, dim=-1) if self.highway else outputs[-1]
+        outputs = (torch.cat(outputs, dim=-1) if self.highway else outputs[-1]) if len(self.mlp) else input
 
-        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
                     self.params.items()}
-        if self.embedding is not None:
-            if self.sbn is not None:
-                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
-            else:
-                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
-                #z_params['logits'] = self.to_emb(z_params['logits'])
+
         if 'loc' in z_params and self.batchnorm:
             out_shape = z_params['loc'].shape
             z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
@@ -96,6 +98,124 @@ class MLPLink(BaseLink):
         if self.residual is not None:
             z_params['loc'] = z_params_res['loc'] + z_params['loc']
 
+        #z_params = {'logits': self.hidden_to_logits(self.hidden_to_z_params['logits'](self.mlp[0](self.drp_layer(x))))}
+        #z_params = {'logits': self.hidden_to_logits((self.drp_layer(x)))}
+        return z_params
+
+
+class LastStateMLPLink(BaseLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None):
+        super(LastStateMLPLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
+                                      dropout=dropout, batchnorm=batchnorm, residual=residual)
+
+        if depth>1:
+            self.mlp = nn.ModuleList([nn.Linear(input_size, output_size)] +
+                                     [nn.Linear((input_size + output_size*i) if self.highway else output_size, output_size)
+                                      for i in range(2, depth)])
+        else:
+            self.mlp = []
+        self.drp_layer = torch.nn.Dropout(p=dropout)
+        self.bn = nn.BatchNorm1d(z_size)
+
+        mlp_out_size = ((output_size * depth) if self.highway else output_size) if depth > 1 else input_size
+        if embedding is not None:
+            assert mlp_out_size == embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size)
+                                                     for param in params})
+            self.hidden_to_z_params['logits'].weight = embedding.weight
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size) for param in params})
+
+    def forward(self, x, z_prev=None):
+        if self.residual is not None:
+            x_res, x = x
+            x_res = self.drp_layer(x_res)
+            z_params_res = self.residual['link'](x_res, z_prev)
+
+        seq_size = x.shape[-2]
+        x = x[..., -1, :]
+        x = self.drp_layer(x)
+        outputs = []
+        input = x
+        for layer in self.mlp:
+            outputs.append(layer(input))
+            input = torch.cat([input, self.drp_layer(F.gelu(outputs[-1]))], dim=-1) if self.highway else outputs[-1]
+
+        outputs = (torch.cat(outputs, dim=-1) if self.highway else outputs[-1]) if len(self.mlp) else input
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
+                    self.params.items()}
+        for k, v in z_params.items():
+            z_params[k] = v.unsqueeze(-2).expand(*v.shape[:-1], seq_size, v.shape[-1])
+
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            z_params['loc'] = z_params_res['loc'] + z_params['loc']
+
+        #z_params = {'logits': self.hidden_to_logits(self.hidden_to_z_params['logits'](self.mlp[0](self.drp_layer(x))))}
+        #z_params = {'logits': self.hidden_to_logits((self.drp_layer(x)))}
+        return z_params
+
+
+class LSTMLink(BaseLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None):
+        super(LSTMLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
+                                      dropout=dropout, batchnorm=batchnorm, residual=residual)
+
+        self.rnn = nn.LSTM(input_size, output_size, depth, batch_first=True, bidirectional=False, dropout=dropout)
+
+        self.drp_layer = torch.nn.Dropout(p=dropout)
+        self.bn = nn.BatchNorm1d(z_size)
+
+        if embedding is not None:
+            assert output_size == embedding.weight.shape[1], 'output size {} is different from ' \
+                                                             'embedding size {}'.format(output_size,
+                                                                                        embedding.weight.shape[1])
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size)
+                                                     for param in params})
+            self.hidden_to_z_params['logits'].weight = embedding.weight
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
+
+    def forward(self, x, z_prev=None):
+        if self.residual is not None:
+            x_res, x = x
+            x_res = self.drp_layer(x_res)
+            z_params_res = self.residual['link'](x_res, z_prev)
+
+        if x.ndim>3:
+            batch_shape = x.shape[:-2]
+            x = x.view(-1, *x.shape[-2:])
+        else:
+            batch_shape = None
+        x = self.drp_layer(x)
+        outputs, _ = self.rnn(x)
+        if batch_shape is not None:
+            outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
+                    self.params.items()}
+
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            z_params['loc'] = z_params_res['loc'] + z_params['loc']
+
+        #z_params = {'logits': self.hidden_to_logits(self.hidden_to_z_params['logits'](self.mlp[0](self.drp_layer(x))))}
+        #z_params = {'logits': self.hidden_to_logits((self.drp_layer(x)))}
         return z_params
 
 
@@ -224,6 +344,165 @@ class TransformerLink(BaseLink):
         return mask
 
 
+class CoattentiveTransformerLink(BaseLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_targets=20, nheads=2):
+        super(CoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
+                                                         highway, dropout=dropout, batchnorm=batchnorm,
+                                                         residual=residual)
+        assert output_size % n_targets == 0
+        assert z_size % n_targets == 0
+        output_size = int(output_size/n_targets)
+        self.target = nn.Embedding(n_targets, output_size).weight
+
+        self.input_to_hidden = nn.Linear(input_size, output_size)
+        self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size*n_targets,
+                                                                      dropout=dropout, activation='gelu'), depth)
+        self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,
+                                                                      dropout=dropout, activation='gelu'), depth)
+        self.pe = PositionalEncoding(output_size)
+        self.bn = nn.BatchNorm1d(z_size)
+
+        if embedding is not None:
+            self.sbn = sbn
+            if sbn is not None:
+                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
+            else:
+                z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, int(z_size/n_targets))
+                                                     for param in params})
+
+    def forward(self, x, z_prev=None):
+        if self.residual is not None:
+            x_res, x = x
+            z_params_res = self.residual['link'](x_res, z_prev)
+        x = self.input_to_hidden(x)
+        if x.ndim > 3:
+            batch_orig_shape = x.shape[:-2]
+            x = x.view(-1, *x.shape[-2:])
+        else:
+            batch_orig_shape = None
+        x = self.transformer_enc(self.pe(x.transpose(-2, 0)))
+        seq_len = x.shape[0]
+        target = self.target
+        while target.ndim<x.ndim:
+            new_dimension = x.ndim - target.ndim
+            target = target.unsqueeze(1)
+            target = target.expand((target.shape[0], x.shape[new_dimension], *target.shape[2:]))
+        outputs = self.transformer_dec(memory=x, tgt=target).transpose(-2, 0)
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+                    self.params.items()}
+
+        z_params = {k: v.reshape(*v.shape[:-2], 1, v.shape[-2]*v.shape[-1]).expand(*v.shape[:-2], seq_len,
+                                                                                   v.shape[-2]*v.shape[-1])
+                    for k, v in z_params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            z_params['loc'] = z_params_res['loc'] + z_params['loc']
+
+        return z_params
+
+    def _generate_square_subsequent_mask(self, sz):
+        device = next(self.parameters()).device
+        mask = (torch.triu(torch.ones(sz, sz, device=device)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+
+class ConditionalCoattentiveTransformerLink(NamedLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, memory=None, targets=None,
+                 nheads=2):
+        super(ConditionalCoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth,
+                                                                    params, embedding, highway, dropout=dropout,
+                                                                    batchnorm=batchnorm, residual=residual)
+        output_size = int(output_size/n_mems)
+
+        self.input_to_hidden = nn.Linear(input_size, output_size)
+        self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size*n_mems,
+                                                                      dropout=dropout, activation='gelu', n_mems=n_mems)
+                                                  , depth)
+        self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
+                                                                      dropout=dropout, activation='gelu'), depth)
+        self.memory, self.targets = memory, targets
+        self.pe = PositionalEncoding(output_size)
+        self.bn = nn.BatchNorm1d(z_size)
+        self.n_mems, self.output_size = n_mems, output_size
+
+        if embedding is not None:
+            self.sbn = sbn
+            if sbn is not None:
+                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
+            else:
+                z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
+        assert self.residual is None, "Named links still can't have residuals"
+
+    def forward(self, x, z_prev=None):
+        memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
+        memory = memory.view((*memory.shape[:-1], self.n_mems, self.output_size))
+        targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
+
+        if memory.ndim > 3:
+            batch_orig_shape = memory.shape[:-2]
+            memory = memory.view(-1, *memory.shape[-2:])
+            targets = targets.view(-1, *targets.shape[-2:])
+        else:
+            batch_orig_shape = None
+        targets = self.input_to_hidden(targets)
+        targets = self.pe(targets.transpose(-2, 0))
+        target_mask = self._generate_square_subsequent_mask(targets.shape[0])
+        memory = self.pe(memory.transpose(-2, 0))
+        memory = self.transformer_enc(memory)
+
+        outputs = self.transformer_dec(memory=memory, tgt=targets, tgt_mask=target_mask).transpose(-2, 0)
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+                    self.params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        return z_params
+
+    def _generate_square_subsequent_mask(self, sz):
+        device = next(self.parameters()).device
+        mask = (torch.triu(torch.ones(sz, sz, device=device)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+
 class PositionalEncoding(nn.Module):
     # Took this snippet from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
     def __init__(self, d_model, max_len=500):
@@ -238,4 +517,38 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
+        print('pe stats:', torch.mean(self.pe[:x.size(0), :]*10), torch.std(self.pe[:x.size(0), :]*10))
         return x + self.pe[:x.size(0), :]
+
+
+class SpecialTransformerEncoder(TransformerEncoderLayer):
+
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", n_mems=20):
+        super(SpecialTransformerEncoder, self).__init__(d_model, nhead, dim_feedforward, dropout, activation)
+        self.k, self.q = nn.Embedding(n_mems, d_model).weight, nn.Embedding(n_mems, d_model).weight
+
+    def forward(self, src, src_mask=None, src_key_padding_mask=None):
+        r"""Pass the input through the encoder layer.
+
+        Args:
+            src: the sequnce to the encoder layer (required).
+            src_mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        q = self.q.unsqueeze(1).expand(self.q.shape[0], src.shape[1], self.q.shape[1])
+        k = self.k.unsqueeze(1).expand(self.k.shape[0], src.shape[1], self.k.shape[1])
+
+        src2 = self.self_attn(src, k, src, attn_mask=src_mask,
+                              key_padding_mask=src_key_padding_mask)[0]
+        src = src + self.dropout1(src2)
+        src = self.norm1(src)
+        if hasattr(self, "activation"):
+            src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        else:  # for backward compatibility
+            src2 = self.linear2(self.dropout(F.relu(self.linear1(src))))
+        src = src + self.dropout2(src2)
+        src = self.norm2(src)
+        return src

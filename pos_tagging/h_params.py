@@ -48,7 +48,9 @@ class DefaultHParams:
                  dropout=0.,
                  input_dimensions=2,
                  markovian=True,
-                 word_dropout=0.0):
+                 word_dropout=0.0,
+                 contiguous_lm=False,
+                 n_latents=1):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -62,6 +64,7 @@ class DefaultHParams:
         self.n_epochs = n_epochs
 
         # Corpus related hyper-parameters
+        self.contiguous_lm = contiguous_lm
         self.vocab_size = vocab_size
         self.tag_size = tag_size
         self.input_dimensions = input_dimensions
@@ -86,6 +89,7 @@ class DefaultHParams:
         self.decoder_h = decoder_h
         self.decoder_l = decoder_l
 
+        self.n_latents = n_latents
         self.graph_generator = graph_generator
         self.highway = highway
         self.markovian = markovian

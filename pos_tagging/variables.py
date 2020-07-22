@@ -44,9 +44,9 @@ class ZInfer(Gaussian):
 
 
 class ZGen(Gaussian):
-    def __init__(self, h_params, repnet):
+    def __init__(self, h_params, repnet, allow_prior=False):
         super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=False, repnet=repnet)
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
 
 
 class ZSInfer(Gaussian):

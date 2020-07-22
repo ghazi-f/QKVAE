@@ -6,7 +6,8 @@ import torch.nn.functional as F
 
 from torch.distributions import MultivariateNormal, RelaxedOneHotCategorical, Normal, Independent
 
-from components.links import SequentialLink
+from components.links import SequentialLink, NamedLink
+from time import time
 
 
 # ============================================== BASE CLASS ============================================================
@@ -14,13 +15,13 @@ from components.links import SequentialLink
 class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     # Define the parameters with their corresponding layer activation function
     # NOTE: identity function behaviour can be produced with torch.nn.Sequential() as an activation function
-    parameters = {}
+    parameter_activations = {}
 
     def __init__(self, prior, size, prior_params, name, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
         # IDEA: Lock latent variable behaviour according to it's role in the bayesian network
         super(BaseLatentVariable, self).__init__()
-        assert len(self.parameters) > 0
+        assert len(self.parameter_activations) > 0
         self.prior_sequential_link = prior_sequential_link
         self.prior = prior
         self.allow_prior = allow_prior
@@ -47,9 +48,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.prior_log_probas = None
 
         self.name = name
-        self.items = self.parameters.items
-        self.values = self.parameters.values
-        self.keys = self.parameters.keys
+        self.items = self.parameter_activations.items
+        self.values = self.parameter_activations.values
+        self.keys = self.parameter_activations.keys
 
         self.post_params = None
         self.post_samples = None
@@ -88,36 +89,32 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     def prior_sample(self, sample_shape):
         assert not self.inv_seq, "Reversed priors are still not permitted"
         assert self.allow_prior, "{} Doesn't allow for a prior".format(self)
-        if self.prior.has_rsample:
-            # Returns a sample from P(z)
-            if self.prior_sequential_link is not None:
-                self.prior_samples = []
-                self.prior_log_probas = []
-                self.prior_reps = []
-                prev_rep = None
-                prior_params_i = self.prior_params
-                for i in range(sample_shape[-1]):
-                    prior_distrib = self.prior(**prior_params_i)
-                    self.prior_samples.append(prior_distrib.sample(sample_shape[:-1] if i == 0 else ()).squeeze())
-                    self.prior_log_probas.append(prior_distrib.log_prob(self.prior_samples[-1]))
-                    self.prior_reps.append(self.rep(self.prior_samples[-1], prev_rep=prev_rep))
-                    prev_rep = self.prior_reps[-1]
-                    prior_params_i = self.prior_sequential_link(prev_rep, prev_rep)
-                    if isinstance(self, Categorical):
-                        prior_params_i = {**prior_params_i, **{'temperature': self.prior_temperature}}
-                self.prior_samples = torch.stack(self.prior_samples, dim=-2)
-                self.prior_log_probas = torch.stack(self.prior_log_probas, dim=-1)
-
-            else:
-                prior_distrib = self.prior(**self.prior_params)
-                self.prior_samples = prior_distrib.sample(sample_shape)
-                self.prior_log_probas = prior_distrib.log_prob(self.prior_samples)
-                self.prior_reps = self.rep(self.prior_samples, step_wise=False)
-
-            return self.prior_samples, self.prior_log_probas
+        # Returns a sample from P(z)
+        if self.prior_sequential_link is not None:
+            self.prior_samples = []
+            self.prior_log_probas = []
+            self.prior_reps = []
+            prev_rep = None
+            prior_params_i = self.prior_params
+            for i in range(sample_shape[-1]):
+                prior_distrib = self.prior(**prior_params_i)
+                self.prior_samples.append(prior_distrib.sample(sample_shape[:-1] if i == 0 else ()).squeeze())
+                self.prior_log_probas.append(prior_distrib.log_prob(self.prior_samples[-1]))
+                self.prior_reps.append(self.rep(self.prior_samples[-1], prev_rep=prev_rep))
+                prev_rep = self.prior_reps[-1]
+                prior_params_i = self.prior_sequential_link(prev_rep, prev_rep)
+                if isinstance(self, Categorical):
+                    prior_params_i = {**prior_params_i, **{'temperature': self.prior_temperature}}
+            self.prior_samples = torch.stack(self.prior_samples, dim=-2)
+            self.prior_log_probas = torch.stack(self.prior_log_probas, dim=-1)
 
         else:
-            raise NotImplementedError('Distribution {} has no reparametrized sampling method.')
+            prior_distrib = self.prior(**self.prior_params)
+            self.prior_samples = prior_distrib.sample(sample_shape)
+            self.prior_log_probas = prior_distrib.log_prob(self.prior_samples)
+            self.prior_reps = self.rep(self.prior_samples, step_wise=False)
+
+        return self.prior_samples, self.prior_log_probas
 
     def prior_log_prob(self, sample):
         assert not self.inv_seq, "Reversed priors are still not permitted"
@@ -130,7 +127,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             sample_rep = self.rep(sample, step_wise=False)
             prior_params_i = {k:v.repeat(list(sample.shape[:-2])+[1]*v.ndim) for k, v in self.prior_params.items()}
             prior_log_probas = []
-            z_params = {param: [] for param in self.parameters}
+            z_params = {param: [] for param in self.parameter_activations}
             for sample_i, sample_rep_i in zip(sample.transpose(0, -2), sample_rep.transpose(0, -2)):
                 for k, v in prior_params_i.items():
                     z_params[k].append(prior_params_i[k])
@@ -144,15 +141,19 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 
         else:
             prior_distrib = self.prior(**self.prior_params)
+            output_params = self.prior_params
+            while any([v.ndim < sample.ndim for v in output_params.values()]):
+                output_params = {k: v.unsqueeze(0).expand(sample.shape) for k, v in output_params.items()}
+            self.post_params = {k: v.expand((*sample.shape[:-1], self.size)) for k, v in output_params.items()}
             return prior_distrib.log_prob(sample)
 
-    def forward(self, link_approximator, inputs, prior=None, gt_samples=None):
+    def forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True):
         if isinstance(link_approximator, SequentialLink) or (link_approximator.residual is not None and
                                                              isinstance(link_approximator.residual['link'],
                                                                         SequentialLink)):
             self._sequential_forward(link_approximator, inputs, prior, gt_samples)
         else:
-            self._forward(link_approximator, inputs, prior, gt_samples)
+            self._forward(link_approximator, inputs, prior, gt_samples, complete=complete)
 
     @abc.abstractmethod
     def rep(self, samples, step_wise=True, prev_rep=None):
@@ -248,44 +249,48 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         else:
             self.post_gt_log_probas = None
 
-    def _forward(self, link_approximator, inputs, prior=None, gt_samples=None):
+    def _forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True):
         if link_approximator.residual is None:
-            inputs = torch.cat(list(inputs.values()), dim=-1)
+            if not isinstance(link_approximator, NamedLink):
+                inputs = torch.cat(list(inputs.values()), dim=-1)
         else:
+            assert not isinstance(link_approximator, NamedLink), "can't use a named link in a residual posterior " \
+                                                                 "construction (for now)"
             inputs = (torch.cat([v for k, v in inputs.items() if k in link_approximator.residual['conditions']],
                                 dim=-1),
                       torch.cat([v for k, v in inputs.items() if k not in link_approximator.residual['conditions']],
                                 dim=-1))
         self.post_params = link_approximator(inputs)
-        self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
-        self.post_reps = self.rep(self.post_samples, step_wise=False)
-        if gt_samples is not None:
-            if isinstance(self, Gaussian):
-                self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
-            elif isinstance(self, Categorical):
-                self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
-                if gt_samples.dtype == torch.long:
-                    gt_samples = F.one_hot(gt_samples, self.size).float()
-                    self.post_gt_log_probas = torch.sum(self.post_params['logits'] * gt_samples, dim=-1)
-                else:
+        if complete:
+            self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
+            self.post_reps = self.rep(self.post_samples, step_wise=False)
+            if gt_samples is not None:
+                if isinstance(self, Gaussian):
                     self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
-            else:
-                raise NotImplementedError("This function still hasn't been implemented for variables other than "
-                                          "Gaussians and Categoricals")
+                elif isinstance(self, Categorical):
+                    self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
+                    if gt_samples.dtype == torch.long:
+                        gt_samples = F.one_hot(gt_samples, self.size).float()
+                        self.post_gt_log_probas = torch.sum(self.post_params['logits'] * gt_samples, dim=-1)
+                    else:
+                        self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
+                else:
+                    raise NotImplementedError("This function still hasn't been implemented for variables other than "
+                                              "Gaussians and Categoricals")
 
 
 # ======================================================================================================================
 # ================================================ LATENT VARIABLE CLASSES =============================================
 
 class Gaussian(BaseLatentVariable):
-    parameters = {'loc': nn.Sequential(), 'scale': torch.nn.Softplus()}
+    parameter_activations = {'loc': nn.Sequential(), 'scale': torch.nn.Softplus()}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
         self.prior_loc = torch.zeros(size).to(device)
         self.prior_cov = torch.ones(size).to(device)
         super(Gaussian, self).__init__(diag_normal, size, {'loc': self.prior_loc,
-                                                                  'scale': self.prior_cov},
+                                                           'scale': self.prior_cov},
                                        name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
                                        inv_seq, stl, repnet, iw)
 
@@ -324,7 +329,7 @@ class Gaussian(BaseLatentVariable):
 
 
 class Categorical(BaseLatentVariable):
-    parameters = {'logits': nn.Sequential()}
+    parameter_activations = {'logits': nn.Sequential()}
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1,
@@ -357,7 +362,6 @@ class Categorical(BaseLatentVariable):
         return super(Categorical, self).posterior_sample(x_params)
 
     def rep(self, samples, step_wise=True, prev_rep=None):
-
         if samples.shape[-1] == self.size and samples.dtype != torch.long:
             embedded = torch.matmul(samples, self.embedding.weight)
         else:

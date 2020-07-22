@@ -8,6 +8,7 @@ import torch.nn as nn
 from components.latent_variables import BaseLatentVariable, Categorical, Gaussian
 from components.links import BaseLink
 
+from time import time
 
 class BayesNet(nn.Module):
     def __init__(self, vertices):
@@ -52,8 +53,8 @@ class BayesNet(nn.Module):
         else:
             self.dp_lvl = {lv: 0 for lv in self.variables}
 
-    def _get_max_iw_path(self, lv, lvl):
-        if lv.iw:
+    def _get_max_iw_path(self, lv, lvl, force_lv=None):
+        if lv.iw or (force_lv and lv.name in force_lv):
             lvl += 1
         if lv not in self.parent:
             return lvl
@@ -67,11 +68,21 @@ class BayesNet(nn.Module):
         for var in self.variables:
             var.clear_values()
 
-    def forward(self, inputs, n_iw=None, target=None, eval=False, prev_states=None):
+    def forward(self, inputs, n_iw=None, target=None, eval=False, prev_states=None, force_iw=None, complete=False):
         # The forward pass propagates the root variable values yielding
         if prev_states is None:
             prev_states = {v: None for v in self.variables}
 
+        # Getting current duplication levels
+        if force_iw:
+            dp_lvl = {}
+            for lv in self.variables:
+                lvl = 0
+                if lv in self.parent:
+                    lvl = max([self._get_max_iw_path(p, lvl, force_iw) for p in self.parent[lv]])
+                dp_lvl[lv] = lvl
+        else:
+            dp_lvl = self.dp_lvl
         # Loading the inputs into the network
         self.clear_values()
         for lv in self.variables:
@@ -106,15 +117,15 @@ class BayesNet(nn.Module):
                 still_unfilled = lv not in self.variables_hat
                 if parents_available and still_unfilled:
                     # Gathering conditioning variables
-                    max_cond_lvl = self.dp_lvl[lv] # max([self.dp_lvl[p] for p in self.parent[lv]])
-                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl, prev_states)
+                    max_cond_lvl = dp_lvl[lv]
+                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl, prev_states, dp_lvl, force_iw)
                                      for p in self.parent[lv]}
 
                     # Setting up ground truth to be injected if any
                     gt_lv = self.variables_star[lv] if lv in self.variables_star else None
 
                     # Repeating inputs if the latent variable is importance weighted
-                    if lv.iw and n_iw is not None:
+                    if (lv.iw or (force_iw and lv.name in force_iw)) and n_iw is not None:
                         for k, v in lv_conditions.items():
                             expand_arg = [n_iw]+list(v.shape)
                             lv_conditions[k] = v.unsqueeze(0).expand(expand_arg)
@@ -124,7 +135,7 @@ class BayesNet(nn.Module):
                             for _ in range(max_cond_lvl):
                                 expand_arg = [n_iw]+list(gt_lv.shape)
                                 gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
-                    lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv)
+                    lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv, complete=(lv in self.child) or complete)
                     if eval:
                         if isinstance(lv, Categorical):
                             self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],
@@ -146,11 +157,11 @@ class BayesNet(nn.Module):
                           for v in self.variables}
         return new_prev_state
 
-    def _ready_condition(self, lv, n_iw, max_lvl, prev_states):
+    def _ready_condition(self, lv, n_iw, max_lvl, prev_states, dp_lvl, force_iw):
         value = lv.rep(self.variables_star[lv], step_wise=False, prev_rep=prev_states[lv])\
                 if lv in self.variables_star else lv.post_reps
         if n_iw is not None and n_iw > 1:
-            for _ in range(self.dp_lvl[lv] + (1 if lv.iw else 0), max_lvl):
+            for _ in range(dp_lvl[lv] + (1 if (lv.iw or lv.name in (force_iw or [])) else 0), max_lvl):
                 expand_arg = [n_iw] + list(value.shape)
                 value = value.unsqueeze(0).expand(expand_arg)
         return value

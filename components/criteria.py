@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from components.latent_variables import Categorical
 
+from time import time
 
 # ============================================== BASE CLASS ============================================================
 
@@ -143,7 +144,6 @@ class ELBo(BaseCriterion):
             coeff = torch.tensor(1)
         if coeff == 0:
             kl = 0
-
         loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
 
         with torch.no_grad():
@@ -176,8 +176,75 @@ class ELBo(BaseCriterion):
             kl_i = kullback_liebler(inf_lv.post_params, gen_lv.post_params)*self.sequence_mask
             KL_value = torch.sum(kl_i)/self.valid_n_samples
             KL_dict[KL_name] = KL_value
+        if self.h_params.n_latents > 1:
+            gen_lv, inf_lv = self.gen_lvs['z'], self.infer_lvs['z']
+            infer_v_name = inf_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.infer_net.parent[inf_lv]]))
+                                          if inf_lv in self.infer_net.parent else '')
+            gen_v_name = gen_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.gen_net.parent[gen_lv]]))
+                                        if gen_lv in self.gen_net.parent else '')
+            for i in range(self.h_params.n_latents):
+                KL_name = '/KL(q({}{})IIp({}{}))'.format(infer_v_name, i, gen_v_name, i)
+                start, end = int(i*self.h_params.z_size/self.h_params.n_latents), \
+                             int((i+1)*self.h_params.z_size/self.h_params.n_latents)
+                inf_params = {k: v[..., start:end] for k, v in inf_lv.post_params.items()}
+                gen_params = {k: v[..., start:end] for k, v in gen_lv.post_params.items()}
+                kl_i = kullback_liebler(inf_params, gen_params) \
+                       * self.sequence_mask
+                KL_value = torch.sum(kl_i) / self.valid_n_samples
+                KL_dict[KL_name] = KL_value
 
         self._prepared_metrics = {'/ELBo': current_elbo, LL_name: LL_value, **KL_dict}
+
+
+class Reconstruction(BaseCriterion):
+    def __init__(self, model, w):
+        super(Reconstruction, self).__init__(model, w)
+        self.gen_net = model.gen_bn
+
+        # Taking the variable that has no children as the target for generation
+        self.generated_v = model.generated_v
+
+        # Warning: This is still only implemented for categorical generation
+        criterion_params = {'ignore_index': self.generated_v.ignore, 'reduction': 'mean'}
+        if self.generated_v.name in self.h_params.is_weighted:
+            counts = [model.index[self.generated_v].freqs[w] for w in self.model.index[self.generated_v].itos]
+            freqs = torch.sqrt(torch.Tensor([1/c if c != 0 else 0 for c in counts]).to(self.h_params.device))
+            criterion_params['weight'] = freqs/torch.sum(freqs)*len(freqs)
+        self.criterion = nn.CrossEntropyLoss(**criterion_params)
+        if self.generated_v.name in self.h_params.is_weighted:
+            criterion_params.pop('weight')
+        self._unweighted_criterion = nn.CrossEntropyLoss(**criterion_params)
+
+        self.log_p_x = None
+
+        self.sequence_mask = None
+        self.valid_n_samples = None
+
+    def get_loss(self, actual=False):
+
+        vocab_size = self.generated_v.size
+        criterion = self._unweighted_criterion if actual else self.criterion
+        temp = 1
+        self.log_p_x = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
+                                     self.gen_net.variables_star[self.generated_v].reshape(-1))
+        loss = - self.log_p_x
+
+        with torch.no_grad():
+            if actual:
+                self._prepare_metrics(loss)
+            else:
+                un_log_p_x = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
+                                                          self.gen_net.variables_star[self.generated_v].reshape(-1)
+                                                          )
+                self._prepare_metrics(un_log_p_x)
+
+        return loss
+
+    def _prepare_metrics(self, loss):
+        current_ll = - loss
+        LL_name = '/p({}'.format(self.generated_v.name)
+
+        self._prepared_metrics = {LL_name: current_ll}
 
 
 class IWLBo(ELBo):
@@ -231,17 +298,20 @@ class IWLBo(ELBo):
         detached_log_wi = log_wi.detach()
         max_log_wi = torch.max(detached_log_wi)
         detached_exp_log_wi = torch.exp(detached_log_wi - max_log_wi)
-        DReG_weights = (detached_exp_log_wi / (1e-8 + torch.sum(detached_exp_log_wi, dim=0).unsqueeze(0)))**2
 
         if actual:
+            n_samples_correction = 1
             while detached_exp_log_wi.ndim > self.input_dimensions:
-                detached_exp_log_wi = torch.sum(detached_exp_log_wi, dim=0)
-            loss = - torch.sum(torch.log(detached_exp_log_wi) + max_log_wi)/self.valid_n_samples
+                n_samples_correction *= detached_exp_log_wi.shape[0]
+                detached_exp_log_wi = torch.mean(detached_exp_log_wi, dim=0)
+            loss = - torch.sum(torch.log(detached_exp_log_wi+1e-8) +
+                               max_log_wi)/(self.valid_n_samples/n_samples_correction)
         else:
+            DReG_weights = (detached_exp_log_wi / (1e-8 + torch.sum(detached_exp_log_wi, dim=0).unsqueeze(0)))**2
             loss = - torch.sum(DReG_weights * log_wi)/self.valid_n_samples
 
         with torch.no_grad():
-            if actual:
+            if actual and False:
                 unweighted_loss = loss
             else:
                 log_wi = self.log_p_xIz + 1 * (self.log_p_z - self.log_q_zIx)
