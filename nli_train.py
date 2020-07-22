@@ -44,12 +44,12 @@ parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=10, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=1000, type=int)
-parser.add_argument("--anneal_kl1", default=15000, type=int)
+parser.add_argument("--anneal_kl0", default=000, type=int)
+parser.add_argument("--anneal_kl1", default=000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=2/512, type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
-parser.add_argument("--word_dropout", default=.0, type=float)
+parser.add_argument("--word_dropout", default=.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
@@ -64,12 +64,12 @@ if False:
     flags.grad_accu = 1
     flags.test_name = "Supervised/1.0test3"
     flags.supervision_proportion = 1.0
-if True:
+if False:
     flags.losses = 'VAE'
     flags.batch_size = 512
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/AttIndep2"
+    flags.test_name = "nliLM/newId"
     flags.supervision_proportion = 1
 
 # torch.autograd.set_detect_anomaly(True)

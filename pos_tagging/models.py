@@ -204,7 +204,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
             x_prev = go_symbol
             temp = 1.0
-            only_z_sampling = False
+            only_z_sampling = True
             gen_len = self.h_params.max_len * (3 if self.h_params.contiguous_lm else 1)
             z_gen = self.gen_bn.name_to_v['z']
             if z_gen not in self.gen_bn.parent:

@@ -213,7 +213,7 @@ class UDPoSDaTA:
 
 class NLIGenData2:
     def __init__(self, max_len, batch_size, max_epochs, device):
-        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<eos>', eos_token='<eos>',
+        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<go>', eos_token='<eos>',
                                 unk_token='<unk>', pad_token='<pad>')
         label_field = data.Field(fix_length=max_len-1, batch_first=True)
 

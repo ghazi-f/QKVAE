@@ -472,7 +472,8 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         targets = self.input_to_hidden(targets)
         targets = self.pe(targets.transpose(-2, 0))
         target_mask = self._generate_square_subsequent_mask(targets.shape[0])
-        memory = self.pe(memory.transpose(-2, 0))
+        # memory = self.pe(memory.transpose(-2, 0))
+        memory = memory.transpose(-2, 0)
         memory = self.transformer_enc(memory)
 
         outputs = self.transformer_dec(memory=memory, tgt=targets, tgt_mask=target_mask).transpose(-2, 0)
@@ -517,7 +518,6 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        print('pe stats:', torch.mean(self.pe[:x.size(0), :]*10), torch.std(self.pe[:x.size(0), :]*10))
         return x + self.pe[:x.size(0), :]
 
 
@@ -525,7 +525,9 @@ class SpecialTransformerEncoder(TransformerEncoderLayer):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", n_mems=20):
         super(SpecialTransformerEncoder, self).__init__(d_model, nhead, dim_feedforward, dropout, activation)
-        self.k, self.q = nn.Embedding(n_mems, d_model).weight, nn.Embedding(n_mems, d_model).weight
+        self.k, self.q, self.v = nn.Embedding(n_mems, int(d_model/2)).weight, nn.Embedding(n_mems, int(d_model/2)).weight,\
+                                 nn.Embedding(n_mems, int(d_model/2)).weight
+        self.linear0 = torch.nn.Linear(d_model, int(d_model/2))
 
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         r"""Pass the input through the encoder layer.
@@ -540,9 +542,10 @@ class SpecialTransformerEncoder(TransformerEncoderLayer):
         """
         q = self.q.unsqueeze(1).expand(self.q.shape[0], src.shape[1], self.q.shape[1])
         k = self.k.unsqueeze(1).expand(self.k.shape[0], src.shape[1], self.k.shape[1])
-
-        src2 = self.self_attn(src, k, src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
+        v = self.v.unsqueeze(1).expand(self.v.shape[0], src.shape[1], self.v.shape[1])
+        src1 = self.linear0(src)
+        src2 = self.self_attn(torch.cat([src1, q], -1), torch.cat([src1, k], -1), torch.cat([src1, v], -1),
+                              attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         if hasattr(self, "activation"):
