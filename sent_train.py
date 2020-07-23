@@ -26,16 +26,16 @@ parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=500, type=int)
+parser.add_argument("--embedding_dim", default=200, type=int)  #was 500
 parser.add_argument("--pos_embedding_dim", default=100, type=int)
-parser.add_argument("--z_size", default=200, type=int)
+parser.add_argument("--z_size", default=100, type=int)  #was 200
 parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=500, type=int)
-parser.add_argument("--encoder_h", default=500, type=int)
+parser.add_argument("--text_rep_h", default=200, type=int)  #was 500
+parser.add_argument("--encoder_h", default=200, type=int)  #was 500
 parser.add_argument("--encoder_l", default=1, type=int)
 parser.add_argument("--pos_h", default=100, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=500, type=int)
+parser.add_argument("--decoder_h", default=200, type=int)  #was 500
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
@@ -56,7 +56,7 @@ parser.add_argument("--wait_epochs", default=4, type=float)
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.losses = 'SSPIWO'
     flags.batch_size = 8
     flags.grad_accu = 8
@@ -74,6 +74,9 @@ COMPLETE_TEST_FREQ = flags.complete_test_freq
 SUP_PROPORTION = flags.supervision_proportion
 UNSUP_PROPORTION = flags.unsupervision_proportion
 DEVICE = device(flags.device)
+# This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
+if flags.device.startswith('cuda'):
+    torch.cuda.set_device(int(flags.device[-1]))
 LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],

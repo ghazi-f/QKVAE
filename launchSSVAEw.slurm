@@ -5,7 +5,7 @@
 #SBATCH --error=./imdbvaew.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/0.03w" --supervision_proportion 0.03 --generation_weight 0.001
-srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/0.1w" --supervision_proportion 0.1 --generation_weight 0.001
-srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/0.3w" --supervision_proportion 0.3 --generation_weight 0.001
-srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/1.0w" --supervision_proportion 1.0 --generation_weight 0.001
+srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/0.03small" --supervision_proportion 0.03
+srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/0.1small" --supervision_proportion 0.1
+srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/0.3small" --supervision_proportion 0.3
+srun python sent_train.py --losses "SSVAE" --test_name "IMDB/SSVAE/1.0small" --supervision_proportion 1.0
