@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.03" --supervision_proportion 0.03 --device "cuda:2"
-python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.1" --supervision_proportion 0.1 --device "cuda:2"
-python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.3" --supervision_proportion 0.3 --device "cuda:2"
-python sent_train.py --losses "S" --test_name "IMDB/Supervised/1.0" --supervision_proportion 1.0 --device "cuda:2"
+python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.001" --supervision_proportion 0.001 --device "cuda:2"
+python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.003" --supervision_proportion 0.003 --device "cuda:2"
+python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.01" --supervision_proportion 0.01 --device "cuda:2"
+#python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.03" --supervision_proportion 0.03 --device "cuda:2"
+#python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.1" --supervision_proportion 0.1 --device "cuda:2"
+#python sent_train.py --losses "S" --test_name "IMDB/Supervised/0.3" --supervision_proportion 0.3 --device "cuda:2"
+#python sent_train.py --losses "S" --test_name "IMDB/Supervised/1.0" --supervision_proportion 1.0 --device "cuda:2"
