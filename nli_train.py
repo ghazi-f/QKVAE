@@ -33,7 +33,7 @@ parser.add_argument("--n_latents", default=8, type=int)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
 parser.add_argument("--text_rep_h", default=128, type=int)
 parser.add_argument("--encoder_h", default=512, type=int)#################"
-parser.add_argument("--encoder_l", default=2, type=int)#################"
+parser.add_argument("--encoder_l", default=6, type=int)#################"
 parser.add_argument("--pos_h", default=512, type=int)
 parser.add_argument("--pos_l", default=2, type=int)
 parser.add_argument("--decoder_h", default=500, type=int)
@@ -44,32 +44,26 @@ parser.add_argument("--losses", default='VAE', choices=["S", "VAE", "SSVAE", "SS
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=10, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=000, type=int)
-parser.add_argument("--anneal_kl1", default=000, type=int)
+parser.add_argument("--anneal_kl0", default=2000, type=int)
+parser.add_argument("--anneal_kl1", default=4000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=2/512, type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
-parser.add_argument("--lr", default=2e-3, type=float)
+parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=1, type=float)
 
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
-    flags.losses = 'S'
-    flags.batch_size = 80
-    flags.grad_accu = 1
-    flags.test_name = "Supervised/1.0test3"
-    flags.supervision_proportion = 1.0
-if False:
+if True:
     flags.losses = 'VAE'
     flags.batch_size = 512
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/newId"
+    flags.test_name = "nliLM/newIdoverfit"
     flags.supervision_proportion = 1
 
 # torch.autograd.set_detect_anomaly(True)
@@ -82,6 +76,9 @@ COMPLETE_TEST_FREQ = flags.complete_test_freq
 SUP_PROPORTION = flags.supervision_proportion
 UNSUP_PROPORTION = flags.unsupervision_proportion
 DEVICE = device(flags.device)
+# This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
+if flags.device.startswith('cuda'):
+    torch.cuda.set_device(int(flags.device[-1]))
 LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
