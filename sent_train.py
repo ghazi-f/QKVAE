@@ -39,7 +39,7 @@ parser.add_argument("--decoder_h", default=500, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
-parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
+parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSiPIWO", "SSIWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=10, type=int)
 parser.add_argument("--testing_iw_samples", default=1, type=int)
 parser.add_argument("--test_prior_samples", default=2, type=int)
@@ -80,6 +80,7 @@ if flags.device.startswith('cuda'):
 LOSSES = {'S': [Supervision],
           'SSVAE': [Supervision, ELBo],
           'SSPIWO': [Supervision, IWLBo],
+          'SSiPIWO': [Supervision, IWLBo],
           'SSIWAE': [Supervision, IWLBo],
           'VAE': [ELBo],
           'Reconstruction': [Reconstruction]}[flags.losses]
@@ -89,6 +90,7 @@ LOSS_PARAMS = [1] if 'SS' not in flags.losses else [1, flags.generation_weight]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
 PIWO = flags.losses == 'SSPIWO'
+IPIWO = flags.losses == 'SSiPIWO'
 
 
 def main():
@@ -106,8 +108,8 @@ def main():
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
-                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.AdamW, markovian=flags.markovian,
-                       word_dropout=flags.word_dropout, contiguous_lm=False)
+                       loss_params=LOSS_PARAMS, piwo=PIWO, ipiwo=IPIWO, optimizer=optim.AdamW, markovian=flags.markovian
+                       , word_dropout=flags.word_dropout, contiguous_lm=False)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)

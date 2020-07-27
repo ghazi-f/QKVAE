@@ -33,6 +33,7 @@ class DefaultHParams:
                  losses=None,
                  loss_params=None,
                  piwo=False,
+                 ipiwo=False,
                  optimizer=optim.AdamW,
                  optimizer_kwargs=None,
                  grad_accumulation_steps=1,
@@ -99,6 +100,7 @@ class DefaultHParams:
         self.loss_params = loss_params or [1]*len(self.losses)  # [weight] for unsupervised losses, and [weight, supervised_z_index] for the supervised losses
         self.is_weighted = is_weighted or []
         self.piwo = piwo
+        self.ipiwo = ipiwo
 
         # Optimization hyper-parameters
         self.optimizer = optimizer
