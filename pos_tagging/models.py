@@ -210,7 +210,7 @@ class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
             if z_gen not in self.gen_bn.parent:
                 if self.h_params.n_latents > 1:
                     z_sample = []
-                    for i in range(repeats):
+                    for _ in range(repeats):
                         z_sample_i = z_gen.prior_sample((1,))[0].repeat(n_samples, 1)
                         z_sample_alt = z_gen.prior_sample((1,))[0]
                         for i in range(self.h_params.n_latents):
