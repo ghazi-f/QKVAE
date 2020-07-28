@@ -9,6 +9,7 @@ import numpy as np
 from time import time
 
 from nlp import load_dataset
+from nlp.builder import FORCE_REDOWNLOAD
 
 
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
@@ -87,6 +88,155 @@ class HuggingIMDB2:
         else:
             raise NameError('Misspelled split name : {}'.format(split))
 
+
+class HuggingAGNews:
+    def __init__(self, max_len, batch_size, max_epochs, device):
+        text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
+                                init_token='<go>'
+                                ,
+                                is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
+
+        start = time()
+        train_data, test_data = load_dataset('ag_news')['train'], load_dataset('ag_news')['test']
+
+        def expand_labels(data):
+            # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
+            data['label'] = [str(data['label'])]*(max_len-1)
+            return data
+        train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
+        fields1 = {'text': text_field, 'label': label_field}
+        fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
+        fields3 = {'text': text_field}
+        fields4 = {'text': ('text', text_field)}
+        train = Dataset([Example.fromdict(ex, fields2) for ex in train_data], fields1)
+        test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
+        unsup_train = Dataset([Example.fromdict(ex, fields4) for ex in train_data]
+                              , fields3)
+
+        val, unsup_test, unsup_val = test, test, test
+
+        print('data loading took', time() - start)
+
+        # build the vocabulary
+        text_field.build_vocab(unsup_train, max_size=10000)  # , vectors="fasttext.simple.300d")
+        label_field.build_vocab(train)
+        # make iterator for splits
+        self.train_iter, _, _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        _, self.unsup_val_iter, _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False,
+            sort=False)
+        self.sup_iter, _, _ = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+
+        self.vocab = text_field.vocab
+        self.tags = label_field.vocab
+        self.text_field = text_field
+        self.label_field = label_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
+class HuggingYelp:
+
+    def __init__(self, max_len, batch_size, max_epochs, device):
+        text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
+                                init_token='<go>'
+                                ,
+                                is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
+
+        start = time()
+        train_data, test_data = load_dataset('csv', data_files={'train': '.data\yelp\\train.csv',
+                                                                'test': '.data\yelp\\test.csv'},
+                                             column_names=['label', 'text'],
+                                             download_mode=FORCE_REDOWNLOAD, version='0.0.1')
+
+        def expand_labels(data):
+            # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
+            data['label'] = [str(data['label'])]*(max_len-1)
+            return data
+        train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
+        fields1 = {'text': text_field, 'label': label_field}
+        fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
+        fields3 = {'text': text_field}
+        fields4 = {'text': ('text', text_field)}
+        train = Dataset([Example.fromdict(ex, fields2) for ex in train_data], fields1)
+        test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
+        unsup_train = Dataset([Example.fromdict(ex, fields4) for ex in train_data]
+                              , fields3)
+
+        val, unsup_test, unsup_val = test, test, test
+
+        print('data loading took', time() - start)
+
+        # build the vocabulary
+        text_field.build_vocab(unsup_train, max_size=10000)  # , vectors="fasttext.simple.300d")
+        label_field.build_vocab(train)
+        # make iterator for splits
+        self.train_iter, _, _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        _, self.unsup_val_iter, _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False,
+            sort=False)
+        self.sup_iter, _, _ = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+
+        self.vocab = text_field.vocab
+        self.tags = label_field.vocab
+        self.text_field = text_field
+        self.label_field = label_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
 
 class IMDBData:
     def __init__(self, max_len, batch_size, max_epochs, device):

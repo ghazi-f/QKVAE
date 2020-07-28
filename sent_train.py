@@ -7,7 +7,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import HuggingIMDB2 as Data
+from data_prep import HuggingIMDB2, HuggingAGNews, HuggingYelp
 from sentence_classification.models import SSSentenceClassification as Model
 from sentence_classification.h_params import DefaultSSSentenceClassificationHParams as HParams
 from sentence_classification.graphs import *
@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser()
 
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
+parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp"], type=str)
 parser.add_argument("--max_len", default=128, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--grad_accu", default=2, type=int)
@@ -65,6 +66,7 @@ if False:
     flags.supervision_proportion = 1
 
 # torch.autograd.set_detect_anomaly(True)
+Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp}[flags.dataset]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
