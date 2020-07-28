@@ -112,6 +112,7 @@ def main():
                        , word_dropout=flags.word_dropout, contiguous_lm=False)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
+    print("Launching experiment ", flags.test_name)
     print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses, ", Supervision proportion: ", SUP_PROPORTION)
     model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
