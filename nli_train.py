@@ -28,21 +28,21 @@ parser.add_argument("--embedding_dim", default=512, type=int)#################"
 parser.add_argument("--z_size", default=512, type=int)#################"
 parser.add_argument("--n_latents", default=8, type=int)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=128, type=int)
+parser.add_argument("--text_rep_h", default=512, type=int)
 parser.add_argument("--encoder_h", default=512, type=int)#################"
 parser.add_argument("--encoder_l", default=6, type=int)#################"
 parser.add_argument("--decoder_h", default=500, type=int)
-parser.add_argument("--decoder_l", default=2, type=int)#################"
+parser.add_argument("--decoder_l", default=6, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=10, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=2000, type=int)
-parser.add_argument("--anneal_kl1", default=4000, type=int)
+parser.add_argument("--anneal_kl0", default=3000, type=int)
+parser.add_argument("--anneal_kl1", default=50000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
-parser.add_argument("--kl_th", default=2/512, type=float or None)
+parser.add_argument("--kl_th", default=0/512, type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -58,7 +58,7 @@ if True:
     flags.batch_size = 512
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/newIdoverfit"
+    flags.test_name = "nliLM/newIdoverfit4"
 
 # torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
@@ -89,7 +89,7 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
-                       is_weighted=[], graph_generator=get_disentanglement_graph, z_size=flags.z_size,
+                       is_weighted=[], graph_generator=get_non_auto_regressive_disentanglement_graph, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,

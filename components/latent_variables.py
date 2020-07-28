@@ -143,7 +143,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             prior_distrib = self.prior(**self.prior_params)
             output_params = self.prior_params
             while any([v.ndim < sample.ndim for v in output_params.values()]):
-                output_params = {k: v.unsqueeze(0).expand(sample.shape) for k, v in output_params.items()}
+                 output_params = {k: v.unsqueeze(0).expand(sample.shape) for k, v in output_params.items()}
             self.post_params = {k: v.expand((*sample.shape[:-1], self.size)) for k, v in output_params.items()}
             return prior_distrib.log_prob(sample)
 

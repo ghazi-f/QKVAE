@@ -48,3 +48,16 @@ class ZGen(Gaussian):
         super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
                                    markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
 
+
+class ZlstmInfer(Gaussian):
+    def __init__(self, h_params, repnet):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
+        super(ZlstmInfer, self).__init__(h_params.z_size, 'zlstm', h_params.device, markovian=h_params.markovian,
+                                     stl=True, iw=iw, repnet=repnet)
+
+
+class ZlstmGen(Gaussian):
+    def __init__(self, h_params, repnet, allow_prior=False):
+        super(ZlstmGen, self).__init__(h_params.z_size, 'zlstm', h_params.device,
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
+

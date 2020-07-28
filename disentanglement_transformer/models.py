@@ -60,27 +60,26 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
-        if not (self.supervised_v.name in samples):
-            if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
-                self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
-                                                       prev_states=self.infer_last_states, complete=True)
-            else:
-                self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
-            gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
-                          **{'x': samples['x'], 'x_prev': samples['x_prev']}}
-            if self.iw:
-                gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
-            if self.step < self.h_params.anneal_kl[0]:
-                self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
-                                                   prev_states=self.gen_last_states)
-            else:
-                self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
+        if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
+            self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
+                                                   prev_states=self.infer_last_states, complete=True)
+        else:
+            self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
+        gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
+                      **{'x': samples['x'], 'x_prev': samples['x_prev']}}
+        if self.iw:
+            gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
+        if self.step < self.h_params.anneal_kl[0]:
+            self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
+                                               prev_states=self.gen_last_states)
+        else:
+            self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
 
-            # Loss computation and backward pass
-            losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
-            sum(losses_uns).backward()
-            if not self.h_params.contiguous_lm:
-                self.infer_last_states, self.gen_last_states = None, None
+        # Loss computation and backward pass
+        losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
+        sum(losses_uns).backward()
+        if not self.h_params.contiguous_lm:
+            self.infer_last_states, self.gen_last_states = None, None
 
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
             # Applying gradients and gradient clipping if accumulation is over
@@ -195,19 +194,32 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     z_sample = z_gen.prior_sample((n_samples, ))[0]
             else:
                 z_sample = None
-            for i in range(gen_len):
-                if z_sample is not None:
-                    z_input = {'z': z_sample.unsqueeze(1).expand(z_sample.shape[0], i+1, z_sample.shape[1])}
-                else:
-                    z_sample = None
-                self.gen_bn({'x_prev': x_prev, **z_input})
-                if only_z_sampling:
-                    samples_i = self.generated_v.post_params['logits']
-                else:
-                    samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'],
-                                                           temperature=temp).rsample()
-                x_prev = torch.cat([x_prev, torch.argmax(samples_i,     dim=-1)[..., -1].unsqueeze(-1)],
-                                   dim=-1)
+            if 'zlstm' in self.gen_bn.name_to_v:
+                # Special case where generation is not autoregressive
+                zlstm = self.gen_bn.name_to_v['zlstm']
+                zlstm_sample1 = zlstm.prior_sample((1,))[0].repeat(n_samples, 1)
+                zlstm_sample2 = zlstm.prior_sample((1,))[0].repeat(n_samples, 1)
+                zlstm_sample = torch.cat([zlstm_sample1, zlstm_sample2], 0)
+                self.gen_bn({'z': z_sample.unsqueeze(1).expand(z_sample.shape[0], gen_len, z_sample.shape[1]),
+                             'zlstm': zlstm_sample.unsqueeze(1).expand(z_sample.shape[0], gen_len, z_sample.shape[1])})
+                samples_i = self.generated_v.post_params['logits']
+                x_prev = torch.argmax(samples_i, dim=-1)
+
+            else:
+                # Normal Autoregressive generation
+                for i in range(gen_len):
+                    if z_sample is not None:
+                        z_input = {'z': z_sample.unsqueeze(1).expand(z_sample.shape[0], i+1, z_sample.shape[1])}
+                    else:
+                        z_sample = None
+                    self.gen_bn({'x_prev': x_prev, **z_input})
+                    if only_z_sampling:
+                        samples_i = self.generated_v.post_params['logits']
+                    else:
+                        samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'],
+                                                               temperature=temp).rsample()
+                    x_prev = torch.cat([x_prev, torch.argmax(samples_i,     dim=-1)[..., -1].unsqueeze(-1)],
+                                       dim=-1)
 
             summary_triplets.append(
                 ('text', '/prior_sample', self.decode_to_text(x_prev)))
@@ -278,7 +290,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def reduce_lr(self, factor):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] /= factor
-
 
     def _harmonize_input_shapes(self, gen_inputs, n_iw):
         # This function repeats inputs to the generation network so that they all have the same shape

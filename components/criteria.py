@@ -138,7 +138,11 @@ class ELBo(BaseCriterion):
         # Applying KL Annealing
         if self.h_params.anneal_kl and not actual:
             anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
-            coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
+            is_sigmoid = anl0==-1
+            if is_sigmoid:
+                pass
+            else:
+                coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
             coeff = torch.tensor(coeff)
         else:
             coeff = torch.tensor(1)

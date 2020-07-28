@@ -445,6 +445,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
         self.n_mems, self.output_size = n_mems, output_size
+        self.bidirectional = bidirectional
 
         if embedding is not None:
             self.sbn = sbn
@@ -471,7 +472,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             batch_orig_shape = None
         targets = self.input_to_hidden(targets)
         targets = self.pe(targets.transpose(-2, 0))
-        target_mask = self._generate_square_subsequent_mask(targets.shape[0])
+        target_mask = self._generate_square_subsequent_mask(targets.shape[0]) if not self.bidirectional else None
         # memory = self.pe(memory.transpose(-2, 0))
         memory = memory.transpose(-2, 0)
         memory = self.transformer_enc(memory)
