@@ -140,7 +140,7 @@ class DefaultSSVariationalHParams(DefaultHParams):
         self.pos_ignore_index = pos_ignore_index
 
 
-class DefaultSSPoSTagHParams(DefaultHParams):
+class DefaultTransformerHParams(DefaultHParams):
     def __init__(self, vocab_size, tag_size, max_len, batch_size, n_epochs, device=None,
                  pos_ignore_index=None, vocab_ignore_index=None, **kwargs):
         default_kwargs = {'vocab_size': vocab_size,
@@ -153,7 +153,7 @@ class DefaultSSPoSTagHParams(DefaultHParams):
                           'losses': [Supervision, ELBo],
                           }
         kwargs = {**default_kwargs, **kwargs}
-        super(DefaultSSPoSTagHParams, self).__init__(**kwargs)
+        super(DefaultTransformerHParams, self).__init__(**kwargs)
         self.vocab_ignore_index = vocab_ignore_index
         self.pos_ignore_index = pos_ignore_index
 # ======================================================================================================================

@@ -2,16 +2,16 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 from tqdm import tqdm
 
-from pos_tagging.h_params import *
+from sentence_classification.h_params import *
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 
 
 # ==================================================== SSPOSTAG MODEL CLASS ============================================
 
-class SSPoSTag(nn.Module, metaclass=abc.ABCMeta):
+class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None):
-        super(SSPoSTag, self).__init__()
+        super(SSSentenceClassification, self).__init__()
 
         self.h_params = h_params
         self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)

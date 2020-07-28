@@ -8,9 +8,9 @@ from torch import optim
 import numpy as np
 
 from data_prep import NLIGenData2 as Data
-from pos_tagging.models import SSPoSTag as Model
-from pos_tagging.h_params import DefaultSSPoSTagHParams as HParams
-from pos_tagging.graphs import *
+from disentanglement_transformer.models import DisentanglementTransformerVAE as Model
+from disentanglement_transformer.h_params import DefaultTransformerHParams as HParams
+from disentanglement_transformer.graphs import *
 from components.criteria import *
 parser = argparse.ArgumentParser()
 
@@ -22,25 +22,20 @@ parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
 parser.add_argument("--complete_test_freq", default=160, type=int)
-parser.add_argument("--supervision_proportion", default=1., type=float)
-parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=512, type=int)#################"
-parser.add_argument("--pos_embedding_dim", default=128, type=int)
 parser.add_argument("--z_size", default=512, type=int)#################"
 parser.add_argument("--n_latents", default=8, type=int)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
 parser.add_argument("--text_rep_h", default=128, type=int)
 parser.add_argument("--encoder_h", default=512, type=int)#################"
 parser.add_argument("--encoder_l", default=6, type=int)#################"
-parser.add_argument("--pos_h", default=512, type=int)
-parser.add_argument("--pos_l", default=2, type=int)
 parser.add_argument("--decoder_h", default=500, type=int)
 parser.add_argument("--decoder_l", default=2, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
-parser.add_argument("--losses", default='VAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSIWAE"], type=str)
+parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=10, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
@@ -64,7 +59,6 @@ if True:
     flags.grad_accu = 1
     flags.max_len = 20
     flags.test_name = "nliLM/newIdoverfit"
-    flags.supervision_proportion = 1
 
 # torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
@@ -73,55 +67,44 @@ GRAD_ACCU = flags.grad_accu
 N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
-SUP_PROPORTION = flags.supervision_proportion
-UNSUP_PROPORTION = flags.unsupervision_proportion
 DEVICE = device(flags.device)
 # This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
 if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
-LOSSES = {'S': [Supervision],
-          'SSVAE': [Supervision, ELBo],
-          'SSPIWO': [Supervision, IWLBo],
-          'SSIWAE': [Supervision, IWLBo],
+LOSSES = {'IWAE': [IWLBo],
           'VAE': [ELBo]}[flags.losses]
 #  LOSSES = [IWLBo]
-ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
-LOSS_PARAMS = [1] if 'SS' not in flags.losses else [1, flags.generation_weight]
+ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu]
+LOSS_PARAMS = [1]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
-PIWO = flags.losses == 'SSPIWO'
 
 
 def main():
     data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,
-                       device=DEVICE, pos_ignore_index=data.tags.stoi['<pad>'],
-                       vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
+                       device=DEVICE, vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
                        is_weighted=[], graph_generator=get_disentanglement_graph, z_size=flags.z_size,
-                       embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
-                       pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
+                       embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
-                       loss_params=LOSS_PARAMS, piwo=PIWO, optimizer=optim.AdamW, markovian=flags.markovian,
+                       loss_params=LOSS_PARAMS, optimizer=optim.AdamW, markovian=flags.markovian,
                        word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents)
     val_iterator = iter(data.val_iter)
-    supervised_iterator = iter(data.sup_iter)
-    print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
-    print("Loss Type: ", flags.losses, ", Supervision proportion: ", SUP_PROPORTION)
+    print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
+    print("Loss Type: ", flags.losses)
     model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
-    total_supervised_train_samples = len(data.sup_iter.dataset.examples)
-    print("Unsupervised training examples: ", total_unsupervised_train_samples*UNSUP_PROPORTION,
-          ", Supervised training examples: ", total_supervised_train_samples*SUP_PROPORTION)
+    print("Unsupervised training examples: ", total_unsupervised_train_samples)
     current_time = time()
     #print(model)
     number_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -135,7 +118,6 @@ def main():
     max_acc = 0
     min_perp = 1e20
     wait_count = 0
-    sup_samples_count = 0
     loss = torch.tensor(1e20)
     mean_loss = 0
 
@@ -149,14 +131,9 @@ def main():
                 if model.step != 0 and not torch.isnan(loss):
                     model.save()
                     print('Saved model after it\'s pure reconstruction phase')
-            supervised_batch = next(supervised_iterator)
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
             loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
-            loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
-                                    'y': supervised_batch.label}) if 'S' in flags.losses \
-                else 0
-            sup_samples_count += BATCH_SIZE
 
             mean_loss += loss
             if i % 30 == 0:
@@ -178,38 +155,20 @@ def main():
                 model.train()
 
             current_time = time()
-            if sup_samples_count >= (total_supervised_train_samples * SUP_PROPORTION):
-                print("Reinitialized supervised training iterator")
-                supervised_iterator = iter(data.sup_iter)
-                sup_samples_count = 0
-            if (i*BATCH_SIZE) >= (total_unsupervised_train_samples * UNSUP_PROPORTION):
-                print('reinitializing unsupervised training data')
-                break
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0] and ((data.n_epochs % 3) == 0):
             model.eval()
-            if model.generate:
-                pp_ub = model.get_perplexity(data.unsup_val_iter)
-                print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
-                data.reinit_iterator('valid')
-            if 'S' in flags.losses:
-                accuracy = model.get_overall_accuracy(data.val_iter)
-                print("Accuracy is {} at step {}".format(accuracy, model.step))
-                if accuracy > max_acc:
-                    print('Saving The model ..')
-                    max_acc = accuracy
-                    model.save()
-                    wait_count = 0
-                else:
-                    wait_count += 1
+            pp_ub = model.get_perplexity(data.unsup_val_iter)
+            print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
+            data.reinit_iterator('valid')
+
+            if pp_ub < min_perp:
+                print('Saving The model ..')
+                min_perp = pp_ub
+                model.save()
+                wait_count = 0
             else:
-                if pp_ub < min_perp:
-                    print('Saving The model ..')
-                    min_perp = pp_ub
-                    model.save()
-                    wait_count = 0
-                else:
-                    wait_count += 1
+                wait_count += 1
 
             if wait_count == flags.wait_epochs:
                 model.reduce_lr(flags.lr_reduction)

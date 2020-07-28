@@ -8,9 +8,9 @@ from torch import optim
 import numpy as np
 
 from data_prep import HuggingIMDB2 as Data
-from pos_tagging.models import SSPoSTag as Model
-from pos_tagging.h_params import DefaultSSPoSTagHParams as HParams
-from pos_tagging.graphs import *
+from sentence_classification.models import SSSentenceClassification as Model
+from sentence_classification.h_params import DefaultSSSentenceClassificationHParams as HParams
+from sentence_classification.graphs import *
 from components.criteria import *
 parser = argparse.ArgumentParser()
 
