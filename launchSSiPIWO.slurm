@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=python_Ghazi
 #SBATCH --gres=gpu:1
-#SBATCH --output=./imdbipiwosmallw.txt
-#SBATCH --error=./imdbipiwosmallw.err
+#SBATCH --output=./imdbipiwosmall.txt
+#SBATCH --error=./imdbipiwosmall.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.001smallw" --supervision_proportion 0.001 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.003smallw" --supervision_proportion 0.003 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.01smallw" --supervision_proportion 0.01 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.03smallw" --supervision_proportion 0.03 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.1smallw" --supervision_proportion 0.1 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.3smallw" --supervision_proportion 0.3 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
-srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/1.0smallw" --supervision_proportion 1.0 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100 --generation_weight 0.01
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.001small" --supervision_proportion 0.001 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.003small" --supervision_proportion 0.003 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.01small" --supervision_proportion 0.01 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.03small" --supervision_proportion 0.03 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.1small" --supervision_proportion 0.1 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.3small" --supervision_proportion 0.3 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
+srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/1.0small" --supervision_proportion 1.0 --embedding_dim 200 --z_size 100 --text_rep_h 200 --encoder_h 200 --decoder_h 200 --pos_embedding_dim 100 --pos_h 100
 #srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.01size1uns" --unsupervision_proportion 0.01 --embedding_dim 20 --z_size 20 --text_rep_h 20 --encoder_h 20 --decoder_h 20 --pos_embedding_dim 10 --pos_h 10
 #srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.01size2uns" --unsupervision_proportion 0.01 --embedding_dim 40 --z_size 40 --text_rep_h 40 --encoder_h 40 --decoder_h 40 --pos_embedding_dim 20 --pos_h 20
 #srun python sent_train.py --losses "SSiPIWO" --test_name "IMDB/SSiPIWO/0.01size3uns" --unsupervision_proportion 0.01 --embedding_dim 80 --z_size 80 --text_rep_h 80 --encoder_h 80 --decoder_h 80 --pos_embedding_dim 40 --pos_h 40
