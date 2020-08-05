@@ -253,7 +253,7 @@ def main():
     else:
         pp_ub = -1
     print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(accuracy, pp_ub))
-    if os.path.exists(flags.result_csv):
+    if not os.path.exists(flags.result_csv):
         with open(flags.result_csv, 'w') as f:
             f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion',
                                'unsupervision_proportion', 'accuracy', 'pp_ub', 'best_epoch',
