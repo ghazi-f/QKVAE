@@ -247,8 +247,11 @@ def main():
     # Getting final test numbers
 
     model.eval()
-    accuracy = model.get_overall_accuracy(data.test_iter)
-    pp_ub = model.get_perplexity(data.test_iter)
+    accuracy = model.get_overall_accuracy(data.test_iter).item()
+    if 'SS' in flags.losses:
+        pp_ub = model.get_perplexity(data.test_iter).item()
+    else:
+        pp_ub = -1
     print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(accuracy, pp_ub))
     if os.path.exists(flags.result_csv):
         with open(flags.result_csv, 'w') as f:
@@ -261,7 +264,7 @@ def main():
 
     with open(flags.result_csv, 'a') as f:
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
-                           str(flags.unsupervision_proportion), str(accuracy.item()), str(pp_ub.item()), str(best_epoch),
+                           str(flags.unsupervision_proportion), str(accuracy), str(pp_ub), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
