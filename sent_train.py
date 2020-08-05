@@ -22,12 +22,12 @@ parser.add_argument("--result_csv", default='imdb.csv', type=str)
 parser.add_argument("--max_len", default=128, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--grad_accu", default=2, type=int)
-parser.add_argument("--n_epochs", default=1, type=int) # change back to 10000
+parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
 parser.add_argument("--complete_test_freq", default=160, type=int)
-parser.add_argument("--supervision_proportion", default=0.01, type=float) # change back to 1.
+parser.add_argument("--supervision_proportion", default=1., type=float)
 parser.add_argument("--dev_index", default=1, type=float)
-parser.add_argument("--unsupervision_proportion", default=0.01, type=float) # change back to 1.
+parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=500, type=int)
@@ -50,7 +50,7 @@ parser.add_argument("--test_prior_samples", default=2, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--grad_clip", default=5., type=float)
-parser.add_argument("--kl_th", default=1/200, type=float or None)
+parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--dropout", default=0.2, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
@@ -251,16 +251,21 @@ def main():
     pp_ub = model.get_perplexity(data.test_iter)
     print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(accuracy, pp_ub))
     if os.path.exists(flags.result_csv):
-        read_mode = 'a'
-    else:
-        read_mode = 'w'
-    with open(flags.result_csv, read_mode) as f:
+        with open(flags.result_csv, 'w') as f:
+            f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion',
+                               'unsupervision_proportion', 'accuracy', 'pp_ub', 'best_epoch',
+                               'embedding_dim', 'pos_embedding_dim', 'z_size',
+                               'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
+                               'pos_h', 'pos_l', 'decoder_h', 'decoder_l',
+                               ]) + '\n')
+
+    with open(flags.result_csv, 'a') as f:
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
-                           str(flags.unsupervision_proportion), str(accuracy), str(pp_ub), str(best_epoch),
+                           str(flags.unsupervision_proportion), str(accuracy.item()), str(pp_ub.item()), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
-                           ]))
+                           ])+'\n')
 
 
 def limited_next(iterator):
