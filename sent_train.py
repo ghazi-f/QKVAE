@@ -1,6 +1,7 @@
 # This file will implement the main training loop for a model
 from time import time
 import argparse
+import os
 
 from torch import device
 import torch
@@ -17,14 +18,16 @@ parser = argparse.ArgumentParser()
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp"], type=str)
+parser.add_argument("--result_csv", default='imdb.csv', type=str)
 parser.add_argument("--max_len", default=128, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--grad_accu", default=2, type=int)
-parser.add_argument("--n_epochs", default=10000, type=int)
+parser.add_argument("--n_epochs", default=1, type=int) # change back to 10000
 parser.add_argument("--test_freq", default=32, type=int)
 parser.add_argument("--complete_test_freq", default=160, type=int)
-parser.add_argument("--supervision_proportion", default=1., type=float)
-parser.add_argument("--unsupervision_proportion", default=1., type=float)
+parser.add_argument("--supervision_proportion", default=0.01, type=float) # change back to 1.
+parser.add_argument("--dev_index", default=1, type=float)
+parser.add_argument("--unsupervision_proportion", default=0.01, type=float) # change back to 1.
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=500, type=int)
@@ -74,6 +77,7 @@ N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
 SUP_PROPORTION = flags.supervision_proportion
+DEV_INDEX = flags.dev_index
 UNSUP_PROPORTION = flags.unsupervision_proportion
 DEVICE = device(flags.device)
 # This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
@@ -96,7 +100,7 @@ IPIWO = flags.losses == 'SSiPIWO'
 
 
 def main():
-    data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE)
+    data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, UNSUP_PROPORTION, SUP_PROPORTION, DEV_INDEX)
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,
                        device=DEVICE, pos_ignore_index=data.tags.stoi['<pad>'],
                        vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
@@ -123,8 +127,8 @@ def main():
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
     total_supervised_train_samples = len(data.sup_iter.dataset.examples)
-    print("Unsupervised training examples: ", total_unsupervised_train_samples*UNSUP_PROPORTION,
-          ", Supervised training examples: ", total_supervised_train_samples*SUP_PROPORTION)
+    print("Unsupervised training examples: ", total_unsupervised_train_samples,
+          ", Supervised training examples: ", total_supervised_train_samples, len(data.val_iter.dataset.examples))
     current_time = time()
     #print(model)
     number_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -138,9 +142,10 @@ def main():
     max_acc = 0
     min_perp = 1e20
     wait_count = 0
-    sup_samples_count = 0
     loss = torch.tensor(1e20)
     mean_loss = 0
+    supervision_epoch = 0
+    best_epoch = -1
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2:
@@ -155,41 +160,12 @@ def main():
                 if model.step != 0 and not torch.isnan(loss):
                     model.save()
                     print('Saved model after it\'s pure reconstruction phase')
-            supervised_batch = next(supervised_iterator)
-            """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
-                   text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
-
-            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
-            loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
-                                    'y': supervised_batch.label}) if 'S' in flags.losses \
-                else 0
-            sup_samples_count += BATCH_SIZE
-
-            mean_loss += loss
-            if i % 30 == 0:
-                mean_loss /= 30
-                print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
-                mean_loss = 0
-
-            if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1:
-                model.eval()
-                try:
-                    test_batch = limited_next(val_iterator)
-                except StopIteration:
-                    print("Reinitialized test data iterator")
-                    val_iterator = iter(data.val_iter)
-                    test_batch = limited_next(val_iterator)
-                with torch.no_grad():
-                    model({'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1], 'y': test_batch.label})
-                model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
-                                    COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
-                model.train()
-
-            current_time = time()
-            if sup_samples_count >= (total_supervised_train_samples * SUP_PROPORTION):
+            try:
+                supervised_batch = next(supervised_iterator)
+            except StopIteration:
                 print("Reinitialized supervised training iterator")
+                supervision_epoch += 1
                 supervised_iterator = iter(data.sup_iter)
-                sup_samples_count = 0
                 if 'S' in flags.losses and model.step >= h_params.anneal_kl[0]:
                     model.eval()
                     accuracy = model.get_overall_accuracy(data.val_iter)
@@ -200,6 +176,7 @@ def main():
                         max_acc = accuracy
                         model.save()
                         wait_count = 0
+                        best_epoch = supervision_epoch
                     else:
                         wait_count += 1
                     if wait_count == flags.wait_epochs:
@@ -208,17 +185,43 @@ def main():
 
                     if wait_count == flags.wait_epochs * 2:
                         break
-            if (i*BATCH_SIZE) >= (total_unsupervised_train_samples * UNSUP_PROPORTION):
-                print('reinitializing unsupervised training data')
-                break
+
+            """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
+                   text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
+
+            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
+            loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
+                                    'y': supervised_batch.label}) if 'S' in flags.losses \
+                else 0
+
+            mean_loss += loss
+            if i % 30 == 0:
+                mean_loss /= 30
+                print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
+                mean_loss = 0
+
+            if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1:
+                model.eval()
+                try:
+                    val_batch = limited_next(val_iterator)
+                except StopIteration:
+                    val_iterator = iter(data.val_iter)
+                    print("Reinitialized test data iterator")
+                    val_batch = limited_next(val_iterator)
+                with torch.no_grad():
+                    model({'x': val_batch.text[..., 1:], 'x_prev': val_batch.text[..., :-1], 'y': val_batch.label})
+                model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
+                                    COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
+                model.train()
+
+            current_time = time()
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0]:
             model.eval()
-            if model.generate:
+            if 'S' not in flags.losses:
                 pp_ub = model.get_perplexity(data.unsup_val_iter)
                 print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
                 data.reinit_iterator('valid')
-            if 'S' not in flags.losses:
                 if pp_ub < min_perp:
                     print('Saving The model ..')
                     min_perp = pp_ub
@@ -238,7 +241,26 @@ def main():
         data.reinit_iterator('valid')
         data.reinit_iterator('unsup_valid')
         data.reinit_iterator('train')
-    print("Finished training")
+    print("Finished training, starting final evaluation :")
+    # Reloading best parameters
+    model.load()
+    # Getting final test numbers
+
+    model.eval()
+    accuracy = model.get_overall_accuracy(data.test_iter)
+    pp_ub = model.get_perplexity(data.test_iter)
+    print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(accuracy, pp_ub))
+    if os.path.exists(flags.result_csv):
+        read_mode = 'a'
+    else:
+        read_mode = 'w'
+    with open(flags.result_csv, read_mode) as f:
+        f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
+                           str(flags.unsupervision_proportion), str(accuracy), str(pp_ub), str(best_epoch),
+                           str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
+                           str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
+                           str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
+                           ]))
 
 
 def limited_next(iterator):

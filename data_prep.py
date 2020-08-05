@@ -15,33 +15,44 @@ from nlp.builder import FORCE_REDOWNLOAD
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
 
 class HuggingIMDB2:
-    def __init__(self, max_len, batch_size, max_epochs, device):
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
                                 is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
-
         start = time()
         train_data, test_data, unsup_data = load_dataset('imdb')['train'], load_dataset('imdb')['test'],\
                                             load_dataset('imdb')['unsupervised']
 
-        def expand_labels(data):
-            # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
-            data['label'] = [str(data['label'])]*(max_len-1)
-            return data
+        def expand_labels(datum):
+            datum['label'] = [str(datum['label'])]*(max_len-1)
+            return datum
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
         fields3 = {'text': text_field}
         fields4 = {'text': ('text', text_field)}
-        train = Dataset([Example.fromdict(ex, fields2) for ex in train_data], fields1)
+        dev_start, dev_end = int(len(train_data)*sup_proportion/5*(dev_index-1)), \
+                             int(len(train_data)*sup_proportion/5*(dev_index))
+        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, dev_start, int(len(train_data)*sup_proportion)
+        unsup_start, unsup_end = 0, int((len(train_data)+len(unsup_data))*unsup_proportion)
+        # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
+        # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
+        # experiments
+        np.random.seed(42)
+        train_examples = [Example.fromdict(ex, fields2) for ex in train_data]
+        unsup_examples = ([Example.fromdict(ex, fields4) for ex in unsup_data] +
+                         [Example.fromdict(ex, fields4) for ex in train_data])
+        np.random.shuffle(train_examples)
+        np.random.shuffle(unsup_examples)
+        train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
+        val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset([Example.fromdict(ex, fields4) for ex in unsup_data] +
-                              [Example.fromdict(ex, fields4) for ex in train_data]
+        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
                               , fields3)
 
-        val, unsup_test, unsup_val = test, test, test
+        unsup_test, unsup_val = test, test
 
         print('data loading took', time() - start)
 
@@ -50,7 +61,7 @@ class HuggingIMDB2:
         label_field.build_vocab(train)
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(
-            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=False, sort=False)
         _, self.unsup_val_iter, _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False,
             sort=False)
@@ -90,7 +101,7 @@ class HuggingIMDB2:
 
 
 class HuggingAGNews:
-    def __init__(self, max_len, batch_size, max_epochs, device):
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -100,21 +111,34 @@ class HuggingAGNews:
         start = time()
         train_data, test_data = load_dataset('ag_news')['train'], load_dataset('ag_news')['test']
 
-        def expand_labels(data):
+        def expand_labels(datum):
             # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
-            data['label'] = [str(data['label'])]*(max_len-1)
-            return data
+            datum['label'] = [str(datum['label'])]*(max_len-1)
+            return datum
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
         fields3 = {'text': text_field}
         fields4 = {'text': ('text', text_field)}
-        train = Dataset([Example.fromdict(ex, fields2) for ex in train_data], fields1)
+        dev_start, dev_end = int(len(train_data)*sup_proportion/5*(dev_index-1)), \
+                             int(len(train_data)*sup_proportion/5*(dev_index))
+        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, dev_start, int(len(train_data)*sup_proportion)
+        unsup_start, unsup_end = 0, int((len(train_data))*unsup_proportion)
+        # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
+        # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
+        # experiments
+        np.random.seed(42)
+        train_examples = [Example.fromdict(ex, fields2) for ex in train_data]
+        unsup_examples = ([Example.fromdict(ex, fields4) for ex in train_data])
+        np.random.shuffle(train_examples)
+        np.random.shuffle(unsup_examples)
+        train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
+        val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset([Example.fromdict(ex, fields4) for ex in train_data]
+        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
                               , fields3)
 
-        val, unsup_test, unsup_val = test, test, test
+        unsup_test, unsup_val = test, test
 
         print('data loading took', time() - start)
 
@@ -164,7 +188,7 @@ class HuggingAGNews:
 
 class HuggingYelp:
 
-    def __init__(self, max_len, batch_size, max_epochs, device):
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -177,21 +201,34 @@ class HuggingYelp:
                                              column_names=['label', 'text'],
                                              download_mode=FORCE_REDOWNLOAD, version='0.0.1')
 
-        def expand_labels(data):
+        def expand_labels(datum):
             # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
-            data['label'] = [str(data['label'])]*(max_len-1)
-            return data
+            datum['label'] = [str(datum['label'])]*(max_len-1)
+            return datum
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
         fields3 = {'text': text_field}
         fields4 = {'text': ('text', text_field)}
-        train = Dataset([Example.fromdict(ex, fields2) for ex in train_data], fields1)
+        dev_start, dev_end = int(len(train_data)*sup_proportion/5*(dev_index-1)), \
+                             int(len(train_data)*sup_proportion/5*(dev_index))
+        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, dev_start, int(len(train_data)*sup_proportion)
+        unsup_start, unsup_end = 0, int((len(train_data))*unsup_proportion)
+        # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
+        # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
+        # experiments
+        np.random.seed(42)
+        train_examples = [Example.fromdict(ex, fields2) for ex in train_data]
+        unsup_examples = ([Example.fromdict(ex, fields4) for ex in train_data])
+        np.random.shuffle(train_examples)
+        np.random.shuffle(unsup_examples)
+        train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
+        val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset([Example.fromdict(ex, fields4) for ex in train_data]
+        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
                               , fields3)
 
-        val, unsup_test, unsup_val = test, test, test
+        unsup_test, unsup_val = test, test
 
         print('data loading took', time() - start)
 
@@ -237,6 +274,7 @@ class HuggingYelp:
             self.unsup_val_iter.init_epoch()
         else:
             raise NameError('Misspelled split name : {}'.format(split))
+
 
 class IMDBData:
     def __init__(self, max_len, batch_size, max_epochs, device):
