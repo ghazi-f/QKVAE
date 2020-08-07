@@ -57,6 +57,7 @@ parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float)
+parser.add_argument("--stopping_crit", default="convergence", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
@@ -168,7 +169,8 @@ def main():
                 supervised_iterator = iter(data.sup_iter)
                 if 'S' in flags.losses and model.step >= h_params.anneal_kl[0]:
                     model.eval()
-                    accuracy = model.get_overall_accuracy(data.val_iter)
+                    accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.train_iter
+                    accuracy = model.get_overall_accuracy(accuracy_split)
                     model.train()
                     print("Accuracy is {} at step {}".format(accuracy, model.step))
                     if accuracy > max_acc:
@@ -230,9 +232,9 @@ def main():
                 else:
                     wait_count += 1
 
-            if wait_count == flags.wait_epochs:
-                model.reduce_lr(flags.lr_reduction)
-                print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                if wait_count == flags.wait_epochs:
+                    model.reduce_lr(flags.lr_reduction)
+                    print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
             if wait_count == flags.wait_epochs*2:
                 break
@@ -247,16 +249,16 @@ def main():
     # Getting final test numbers
 
     model.eval()
-    accuracy = model.get_overall_accuracy(data.test_iter).item()
+    test_accuracy = model.get_overall_accuracy(data.test_iter).item()
     if 'SS' in flags.losses:
         pp_ub = model.get_perplexity(data.test_iter).item()
     else:
         pp_ub = -1
-    print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(accuracy, pp_ub))
+    print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(test_accuracy, pp_ub))
     if not os.path.exists(flags.result_csv):
         with open(flags.result_csv, 'w') as f:
-            f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion',
-                               'unsupervision_proportion', 'accuracy', 'pp_ub', 'best_epoch',
+            f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight'
+                               'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'pp_ub', 'best_epoch',
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
                                'pos_h', 'pos_l', 'decoder_h', 'decoder_l',
@@ -264,7 +266,8 @@ def main():
 
     with open(flags.result_csv, 'a') as f:
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
-                           str(flags.unsupervision_proportion), str(accuracy), str(pp_ub), str(best_epoch),
+                           str(flags.generation_weight),
+                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc), str(pp_ub), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
@@ -275,7 +278,7 @@ def limited_next(iterator):
     batch = next(iterator)
     if len(batch.text[0]) > MAX_LEN:
         batch.text = batch.text[:, :MAX_LEN]
-        batch.label = batch.label[:, :MAX_LEN-2]
+        batch.label = batch.label[:, :MAX_LEN-1]
     return batch
 
 
