@@ -169,7 +169,7 @@ def main():
                 supervised_iterator = iter(data.sup_iter)
                 if 'S' in flags.losses and model.step >= h_params.anneal_kl[0]:
                     model.eval()
-                    accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.train_iter
+                    accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.sup_iter
                     accuracy = model.get_overall_accuracy(accuracy_split)
                     model.train()
                     print("Accuracy is {} at step {}".format(accuracy, model.step))
