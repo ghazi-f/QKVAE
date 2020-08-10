@@ -61,7 +61,7 @@ class HuggingIMDB2:
         label_field.build_vocab(train)
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(
-            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=False, sort=False)
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         _, self.unsup_val_iter, _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False,
             sort=False)

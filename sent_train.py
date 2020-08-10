@@ -51,7 +51,7 @@ parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
-parser.add_argument("--dropout", default=0.2, type=float)
+parser.add_argument("--dropout", default=0., type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
@@ -267,7 +267,7 @@ def main():
     with open(flags.result_csv, 'a') as f:
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
                            str(flags.generation_weight),
-                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc), str(pp_ub), str(best_epoch),
+                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc.item()), str(pp_ub), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
