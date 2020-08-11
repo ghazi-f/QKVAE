@@ -51,13 +51,13 @@ parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
-parser.add_argument("--dropout", default=0., type=float)
+parser.add_argument("--dropout", default=0.2, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float)
-parser.add_argument("--stopping_crit", default="convergence", choices=["convergence", "early"], type=str)
+parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
@@ -257,7 +257,7 @@ def main():
     print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(test_accuracy, pp_ub))
     if not os.path.exists(flags.result_csv):
         with open(flags.result_csv, 'w') as f:
-            f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight'
+            f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight',
                                'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'pp_ub', 'best_epoch',
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
