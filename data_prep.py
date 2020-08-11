@@ -33,9 +33,10 @@ class HuggingIMDB2:
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
         fields3 = {'text': text_field}
         fields4 = {'text': ('text', text_field)}
-        dev_start, dev_end = int(len(train_data)*sup_proportion/5*(dev_index-1)), \
-                             int(len(train_data)*sup_proportion/5*(dev_index))
-        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, dev_start, int(len(train_data)*sup_proportion)
+        dev_start, dev_end = int(len(train_data)/5*(dev_index-1)), \
+                             int(len(train_data)/5*(dev_index))
+        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
+                                                             int(dev_end+(len(train_data)-dev_end)*sup_proportion)
         unsup_start, unsup_end = 0, int((len(train_data)+len(unsup_data))*unsup_proportion)
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
