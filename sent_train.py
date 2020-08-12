@@ -147,7 +147,6 @@ def main():
     mean_loss = 0
     supervision_epoch = 0
     best_epoch = -1
-    sup_samples = 0
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2:
@@ -164,8 +163,6 @@ def main():
                     print('Saved model after it\'s pure reconstruction phase')
             try:
                 supervised_batch = next(supervised_iterator)
-                sup_samples += flags.batch_size
-                if sup_samples >= total_supervised_train_samples * 0.01: raise StopIteration
             except StopIteration:
                 print("Reinitialized supervised training iterator")
                 supervision_epoch += 1
