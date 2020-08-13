@@ -148,6 +148,10 @@ class ELBo(BaseCriterion):
             coeff = torch.tensor(1)
         if coeff == 0:
             kl = 0
+        # if not actual :
+        #     loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * kl), dim=(0, 1)) / self.valid_n_samples
+        # else:
+        #     loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
         loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
 
         with torch.no_grad():
@@ -171,6 +175,7 @@ class ELBo(BaseCriterion):
         LL_value = torch.sum(self.log_p_xIz)/self.valid_n_samples
         KL_dict = {}
         for lv in self.gen_lvs.keys():
+            if lv not in self.infer_lvs: continue
             gen_lv, inf_lv = self.gen_lvs[lv], self.infer_lvs[lv]
             infer_v_name = inf_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.infer_net.parent[inf_lv]]))
                                           if inf_lv in self.infer_net.parent else '')
@@ -339,6 +344,7 @@ class IWLBo(ELBo):
         kl_sum = 0
         if self.model.step >= self.h_params.anneal_kl[0]:
             for lv in self.gen_lvs.keys():
+                if lv not in self.infer_lvs: continue
                 gen_lv, inf_lv = self.gen_lvs[lv], self.infer_lvs[lv]
                 infer_v_name = inf_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.infer_net.parent[inf_lv]]))
                                               if inf_lv in self.infer_net.parent else '')
