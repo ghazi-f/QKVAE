@@ -194,7 +194,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     z_sample = z_gen.prior_sample((n_samples, ))[0]
             else:
                 z_sample = None
-            if 'zlstm' in self.gen_bn.name_to_v:
+            if ('zlstm' in self.gen_bn.name_to_v) and (self.gen_bn.name_to_v['zlstm'] not in self.gen_bn.parent):
                 # Special case where generation is not autoregressive
                 zlstm = self.gen_bn.name_to_v['zlstm']
                 zlstm_sample1 = zlstm.prior_sample((1,))[0].repeat(n_samples, 1)
