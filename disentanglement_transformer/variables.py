@@ -40,39 +40,39 @@ class ZInfer(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
         super(ZInfer, self).__init__(h_params.z_size, 'z', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet)
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZInfer1(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
         super(ZInfer1, self).__init__(h_params.z_size, 'z1', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet)
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZInfer2(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
         super(ZInfer2, self).__init__(h_params.z_size, 'z2', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet)
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZGen(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
         super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 
 
 class ZGen1(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
         super(ZGen1, self).__init__(h_params.z_size, 'z1', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 
 
 class ZGen2(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
         super(ZGen2, self).__init__(h_params.z_size, 'z2', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 
 
 
@@ -80,11 +80,11 @@ class ZlstmInfer(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
         super(ZlstmInfer, self).__init__(h_params.z_size, 'zlstm', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet)
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZlstmGen(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
         super(ZlstmGen, self).__init__(h_params.z_size, 'zlstm', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 

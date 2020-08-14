@@ -18,7 +18,8 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     parameter_activations = {}
 
     def __init__(self, prior, size, prior_params, name, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False,
+                 sequence_lv=False):
         # IDEA: Lock latent variable behaviour according to it's role in the bayesian network
         super(BaseLatentVariable, self).__init__()
         assert len(self.parameter_activations) > 0
@@ -31,6 +32,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.inv_seq = inv_seq
         self.stl = stl
         self.iw = iw
+        self.sequence_lv = sequence_lv
 
         # If the representation is non Markovian an LSTM is added to represent the variable
         if markovian:
@@ -110,7 +112,11 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 
         else:
             prior_distrib = self.prior(**self.prior_params)
-            self.prior_samples = prior_distrib.sample(sample_shape)
+            if self.sequence_lv:
+                self.prior_samples = prior_distrib.sample((*sample_shape[:-2], 1, sample_shape[-1]))
+                self.prior_samples = self.prior_samples.expand(sample_shape)
+            else:
+                self.prior_samples = prior_distrib.sample(sample_shape)
             self.prior_log_probas = prior_distrib.log_prob(self.prior_samples)
             self.prior_reps = self.rep(self.prior_samples, step_wise=False)
 
@@ -263,6 +269,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.post_params = link_approximator(inputs)
         if complete:
             self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
+            if self.sequence_lv:
+                self.post_samples = self.post_samples[..., :1, :].expand(self.post_samples.shape)
+                self.post_log_probas = self.post_log_probas[..., :1].expand(self.post_log_probas.shape)
             self.post_reps = self.rep(self.post_samples, step_wise=False)
             if gt_samples is not None:
                 if isinstance(self, Gaussian):
@@ -286,13 +295,14 @@ class Gaussian(BaseLatentVariable):
     parameter_activations = {'loc': nn.Sequential(), 'scale': torch.nn.Softplus()}
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
-                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False):
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False,
+                 sequence_lv=False):
         self.prior_loc = torch.zeros(size).to(device)
         self.prior_cov = torch.ones(size).to(device)
         super(Gaussian, self).__init__(diag_normal, size, {'loc': self.prior_loc,
                                                            'scale': self.prior_cov},
                                        name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
-                                       inv_seq, stl, repnet, iw)
+                                       inv_seq, stl, repnet, iw, sequence_lv)
 
     def infer(self, x_params):
         return x_params['loc']
@@ -333,7 +343,7 @@ class Categorical(BaseLatentVariable):
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1,
-                 word_dropout=None):
+                 word_dropout=None, sequence_lv=False):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
@@ -342,7 +352,7 @@ class Categorical(BaseLatentVariable):
         super(Categorical, self).__init__(RelaxedOneHotCategorical, size, {'logits': self.prior_logits,
                                                                            'temperature': self.prior_temperature},
                                           name, prior_sequential_link, posterior, markovian, allow_prior,
-                                          is_placeholder, inv_seq, stl, repnet, iw)
+                                          is_placeholder, inv_seq, stl, repnet, iw, sequence_lv)
         self.embedding = embedding
         self.w_drp = nn.Dropout(word_dropout) if word_dropout is not None else None
         if self.rep_net is not None and not markovian:
