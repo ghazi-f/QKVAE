@@ -24,31 +24,32 @@ parser.add_argument("--test_freq", default=32, type=int)
 parser.add_argument("--complete_test_freq", default=160, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=512, type=int)#################"
-parser.add_argument("--z_size", default=512, type=int)#################"
-parser.add_argument("--n_latents", default=8, type=int)#################"
+parser.add_argument("--embedding_dim", default=128, type=int)#################"
+parser.add_argument("--z_size", default=768, type=int)#################"
+parser.add_argument("--n_latents", default=16, type=int)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=512, type=int)
-parser.add_argument("--encoder_h", default=512, type=int)#################"
+parser.add_argument("--text_rep_h", default=768, type=int)
+parser.add_argument("--encoder_h", default=768, type=int)#################"
 parser.add_argument("--encoder_l", default=2, type=int)#################"
-parser.add_argument("--decoder_h", default=512, type=int)
-parser.add_argument("--decoder_l", default=4, type=int)#################"
+parser.add_argument("--decoder_h", default=768, type=int)
+parser.add_argument("--decoder_l", default=3, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
-parser.add_argument("--testing_iw_samples", default=5, type=int)
+parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=00, type=int)
-parser.add_argument("--anneal_kl1", default=000, type=int)
-parser.add_argument("--grad_clip", default=10., type=float)
-parser.add_argument("--kl_th", default=0/512, type=float or None)
+parser.add_argument("--anneal_kl0", default=2000, type=int)
+parser.add_argument("--anneal_kl1", default=4000, type=int)
+parser.add_argument("--grad_clip", default=100., type=float)
+parser.add_argument("--kl_th", default=0/(768*3), type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.0, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
-parser.add_argument("--wait_epochs", default=1, type=float)
+parser.add_argument("--wait_epochs", default=3, type=float)
+parser.add_argument("--save_all", default=True, type=bool)
 
 flags = parser.parse_args()
 
@@ -57,8 +58,8 @@ if True:
     flags.losses = 'VAE'
     flags.batch_size = 128
     flags.grad_accu = 1
-    flags.max_len = 20
-    flags.test_name = "nliLM/newIdmaxcrit3"
+    flags.max_len = 17
+    flags.test_name = "nliLM/StructuredAutoreg5"
 
 # torch.autograd.set_detect_anomaly(True)
 MAX_LEN = flags.max_len
@@ -89,7 +90,7 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
-                       is_weighted=[], graph_generator=get_non_auto_regressive_disentanglement_graph,
+                       is_weighted=[], graph_generator=get_structured_auto_regressive_disentanglement_graph,
                        z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
@@ -115,7 +116,6 @@ def main():
     print("Generation parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     number_parameters = sum(p.numel() for p in model.word_embeddings.parameters() if p.requires_grad)
     print("Embedding parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
-    max_acc = 0
     min_perp = 1e20
     wait_count = 0
     loss = torch.tensor(1e20)
@@ -169,6 +169,8 @@ def main():
                 wait_count = 0
             else:
                 wait_count += 1
+            if flags.save_all:
+                model.save()
 
             if wait_count == flags.wait_epochs:
                 model.reduce_lr(flags.lr_reduction)
