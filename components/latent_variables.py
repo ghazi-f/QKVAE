@@ -112,11 +112,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 
         else:
             prior_distrib = self.prior(**self.prior_params)
-            if self.sequence_lv:
-                self.prior_samples = prior_distrib.sample((*sample_shape[:-2], 1, sample_shape[-1]))
-                self.prior_samples = self.prior_samples.expand(sample_shape)
-            else:
-                self.prior_samples = prior_distrib.sample(sample_shape)
+            self.prior_samples = prior_distrib.sample(sample_shape)
             self.prior_log_probas = prior_distrib.log_prob(self.prior_samples)
             self.prior_reps = self.rep(self.prior_samples, step_wise=False)
 
