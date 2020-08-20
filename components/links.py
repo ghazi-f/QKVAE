@@ -344,9 +344,10 @@ class TransformerLink(BaseLink):
         return mask
 
 
-class CoattentiveTransformerLink(BaseLink):
+class CoattentiveTransformerLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
-                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_targets=20, nheads=2):
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_targets=20, nheads=2,
+                 sequence=None, memory=None, n_mems=None):
         super(CoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
                                                          highway, dropout=dropout, batchnorm=batchnorm,
                                                          residual=residual)
@@ -354,6 +355,9 @@ class CoattentiveTransformerLink(BaseLink):
         assert z_size % n_targets == 0
         output_size = int(output_size/n_targets)
         self.target = nn.Embedding(n_targets, output_size).weight
+        self.n_mems = n_mems
+        self.memory = memory
+        self.sequence = sequence
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size*n_targets,
@@ -376,19 +380,40 @@ class CoattentiveTransformerLink(BaseLink):
                                                      for param in params})
 
     def forward(self, x, z_prev=None):
-        if self.residual is not None:
-            x_res, x = x
-            z_params_res = self.residual['link'](x_res, z_prev)
-        x = self.input_to_hidden(x)
-        if x.ndim > 3:
-            batch_orig_shape = x.shape[:-2]
-            x = x.view(-1, *x.shape[-2:])
+        if self.sequence is not None:
+            if self.memory is not None:
+                memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
+                memory = memory.view((-1, self.n_mems, int(memory.shape[-1] / self.n_mems)))
+            x = torch.cat([v for k, v in x.items() if k in self.sequence], dim=-1)
+            if self.residual is not None:
+                x_res, x = x
+                z_params_res = self.residual['link'](x_res, z_prev)
+
+            x = self.input_to_hidden(x)
+            if x.ndim > 3:
+                batch_orig_shape = x.shape[:-2]
+                x = x.view(-1, *x.shape[-2:])
+            else:
+                batch_orig_shape = None
+            x = self.transformer_enc(self.pe(x.transpose(-2, 0)))
+            seq_len = x.shape[0]
+            if self.memory is not None:
+                x = torch.cat([x, memory.transpose(0, -2)])
         else:
-            batch_orig_shape = None
-        x = self.transformer_enc(self.pe(x.transpose(-2, 0)))
-        seq_len = x.shape[0]
+            if self.memory is not None:
+                memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)
+                seq_len = memory.shape[-2]
+                if memory.ndim > 3:
+                    batch_orig_shape = memory.shape[:-2]
+                else:
+                    batch_orig_shape = None
+                memory = memory[..., 0, :]
+                memory = memory.view((-1, self.n_mems, int(memory.shape[-1] / self.n_mems)))
+                x = memory.transpose(0, -2)
+            else:
+                raise LookupError('Memory and sequence are both None. You have to provide either of those.')
         target = self.target
-        while target.ndim<x.ndim:
+        while target.ndim < x.ndim:
             new_dimension = x.ndim - target.ndim
             target = target.unsqueeze(1)
             target = target.expand((target.shape[0], x.shape[new_dimension], *target.shape[2:]))
