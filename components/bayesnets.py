@@ -59,7 +59,7 @@ class BayesNet(nn.Module):
         if lv not in self.parent:
             return lvl
         else:
-            return max([self._get_max_iw_path(p, lvl) for p in self.parent[lv]])
+            return max([self._get_max_iw_path(p, lvl, force_lv=force_lv) for p in self.parent[lv]])
 
     def clear_values(self):
         self.variables_hat = {}
