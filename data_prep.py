@@ -1,5 +1,6 @@
 # This file is destined to wrap all the data pipelining utilities (reading, tokenizing, padding, batchifying .. )
 import io
+import os
 
 import torchtext.data as data
 from torchtext.data import Dataset, Example
@@ -197,8 +198,9 @@ class HuggingYelp:
                                 is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
 
-        yelp_data = load_dataset('csv', data_files={'train': '.data\yelp\\train.csv',
-                                                                'test': '.data\yelp\\test.csv'},
+        print('Current working directory:', os.getcwd())
+        yelp_data = load_dataset('csv', data_files={'train': os.path.join('.data', 'yelp', 'train.csv'),
+                                                                'test': os.path.join('.data', 'yelp', 'test.csv')},
                                              column_names=['label', 'text'], version='0.0.1')
                                              #download_mode=FORCE_REDOWNLOAD)
 
