@@ -23,8 +23,8 @@ def get_sentiment_graph(h_params, word_embeddings, pos_embeddings):
     z_to_yemb = MLPLink(zin_size, h_params.pos_h, yembout_size, h_params.pos_l, Gaussian.parameter_activations,
                            highway=h_params.highway, dropout=h_params.dropout)
     xprev_yemb_z_to_x = LSTMLink(xin_size+zin_size+yembin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
-                                Categorical.parameter_activations, word_embeddings, highway=h_params.highway, sbn=None,
-                                dropout=h_params.dropout)
+                                Categorical.parameter_activations, word_embeddings if h_params.tied_embeddings else None
+                                 , highway=h_params.highway, sbn=None, dropout=h_params.dropout)
 
     # Inference
     yval_inf = YvalInfer(h_params, pos_embeddings)

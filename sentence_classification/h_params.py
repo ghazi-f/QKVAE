@@ -20,6 +20,7 @@ class DefaultHParams:
                  device=None,
                  test_name='default',
                  embedding_dim=300,
+                 tied_embeddings=True,
                  pos_embedding_dim=20,
                  z_size=500,
                  text_rep_l=1,
@@ -46,6 +47,7 @@ class DefaultHParams:
                  anneal_kl_type='linear',
                  grad_clip=None,
                  kl_th=None,
+                 max_elbo=False,
                  highway=True,
                  dropout=0.,
                  input_dimensions=2,
@@ -74,6 +76,7 @@ class DefaultHParams:
         # Architectural hyper-parameters
         self.max_len = max_len
         self.embedding_dim = embedding_dim
+        self.tied_embeddings = tied_embeddings
         self.pos_embedding_dim = pos_embedding_dim
         self.text_rep_l = text_rep_l
         self.text_rep_h = text_rep_h
@@ -110,6 +113,7 @@ class DefaultHParams:
         self.anneal_kl_type = anneal_kl_type
         self.grad_clip = grad_clip
         self.kl_th = kl_th
+        self.max_elbo = max_elbo
         self.dropout = dropout
         self.word_dropout = word_dropout
 
