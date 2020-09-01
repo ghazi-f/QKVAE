@@ -197,12 +197,13 @@ class HuggingYelp:
                                 is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
 
-        start = time()
-        train_data, test_data = load_dataset('csv', data_files={'train': '.data\yelp\\train.csv',
+        yelp_data = load_dataset('csv', data_files={'train': '.data\yelp\\train.csv',
                                                                 'test': '.data\yelp\\test.csv'},
-                                             column_names=['label', 'text'],
-                                             download_mode=FORCE_REDOWNLOAD, version='0.0.1')
+                                             column_names=['label', 'text'], version='0.0.1')
+                                             #download_mode=FORCE_REDOWNLOAD)
 
+        start = time()
+        train_data, test_data = yelp_data['train'], yelp_data['test']
         def expand_labels(datum):
             # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
             datum['label'] = [str(datum['label'])]*(max_len-1)
@@ -222,7 +223,7 @@ class HuggingYelp:
         # experiments
         np.random.seed(42)
         train_examples = [Example.fromdict(ex, fields2) for ex in train_data]
-        unsup_examples = ([Example.fromdict(ex, fields4) for ex in train_data])
+        unsup_examples = [Example.fromdict(ex, fields4) for ex in train_data]
         np.random.shuffle(train_examples)
         np.random.shuffle(unsup_examples)
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)

@@ -66,8 +66,9 @@ if False:
     flags.batch_size = 8
     flags.grad_accu = 8
     flags.max_len = 128
-    flags.test_name = "SSVAE/IMDB/test5"
+    flags.test_name = "SSVAE/IMDB/test6"
     flags.supervision_proportion = 1
+    flags.dataset = "yelp"
 
 # torch.autograd.set_detect_anomaly(True)
 Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp}[flags.dataset]
