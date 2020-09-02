@@ -57,7 +57,7 @@ parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=2e-3, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
-parser.add_argument("--wait_epochs", default=8, type=float) # changed from 4 to 8 for agnews
+parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 8 for agnews
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
