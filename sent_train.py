@@ -118,7 +118,7 @@ def main():
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
                        loss_params=LOSS_PARAMS, piwo=PIWO, ipiwo=IPIWO, optimizer=optim.AdamW, markovian=flags.markovian
-                       , word_dropout=flags.word_dropout, contiguous_lm=False,tied_embeddings=flags.tied_embeddings)
+                       , word_dropout=flags.word_dropout, contiguous_lm=False, tied_embeddings=flags.tied_embeddings)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Launching experiment ", flags.test_name)
