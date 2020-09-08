@@ -63,7 +63,7 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'SSVAE'
     flags.batch_size = 8
     flags.grad_accu = 8
@@ -71,10 +71,12 @@ if False:
     flags.test_name = "SSVAE/IMDB/test7"
     flags.supervision_proportion = 1
     #flags.dataset = "yelp"
+    flags.pretrained_embeddings
 
 if flags.pretrained_embeddings:
     flags.embedding_dim = 300
     flags.tied_embeddings = True
+    flags.decoder_h = flags.embedding_dim
 # torch.autograd.set_detect_anomaly(True)
 Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp}[flags.dataset]
 MAX_LEN = flags.max_len
