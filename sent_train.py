@@ -32,7 +32,7 @@ parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=500, type=int)
 parser.add_argument("--tied_embeddings", default=False, type=bool)
-parser.add_argument("--pretrained_embeddings", default=False, type=bool)
+parser.add_argument("--pretrained_embeddings", default=True, type=bool)
 parser.add_argument("--pos_embedding_dim", default=100, type=int)
 parser.add_argument("--z_size", default=200, type=int)
 parser.add_argument("--text_rep_l", default=2, type=int)
@@ -270,7 +270,7 @@ def main():
                                'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'pp_ub', 'best_epoch',
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
-                               'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied'
+                               'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained'
                                ]) + '\n')
 
     with open(flags.result_csv, 'a') as f:
@@ -280,7 +280,7 @@ def main():
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
-                           str(flags.training_iw_samples), str(flags.tied_embeddings)
+                           str(flags.training_iw_samples), str(flags.tied_embeddings), str(flags.pretrained_embeddings)
                            ])+'\n')
 
 
