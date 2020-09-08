@@ -32,6 +32,7 @@ parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=500, type=int)
 parser.add_argument("--tied_embeddings", default=False, type=int)
+parser.add_argument("--pretrained_embeddings", default=False, type=int)
 parser.add_argument("--pos_embedding_dim", default=100, type=int)
 parser.add_argument("--z_size", default=200, type=int)
 parser.add_argument("--text_rep_l", default=2, type=int)
@@ -63,14 +64,17 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.losses = 'SSPIWO'
+    flags.losses = 'SSVAE'
     flags.batch_size = 8
     flags.grad_accu = 8
     flags.max_len = 128
-    flags.test_name = "SSVAE/IMDB/test6"
+    flags.test_name = "SSVAE/IMDB/test7"
     flags.supervision_proportion = 1
-    flags.dataset = "yelp"
+    #flags.dataset = "yelp"
 
+if flags.pretrained_embeddings:
+    flags.embedding_dim = 300
+    flags.tied_embeddings = True
 # torch.autograd.set_detect_anomaly(True)
 Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp}[flags.dataset]
 MAX_LEN = flags.max_len
@@ -103,7 +107,8 @@ IPIWO = flags.losses == 'SSiPIWO'
 
 
 def main():
-    data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, UNSUP_PROPORTION, SUP_PROPORTION, DEV_INDEX)
+    data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, UNSUP_PROPORTION, SUP_PROPORTION, DEV_INDEX,
+                flags.pretrained_embeddings)
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,
                        device=DEVICE, pos_ignore_index=data.tags.stoi['<pad>'],
                        vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,

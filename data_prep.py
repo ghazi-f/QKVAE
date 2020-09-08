@@ -16,7 +16,8 @@ from nlp.builder import FORCE_REDOWNLOAD
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
 
 class HuggingIMDB2:
-    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1):
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
+                 pretrained=False):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -59,7 +60,7 @@ class HuggingIMDB2:
         print('data loading took', time() - start)
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train, max_size=10000)  # , vectors="fasttext.simple.300d")
+        text_field.build_vocab(unsup_train, max_size=10000) #, vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(
@@ -80,7 +81,11 @@ class HuggingIMDB2:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.wvs = None
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
 
     def reinit_iterator(self, split):
         if split == 'train':
@@ -103,7 +108,8 @@ class HuggingIMDB2:
 
 
 class HuggingAGNews:
-    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1):
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
+                 pretrained=True):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -167,7 +173,11 @@ class HuggingAGNews:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.wvs = None
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
 
     def reinit_iterator(self, split):
         if split == 'train':
@@ -191,7 +201,8 @@ class HuggingAGNews:
 
 class HuggingYelp:
 
-    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1):
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
+                 pretrained=True):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -260,7 +271,11 @@ class HuggingYelp:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.wvs = None
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
 
     def reinit_iterator(self, split):
         if split == 'train':
