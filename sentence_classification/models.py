@@ -17,7 +17,7 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
         self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
         nn.init.uniform_(self.word_embeddings.weight, -1., 1.)
         if wvs is not None:
-            self.word_embeddings.weight.data.copy_(torch.from_numpy(wvs))
+            self.word_embeddings.weight.data.copy_(wvs)
         self.pos_embeddings = nn.Embedding(h_params.tag_size, h_params.pos_embedding_dim)
 
         # Getting vertices
