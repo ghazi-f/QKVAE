@@ -417,6 +417,8 @@ class CoattentiveTransformerLink(NamedLink):
             new_dimension = x.ndim - target.ndim
             target = target.unsqueeze(1)
             target = target.expand((target.shape[0], x.shape[new_dimension], *target.shape[2:]))
+        # This conditioned is not checked by the transformer module architecture
+        assert all([ms == ts for ms, ts in zip(x.shape[1:], target.shape[1:])])
         outputs = self.transformer_dec(memory=x, tgt=target).transpose(-2, 0)
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
@@ -502,6 +504,8 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         memory = memory.transpose(-2, 0)
         memory = self.transformer_enc(memory)
 
+        # This conditioned is not checked by the transformer module architecture
+        assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
         outputs = self.transformer_dec(memory=memory, tgt=targets, tgt_mask=target_mask).transpose(-2, 0)
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
