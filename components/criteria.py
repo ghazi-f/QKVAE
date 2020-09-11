@@ -148,13 +148,16 @@ class ELBo(BaseCriterion):
             coeff = torch.tensor(1)
         if coeff == 0:
             kl = 0
-        # if not actual and type(kl) != int:
-        #     max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
-        #               for lv_n in self.infer_lvs.keys()]), dim=0)
-        #     loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl[0]/3), dim=(0, 1)) / self.valid_n_samples
-        # else:
-        #     loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
-        loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
+        if self.h_params.max_elbo:
+            if not actual and type(kl) != int:
+                max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
+                          for lv_n in self.infer_lvs.keys()]), dim=0)
+                loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl[0]/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
+                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * kl/3), dim=(0, 1)) / self.valid_n_samples
+            else:
+                loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
+        else:
+            loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
 
         with torch.no_grad():
             if actual and thr is None:
@@ -187,8 +190,8 @@ class ELBo(BaseCriterion):
             kl_i = kullback_liebler(inf_lv.post_params, gen_lv.post_params)*self.sequence_mask
             KL_value = torch.sum(kl_i)/self.valid_n_samples
             KL_dict[KL_name] = KL_value
-        if self.h_params.n_latents > 1:
-            for name in ['z', 'z1', 'z2']:
+        if not (type(self.h_params.n_latents) == int and self.h_params.n_latents == 1):
+            for j, name in enumerate(['z1', 'z2', 'z3']):
                 if name in self.gen_lvs:
                     gen_lv, inf_lv = self.gen_lvs[name], self.infer_lvs[name]
                     infer_v_name = inf_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.infer_net.parent[inf_lv]]))
@@ -197,9 +200,10 @@ class ELBo(BaseCriterion):
                                                 if gen_lv in self.gen_net.parent else '')
                     KLs = []
                     KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name,gen_v_name)
-                    for i in range(self.h_params.n_latents):
-                        start, end = int(i*self.h_params.z_size/self.h_params.n_latents), \
-                                     int((i+1)*self.h_params.z_size/self.h_params.n_latents)
+                    n_latents= self.h_params.n_latents[j]
+                    for i in range(n_latents):
+                        start, end = int(i*self.h_params.z_size/n_latents), \
+                                     int((i+1)*self.h_params.z_size/n_latents)
                         inf_params = {k: v[..., start:end] for k, v in inf_lv.post_params.items()}
                         if gen_lv.post_params is None: continue
                         gen_params = {k: v[..., start:end] for k, v in gen_lv.post_params.items()}
