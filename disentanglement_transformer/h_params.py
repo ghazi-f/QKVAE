@@ -45,6 +45,7 @@ class DefaultHParams:
                  anneal_kl=None,
                  grad_clip=None,
                  kl_th=None,
+                 max_elbo=False,
                  highway=True,
                  dropout=0.,
                  input_dimensions=2,
@@ -108,6 +109,7 @@ class DefaultHParams:
         self.anneal_kl = anneal_kl
         self.grad_clip = grad_clip
         self.kl_th = kl_th
+        self.max_elbo = max_elbo
         self.dropout = dropout
         self.word_dropout = word_dropout
 

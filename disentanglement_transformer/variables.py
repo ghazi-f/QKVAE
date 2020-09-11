@@ -36,42 +36,48 @@ class XPrevGen(Categorical):
                                        repnet=repnet, word_dropout=h_params.word_dropout)
 
 
-class ZInfer(Gaussian):
-    def __init__(self, h_params, repnet):
-        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
-        super(ZInfer, self).__init__(h_params.z_size, 'z', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
-
-
 class ZInfer1(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
-        super(ZInfer1, self).__init__(h_params.z_size, 'z1', h_params.device, markovian=h_params.markovian,
+        size = int(h_params.z_size * h_params.n_latents[0] / max(h_params.n_latents))
+        super(ZInfer1, self).__init__(size, 'z1', h_params.device, markovian=h_params.markovian,
                                      stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZInfer2(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
-        super(ZInfer2, self).__init__(h_params.z_size, 'z2', h_params.device, markovian=h_params.markovian,
+        size = int(h_params.z_size * h_params.n_latents[1] / max(h_params.n_latents))
+        super(ZInfer2, self).__init__(size, 'z2', h_params.device, markovian=h_params.markovian,
                                      stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
-class ZGen(Gaussian):
-    def __init__(self, h_params, repnet, allow_prior=False):
-        super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
+class ZInfer3(Gaussian):
+    def __init__(self, h_params, repnet):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
+        size = int(h_params.z_size * h_params.n_latents[2] / max(h_params.n_latents))
+        super(ZInfer3, self).__init__(size, 'z3', h_params.device, markovian=h_params.markovian,
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZGen1(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
-        super(ZGen1, self).__init__(h_params.z_size, 'z1', h_params.device,
+        size = int(h_params.z_size * h_params.n_latents[0] / max(h_params.n_latents))
+        super(ZGen1, self).__init__(size, 'z1', h_params.device,
                                    markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 
 
 class ZGen2(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
-        super(ZGen2, self).__init__(h_params.z_size, 'z2', h_params.device,
+        size = int(h_params.z_size * h_params.n_latents[1] / max(h_params.n_latents))
+        super(ZGen2, self).__init__(size, 'z2', h_params.device,
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
+
+
+class ZGen3(Gaussian):
+    def __init__(self, h_params, repnet, allow_prior=False):
+        size = int(h_params.z_size * h_params.n_latents[2] / max(h_params.n_latents))
+        super(ZGen3, self).__init__(size, 'z3', h_params.device,
                                    markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 
 
