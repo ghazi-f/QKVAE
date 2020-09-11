@@ -17,7 +17,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
         nn.init.uniform_(self.word_embeddings.weight, -1., 1.)
         if wvs is not None:
-            self.word_embeddings.weight.data.copy_(torch.from_numpy(wvs))
+            self.word_embeddings.weight.data.copy_(wvs)
+            #self.word_embeddings.weight.requires_grad = False
 
         # Getting vertices
         vertices, _, self.generated_v = h_params.graph_generator(h_params, self.word_embeddings)
@@ -124,7 +125,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def _dump_train_viz(self):
         # Dumping gradient norm
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps - 1):
-            z_gen = [var for var in self.gen_bn.variables if var.name == 'z'][0]
+            z_gen = [var for var in self.gen_bn.variables if var.name == 'z1'][0]
             for module, name in zip([self, self.infer_bn, self.gen_bn,
                                      self.gen_bn.approximator[z_gen] if z_gen in self.gen_bn.approximator else None],
                                     ['overall', 'inference', 'generation', 'prior']):
@@ -167,66 +168,68 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits'])),
             ]
 
-            n_samples = self.h_params.n_latents * (1 if 'z1' not in self.gen_bn.name_to_v else 3) if \
-                self.h_params.n_latents > 1 else self.h_params.test_prior_samples
-            repeats = 2 if self.h_params.n_latents > 1 else 1
-            go_symbol = torch.ones([n_samples*repeats + (2 if self.h_params.n_latents > 1 else 0)
-                                    + (2 if 'zlstm' in self.gen_bn.name_to_v else 0)]).long() * \
+            n_samples = sum(self.h_params.n_latents)
+            repeats = 2
+            go_symbol = torch.ones([n_samples*repeats + 2 + (2 if 'zlstm' in self.gen_bn.name_to_v else 0)]).long() * \
                         self.index[self.generated_v].stoi['<go>']
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
             x_prev = go_symbol
             temp = 1.0
             only_z_sampling = True
             gen_len = self.h_params.max_len * (3 if self.h_params.contiguous_lm else 1)
-            z_gen = self.gen_bn.name_to_v['z']
+            z_gen = self.gen_bn.name_to_v['z1']
             # When z_gen is independent from X_prev (sequence level z)
             if z_gen not in self.gen_bn.parent:
-                if self.h_params.n_latents > 1:
+                if not (type(self.h_params.n_latents) == int and self.h_params.n_latents == 1):
                     orig_z_sample_1 = z_gen.prior_sample((1,))[0]
                     orig_z_sample_2 = z_gen.prior_sample((1,))[0]
                     z_sample_1 = orig_z_sample_1.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
                     z_sample_2 = orig_z_sample_2.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                    for i in range(1, self.h_params.n_latents+1):
-                        start, end = int((i-1) * self.h_params.z_size / self.h_params.n_latents), \
-                                     int(i * self.h_params.z_size / self.h_params.n_latents)
+                    for i in range(1, self.h_params.n_latents[0]+1):
+                        start, end = int((i-1) * self.h_params.z_size / max(self.h_params.n_latents)), \
+                                     int(i * self.h_params.z_size / max(self.h_params.n_latents))
                         z_sample_1[i, ..., start:end] = orig_z_sample_2[0, ..., start:end]
                         z_sample_2[i, ..., start:end] = orig_z_sample_1[0, ..., start:end]
                     z_sample = [z_sample_1, z_sample_2]
                     z_sample = torch.cat(z_sample)
-                    z_input = {'z': z_sample.unsqueeze(1)}
-                    if 'z1' in self.gen_bn.name_to_v:
-                        # Structured Z case
-                        z1, z2 = self.gen_bn.name_to_v['z1'], self.gen_bn.name_to_v['z2']
-                        self.gen_bn({'z': orig_z_sample_1.unsqueeze(1),
-                                     'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
-                        orig_z1_sample_1, orig_z2_sample_1 = z1.post_samples.squeeze(1), z2.post_samples.squeeze(1)
-                        orig_z1_params_1, orig_z2_params_1 = z1.post_params, z2.post_params
-                        z1_sample_1 = orig_z1_sample_1.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                        z2_sample_1 = orig_z2_sample_1.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                        self.gen_bn({'z': orig_z_sample_1.unsqueeze(1),
-                                     'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
-                        orig_z1_sample_2, orig_z2_sample_2 = z1.post_samples.squeeze(1), z2.post_samples.squeeze(1)
-                        orig_z1_params_2, orig_z2_params_2 = z1.post_params, z2.post_params
-                        z1_sample_2 = orig_z1_sample_2.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                        z2_sample_2 = orig_z2_sample_2.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                        for i in range(1, self.h_params.n_latents+1):
-                            start, end = int((i-1) * self.h_params.z_size / self.h_params.n_latents), \
-                                         int(i * self.h_params.z_size / self.h_params.n_latents)
-                            z1_sample_1[self.h_params.n_latents+i, ..., start:end] = orig_z1_sample_2[0, ..., start:end]
-                            z1_sample_2[self.h_params.n_latents+i, ..., start:end] = orig_z1_sample_1[0, ..., start:end]
-                            z2_sample_1[2*self.h_params.n_latents+i, ..., start:end] = orig_z2_sample_2[0, ..., start:end]
-                            z2_sample_2[2*self.h_params.n_latents+i, ..., start:end] = orig_z2_sample_1[0, ..., start:end]
-                        z1_sample = [z1_sample_1, z1_sample_2]
-                        z2_sample = [z2_sample_1, z2_sample_2]
-                        z1_sample = torch.cat(z1_sample)
-                        z2_sample = torch.cat(z2_sample)
-                        z_input['z1'] = z1_sample.unsqueeze(1)
-                        z_input['z2'] = z2_sample.unsqueeze(1)
+                    z_input = {'z1': z_sample.unsqueeze(1)}
+                    # Structured Z case
+                    z1, z2 = self.gen_bn.name_to_v['z2'], self.gen_bn.name_to_v['z3']
+                    self.gen_bn({'z1': orig_z_sample_1.unsqueeze(1),
+                                 'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
+                    orig_z1_sample_1, orig_z2_sample_1 = z1.post_samples.squeeze(1), z2.post_samples.squeeze(1)
+                    orig_z1_params_1, orig_z2_params_1 = z1.post_params, z2.post_params
+                    z1_sample_1 = orig_z1_sample_1.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
+                    z2_sample_1 = orig_z2_sample_1.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
+                    self.gen_bn({'z1': orig_z_sample_1.unsqueeze(1),
+                                 'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
+                    orig_z1_sample_2, orig_z2_sample_2 = z1.post_samples.squeeze(1), z2.post_samples.squeeze(1)
+                    orig_z1_params_2, orig_z2_params_2 = z1.post_params, z2.post_params
+                    z1_sample_2 = orig_z1_sample_2.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
+                    z2_sample_2 = orig_z2_sample_2.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
+                    z1_offset = self.h_params.n_latents[0]
+                    for i in range(1, self.h_params.n_latents[1]+1):
+                        start, end = int((i-1) * self.h_params.z_size / max(self.h_params.n_latents)), \
+                                     int(i * self.h_params.z_size / max(self.h_params.n_latents))
+                        z1_sample_1[z1_offset+i, ..., start:end] = orig_z1_sample_2[0, ..., start:end]
+                        z1_sample_2[z1_offset+i, ..., start:end] = orig_z1_sample_1[0, ..., start:end]
+                    z2_offset = self.h_params.n_latents[0] + self.h_params.n_latents[1]
+                    for i in range(1, self.h_params.n_latents[2]+1):
+                        start, end = int((i-1) * self.h_params.z_size / max(self.h_params.n_latents)), \
+                                     int(i * self.h_params.z_size / max(self.h_params.n_latents))
+                        z2_sample_1[z2_offset+i, ..., start:end] = orig_z2_sample_2[0, ..., start:end]
+                        z2_sample_2[z2_offset+i, ..., start:end] = orig_z2_sample_1[0, ..., start:end]
+                    z1_sample = [z1_sample_1, z1_sample_2]
+                    z2_sample = [z2_sample_1, z2_sample_2]
+                    z1_sample = torch.cat(z1_sample)
+                    z2_sample = torch.cat(z2_sample)
+                    z_input['z2'] = z1_sample.unsqueeze(1)
+                    z_input['z3'] = z2_sample.unsqueeze(1)
 
 
                 else:
                     z_sample = z_gen.prior_sample((n_samples, ))[0]
-                    z_input = {'z': z_sample.unsqueeze(1)}
+                    z_input = {'z1': z_sample.unsqueeze(1)}
             else:
                 z_input = {}
             if ('zlstm' in self.gen_bn.name_to_v) and (self.gen_bn.name_to_v['zlstm'] not in self.gen_bn.parent):
@@ -237,7 +240,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 zlstm_sample2 = zlstm.prior_sample((1,))[0]
                 zlstm_sample = torch.cat([zlstm_sample1.repeat(n_samples+1, 1), zlstm_sample2,
                                           zlstm_sample2.repeat(n_samples+1, 1), zlstm_sample1], 0)
-                self.gen_bn({'z': z_sample.unsqueeze(1).expand(z_sample.shape[0], gen_len, z_sample.shape[1]),
+                self.gen_bn({'z1': z_sample.unsqueeze(1).expand(z_sample.shape[0], gen_len, z_sample.shape[1]),
                              'zlstm': zlstm_sample.unsqueeze(1).expand(z_sample.shape[0], gen_len, z_sample.shape[1])})
                 samples_i = self.generated_v.post_params['logits']
                 x_prev = torch.argmax(samples_i, dim=-1)
@@ -256,7 +259,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                        dim=-1)
 
             summary_triplets.append(
-                ('text', '/prior_sample', self.decode_to_text(x_prev, gen=(self.h_params.n_latents > 1))))
+                ('text', '/prior_sample', self.decode_to_text(x_prev, gen=True)))
 
         return summary_triplets
 
@@ -294,7 +297,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             neg_log_perplexity_lb = 0
             total_samples = 0
             infer_prev, gen_prev = None, None
-            force_iw = ['z2' if 'z2' in self.infer_bn.name_to_v else 'z']
+            force_iw = ['z3' if 'z3' in self.infer_bn.name_to_v else 'z1']
             iwlbo = IWLBo(self, 1)
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Perplexity")):
                 if batch.text.shape[1] < 2: continue
