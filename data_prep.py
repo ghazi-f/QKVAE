@@ -14,7 +14,7 @@ from nlp.builder import FORCE_REDOWNLOAD
 
 
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
-VOCAB_LIMIT = 25000
+VOCAB_LIMIT = 10000
 
 
 class HuggingIMDB2:

@@ -20,8 +20,8 @@ parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp"], type=str)
 parser.add_argument("--result_csv", default='imdb.csv', type=str)
 parser.add_argument("--max_len", default=256, type=int)
-parser.add_argument("--batch_size", default=32, type=int)
-parser.add_argument("--grad_accu", default=2, type=int)
+parser.add_argument("--batch_size", default=8, type=int)
+parser.add_argument("--grad_accu", default=8, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
 parser.add_argument("--complete_test_freq", default=160, type=int)
@@ -63,7 +63,7 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.losses = 'SSIWAE'
     flags.batch_size = 32
     flags.grad_accu = 1
