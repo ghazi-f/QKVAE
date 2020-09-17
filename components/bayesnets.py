@@ -137,8 +137,17 @@ class BayesNet(nn.Module):
                             for _ in range(max_cond_lvl):
                                 expand_arg = [n_iw]+list(gt_lv.shape)
                                 gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
+                        if lens is not None:
+                            expand_arg = [n_iw] + list(lens.shape)
+                            this_len = lens.unsqueeze(0).expand(expand_arg)
+                            for _ in range(max_cond_lvl):
+                                expand_arg = [n_iw] + list(this_len.shape)
+                                this_len = this_len.unsqueeze(0).expand(expand_arg)
+                            this_len = this_len.reshape(-1)
+                    else:
+                        this_len = lens
                     lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv, complete=(lv in self.child) or complete,
-                       lens=lens)
+                       lens=this_len)
                     if eval:
                         if isinstance(lv, Categorical):
                             self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],

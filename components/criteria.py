@@ -115,7 +115,7 @@ class ELBo(BaseCriterion):
         self.sequence_mask = None
         self.valid_n_samples = None
 
-    def get_loss(self, actual=False):
+    def get_loss(self, actual=False, observed=None):
         vocab_size = self.generated_v.size
         criterion = self._unweighted_criterion if actual else self.criterion
         self.sequence_mask = (self.gen_net.variables_star[self.generated_v] != self.generated_v.ignore).float()
@@ -132,7 +132,9 @@ class ELBo(BaseCriterion):
         else:
             thr = torch.tensor([self.h_params.kl_th]).to(self.h_params.device)
         kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
-                  for lv_n in self.infer_lvs.keys()])
+                  for lv_n in self.infer_lvs.keys() if observed is None or (lv_n not in observed)])
+        if observed is not None:
+            kl += sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values() if lv.name in observed])
         kl *= self.sequence_mask
 
         # Applying KL Annealing
@@ -149,6 +151,7 @@ class ELBo(BaseCriterion):
         if coeff == 0:
             kl = 0
         if self.h_params.max_elbo:
+            # Didn't implement observed here
             if not actual and type(kl) != int:
                 max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
                           for lv_n in self.infer_lvs.keys()]), dim=0)
@@ -160,17 +163,18 @@ class ELBo(BaseCriterion):
             loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
 
         with torch.no_grad():
-            if actual and thr is None:
-                unweighted_loss = loss
-            else:
-                un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
-                                                          self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                                          ).view(self.gen_net.variables_star[self.generated_v].shape)
-                un_log_p_xIz *= self.sequence_mask
-                kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=None)
-                          for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
-                unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
-            self._prepare_metrics(unweighted_loss)
+            if observed is None:
+                if actual and thr is None:
+                    unweighted_loss = loss
+                else:
+                    un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
+                                                              self.gen_net.variables_star[self.generated_v].reshape(-1)
+                                                              ).view(self.gen_net.variables_star[self.generated_v].shape)
+                    un_log_p_xIz *= self.sequence_mask
+                    kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=None)
+                              for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
+                    unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
+                self._prepare_metrics(unweighted_loss)
 
         return loss
 
@@ -272,7 +276,7 @@ class IWLBo(ELBo):
         super(IWLBo, self).__init__(model, w)
         self.input_dimensions = self.h_params.input_dimensions
 
-    def get_loss(self, actual=False):
+    def get_loss(self, actual=False, observed=None):
 
         vocab_size = self.generated_v.size
         criterion = self._unweighted_criterion if actual else self.criterion
@@ -296,7 +300,8 @@ class IWLBo(ELBo):
             self.log_q_zIx = 0
         else:
             self.log_p_z = [self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]
-            self.log_q_zIx = [self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()]
+            self.log_q_zIx = [self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()
+                              if observed is None or (lv.name not in observed)]
 
             # Filling in for additional dimensions in shapes when it's needed
 
@@ -329,19 +334,20 @@ class IWLBo(ELBo):
             loss = - torch.sum(DReG_weights * log_wi)/self.valid_n_samples
 
         with torch.no_grad():
-            if actual and False:
-                unweighted_loss = loss
-            else:
-                log_wi = self.log_p_xIz + 1 * (self.log_p_z - self.log_q_zIx)
-                max_log_wi = torch.max(log_wi)
-                exp_log_wi = torch.exp(log_wi - max_log_wi)
-                n_samples_correction = 1
-                while exp_log_wi.ndim > self.input_dimensions:
-                    n_samples_correction *= exp_log_wi.shape[0]
-                    exp_log_wi = torch.mean(exp_log_wi, dim=0)
-                summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
-                unweighted_loss = - torch.sum(summed_log_wi)/(self.valid_n_samples/n_samples_correction)
-            self._prepare_metrics(unweighted_loss)
+            if observed is None:
+                if actual and False:
+                    unweighted_loss = loss
+                else:
+                    log_wi = self.log_p_xIz + 1 * (self.log_p_z - self.log_q_zIx)
+                    max_log_wi = torch.max(log_wi)
+                    exp_log_wi = torch.exp(log_wi - max_log_wi)
+                    n_samples_correction = 1
+                    while exp_log_wi.ndim > self.input_dimensions:
+                        n_samples_correction *= exp_log_wi.shape[0]
+                        exp_log_wi = torch.mean(exp_log_wi, dim=0)
+                    summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
+                    unweighted_loss = - torch.sum(summed_log_wi)/(self.valid_n_samples/n_samples_correction)
+                self._prepare_metrics(unweighted_loss)
 
         return loss
 

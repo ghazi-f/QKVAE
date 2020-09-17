@@ -262,6 +262,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                                 dim=-1),
                       torch.cat([v for k, v in inputs.items() if k not in link_approximator.residual['conditions']],
                                 dim=-1))
+
         self.post_params = link_approximator(inputs, lens=lens)
         if complete:
             self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)

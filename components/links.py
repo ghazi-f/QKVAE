@@ -63,7 +63,8 @@ class MLPLink(BaseLink):
 
         mlp_out_size = ((output_size * depth) if self.highway else output_size) if depth > 1 else input_size
         if embedding is not None:
-            assert mlp_out_size == embedding.weight.shape[1]
+            assert mlp_out_size == embedding.weight.shape[1], "The MLP output size {} while the embedding size is " \
+                                                              "{}".format(mlp_out_size, embedding.weight.shape[1])
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size)
                                                      for param in params})
             self.hidden_to_z_params['logits'].weight = embedding.weight
@@ -206,6 +207,9 @@ class LSTMLink(BaseLink):
         x = self.drp_layer(x)
 
         x = x.transpose(0, 1)
+        if lens is None:
+            device = next(self.parameters()).device
+            lens = torch.ones(x.shape[1], device=device) * x.shape[0]
         packed_x = nn.utils.rnn.pack_padded_sequence(x, lens, enforce_sorted=False)
 
         packed_outputs, (hidden, cell) = self.rnn(packed_x)
@@ -215,8 +219,7 @@ class LSTMLink(BaseLink):
                                 [hidden[-1, :, :]], dim=1)
             outputs = outputs.unsqueeze(1).repeat(1, x.shape[0], 1)
         else:
-            outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs)
-            outputs = outputs.transpose(0, 1)
+            outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs, batch_first=True, total_length=x.shape[0])
         if batch_shape is not None:
             outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
 

@@ -33,15 +33,15 @@ parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "
 parser.add_argument("--embedding_dim", default=300, type=int)
 parser.add_argument("--tied_embeddings", default=False, type=bool)
 parser.add_argument("--pretrained_embeddings", default=True, type=bool)
-parser.add_argument("--pos_embedding_dim", default=50, type=int) # size of yemb
-parser.add_argument("--z_size", default=100, type=int)
+parser.add_argument("--pos_embedding_dim", default=200, type=int)  # must be equal to encoder_h and decoder_h
+parser.add_argument("--z_size", default=200, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
 parser.add_argument("--text_rep_h", default=200, type=int) # irrelevant
-parser.add_argument("--encoder_h", default=200, type=int)
+parser.add_argument("--encoder_h", default=100, type=int)
 parser.add_argument("--encoder_l", default=2, type=int)
 parser.add_argument("--pos_h", default=50, type=int) # for y in encoder and y_emb in decoder
 parser.add_argument("--pos_l", default=1, type=int) # for y in encoder and y_emb in decoder
-parser.add_argument("--decoder_h", default=200, type=int)
+parser.add_argument("--decoder_h", default=100, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
@@ -69,7 +69,8 @@ if True:
     flags.grad_accu = 1
     flags.max_len = 256
     flags.test_name = "SSVAE/IMDB/test8"
-    flags.supervision_proportion = 1#0.125
+    flags.unsupervision_proportion = 1
+    flags.supervision_proportion = 1/20#0.125
     flags.dev_index = 5
     flags.pretrained_embeddings = True
     flags.dataset = "imdb"
@@ -205,7 +206,6 @@ def main():
 
             """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
                    text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
-
             loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
             loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
                                     'y': supervised_batch.label}) if 'S' in flags.losses \

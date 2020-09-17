@@ -66,6 +66,11 @@ class YEmbGen(Gaussian):
 class YvalInfer(Categorical):
     def __init__(self, h_params, pos_embeddings):
         super(YvalInfer, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
-                                        h_params.pos_ignore_index, markovian=True, is_placeholder=True,
-                                        sequence_lv=True)
+                                        h_params.pos_ignore_index, markovian=True, sequence_lv=True)
+
+
+class YvalGen(Categorical):
+    def __init__(self, h_params, pos_embeddings):
+        super(YvalGen, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
+                                      h_params.pos_ignore_index, markovian=True, sequence_lv=True)
 
