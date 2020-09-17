@@ -65,8 +65,9 @@ class YEmbGen(Gaussian):
 
 class YvalInfer(Categorical):
     def __init__(self, h_params, pos_embeddings):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.piwo
         super(YvalInfer, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
-                                        h_params.pos_ignore_index, markovian=True, sequence_lv=True)
+                                        h_params.pos_ignore_index, markovian=True, sequence_lv=True, iw=iw)
 
 
 class YvalGen(Categorical):
