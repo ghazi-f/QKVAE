@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp"], type=str)
 parser.add_argument("--result_csv", default='imdb.csv', type=str)
-parser.add_argument("--max_len", default=128, type=int)
+parser.add_argument("--max_len", default=256, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--grad_accu", default=2, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
@@ -30,17 +30,17 @@ parser.add_argument("--dev_index", default=1, type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=200, type=int)
-parser.add_argument("--tied_embeddings", default=True, type=bool)
-parser.add_argument("--pretrained_embeddings", default=False, type=bool)
-parser.add_argument("--pos_embedding_dim", default=50, type=int)
+parser.add_argument("--embedding_dim", default=300, type=int)
+parser.add_argument("--tied_embeddings", default=False, type=bool)
+parser.add_argument("--pretrained_embeddings", default=True, type=bool)
+parser.add_argument("--pos_embedding_dim", default=50, type=int) # size of yemb
 parser.add_argument("--z_size", default=100, type=int)
-parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=200, type=int)
+parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
+parser.add_argument("--text_rep_h", default=200, type=int) # irrelevant
 parser.add_argument("--encoder_h", default=200, type=int)
 parser.add_argument("--encoder_l", default=2, type=int)
-parser.add_argument("--pos_h", default=100, type=int)
-parser.add_argument("--pos_l", default=1, type=int)
+parser.add_argument("--pos_h", default=50, type=int) # for y in encoder and y_emb in decoder
+parser.add_argument("--pos_l", default=1, type=int) # for y in encoder and y_emb in decoder
 parser.add_argument("--decoder_h", default=200, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
@@ -49,11 +49,11 @@ parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "
 parser.add_argument("--training_iw_samples", default=10, type=int)
 parser.add_argument("--testing_iw_samples", default=1, type=int)
 parser.add_argument("--test_prior_samples", default=2, type=int)
-parser.add_argument("--anneal_kl0", default=3000, type=int)
-parser.add_argument("--anneal_kl1", default=6000, type=int)
+parser.add_argument("--anneal_kl0", default=000, type=int)
+parser.add_argument("--anneal_kl1", default=3000, type=int)
 parser.add_argument("--grad_clip", default=None, type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
-parser.add_argument("--dropout", default=0.2, type=float)
+parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=4e-3, type=float)
@@ -76,7 +76,7 @@ if True:
 
 if flags.pretrained_embeddings:
     flags.embedding_dim = 300
-    flags.tied_embeddings = True
+    #flags.tied_embeddings = True
     flags.decoder_h = flags.embedding_dim
 
 # torch.autograd.set_detect_anomaly(True)
@@ -105,7 +105,7 @@ LOSSES = {'S': [Supervision],
           'Reconstruction': [Reconstruction]}[flags.losses]
 #  LOSSES = [IWLBo]
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu] if flags.losses != 'S' else [0, 0]
-LOSS_PARAMS = [1] if 'SS' not in flags.losses else [1, flags.generation_weight]
+LOSS_PARAMS = [1] if 'SS' not in flags.losses else [1/flags.generation_weight, 1]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
 PIWO = flags.losses == 'SSPIWO'
