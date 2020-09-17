@@ -64,7 +64,7 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if True:
-    flags.losses = 'S'
+    flags.losses = 'SSIWAE'
     flags.batch_size = 32
     flags.grad_accu = 1
     flags.max_len = 256
