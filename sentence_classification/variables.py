@@ -40,30 +40,32 @@ class ZInfer(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
         super(ZInfer, self).__init__(h_params.z_size, 'z', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet)
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
 
 
 class ZGen(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
         super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet)
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet,
+                                   sequence_lv=True)
 
 
 class YEmbInfer(Gaussian):
     def __init__(self, h_params):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.piwo
         super(YEmbInfer, self).__init__(h_params.pos_embedding_dim, 'yemb', h_params.device,
-                                        h_params.pos_ignore_index, markovian=True, stl=True, iw=iw)
+                                        h_params.pos_ignore_index, markovian=True, stl=True, iw=iw, sequence_lv=True)
 
 
 class YEmbGen(Gaussian):
     def __init__(self, h_params):
         super(YEmbGen, self).__init__(h_params.pos_embedding_dim, 'yemb', h_params.device,
-                                      h_params.pos_ignore_index, markovian=True)
+                                      h_params.pos_ignore_index, markovian=True, sequence_lv=True)
 
 
 class YvalInfer(Categorical):
     def __init__(self, h_params, pos_embeddings):
         super(YvalInfer, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
-                                        h_params.pos_ignore_index, markovian=True, is_placeholder=True)
+                                        h_params.pos_ignore_index, markovian=True, is_placeholder=True,
+                                        sequence_lv=True)
 

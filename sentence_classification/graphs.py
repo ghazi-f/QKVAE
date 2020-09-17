@@ -8,16 +8,17 @@ from sentence_classification.variables import *
 
 def get_sentiment_graph(h_params, word_embeddings, pos_embeddings):
 
-    xin_size, yembin_size, yvalin_size, zin_size = h_params.text_rep_h, h_params.pos_embedding_dim, \
+    xin_size, yembin_size, yvalin_size, zin_size = h_params.embedding_dim, h_params.pos_embedding_dim, \
                                                    h_params.pos_embedding_dim, h_params.z_size
     xout_size, yembout_size, yvalout_size, zout_size = h_params.vocab_size, h_params.pos_embedding_dim,\
                                                        h_params.tag_size, h_params.z_size
-    z_repnet = nn.LSTM(h_params.z_size, h_params.z_size, h_params.text_rep_l,
-                       batch_first=True,
-                       dropout=h_params.dropout)
+    z_repnet = None
+    # nn.LSTM(h_params.z_size, h_params.z_size, h_params.text_rep_l,
+    # batch_first=True,
+    # dropout=h_params.dropout)
 
     # Generation
-    x_prev_gen = XPrevGen(h_params, word_embeddings)
+    x_prev_gen = XPrevGen(h_params, word_embeddings, False)
     x_gen, yemb_gen, z_gen = XGen(h_params, word_embeddings), YEmbGen(h_params), ZGen(h_params, z_repnet,
                                                                                       allow_prior=True)
     z_to_yemb = MLPLink(zin_size, h_params.pos_h, yembout_size, h_params.pos_l, Gaussian.parameter_activations,
@@ -28,20 +29,31 @@ def get_sentiment_graph(h_params, word_embeddings, pos_embeddings):
 
     # Inference
     yval_inf = YvalInfer(h_params, pos_embeddings)
-    x_inf, yemb_inf, z_inf = XInfer(h_params, word_embeddings), YEmbInfer(h_params), ZInfer(h_params, z_repnet)
-    x_to_z = LastStateMLPLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameter_activations,
-                     highway=h_params.highway, dropout=h_params.dropout)
+    x_inf, yemb_inf, z_inf = XInfer(h_params, word_embeddings, False), YEmbInfer(h_params), ZInfer(h_params, z_repnet)
+    # x_to_z = LastStateMLPLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameter_activations,
+    #                  highway=h_params.highway, dropout=h_params.dropout)
+    #
+    # x_to_yemb = LastStateMLPLink(xin_size, h_params.pos_h, yembout_size, h_params.pos_l, Gaussian.parameter_activations,
+    #                     highway=h_params.highway, dropout=h_params.dropout)
 
-    x_to_yemb = LastStateMLPLink(xin_size, h_params.pos_h, yembout_size, h_params.pos_l, Gaussian.parameter_activations,
-                        highway=h_params.highway, dropout=h_params.dropout)
+    x_to_z = LSTMLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameter_activations,
+                     highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
 
-    yemb_to_yval = MLPLink(yembin_size, h_params.pos_h, yvalout_size, h_params.pos_l, Categorical.parameter_activations,
+    x_to_yemb = LSTMLink(xin_size, h_params.encoder_h, yembout_size, h_params.encoder_l, Gaussian.parameter_activations,
+                        highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
+    x_to_yemb.rnn = x_to_z.rnn
+
+    yemb_to_yval = MLPLink(yembin_size, h_params.pos_h, yvalout_size, 1, Categorical.parameter_activations,
                            embedding=pos_embeddings,
                            highway=h_params.highway, dropout=h_params.dropout)
+    '''x_to_yval = LastStateMLPLink(xin_size, h_params.pos_h, yvalout_size, h_params.pos_l,
+                                 Categorical.parameter_activations, embedding=pos_embeddings,
+                                 highway=h_params.highway, dropout=h_params.dropout)'''
 
     return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_to_yemb, yemb_inf]),
                                     nn.ModuleList([x_inf, x_to_z, z_inf]),
                                     nn.ModuleList([yemb_inf, yemb_to_yval, yval_inf]),
+                                    #nn.ModuleList([x_inf, x_to_yval, yval_inf]),
                                     ]),
             'gen':   nn.ModuleList([nn.ModuleList([z_gen, z_to_yemb, yemb_gen]),
                                     nn.ModuleList([yemb_gen, xprev_yemb_z_to_x, x_gen]),

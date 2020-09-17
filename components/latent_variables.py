@@ -149,13 +149,13 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             self.post_params = {k: v.expand((*sample.shape[:-1], self.size)) for k, v in output_params.items()}
             return prior_distrib.log_prob(sample)
 
-    def forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True):
+    def forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True, lens=None):
         if isinstance(link_approximator, SequentialLink) or (link_approximator.residual is not None and
                                                              isinstance(link_approximator.residual['link'],
                                                                         SequentialLink)):
             self._sequential_forward(link_approximator, inputs, prior, gt_samples)
         else:
-            self._forward(link_approximator, inputs, prior, gt_samples, complete=complete)
+            self._forward(link_approximator, inputs, prior, gt_samples, complete=complete, lens=lens)
 
     @abc.abstractmethod
     def rep(self, samples, step_wise=True, prev_rep=None):
@@ -251,7 +251,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         else:
             self.post_gt_log_probas = None
 
-    def _forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True):
+    def _forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True, lens=None):
         if link_approximator.residual is None:
             if not isinstance(link_approximator, NamedLink):
                 inputs = torch.cat(list(inputs.values()), dim=-1)
@@ -262,7 +262,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                                 dim=-1),
                       torch.cat([v for k, v in inputs.items() if k not in link_approximator.residual['conditions']],
                                 dim=-1))
-        self.post_params = link_approximator(inputs)
+        self.post_params = link_approximator(inputs, lens=lens)
         if complete:
             self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
             if self.sequence_lv:

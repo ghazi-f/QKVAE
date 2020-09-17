@@ -53,27 +53,27 @@ class Supervision(BaseCriterion):
 
     def get_loss(self):
         num_classes = self.supervised_lv.size
-        predictions = self.supervised_lv.post_params['logits'].view(-1, num_classes)
+        predictions = self.supervised_lv.post_params['logits'].reshape(-1, num_classes)
         target = self.net.variables_star[self.supervised_lv].reshape(-1)
         loss = self.criterion(predictions, target)
 
         self._prepare_metrics(loss)
 
         # Trying to anneal this loss too
-        if self.h_params.anneal_kl:
-            anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
-            coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
-            coeff = torch.tensor(coeff)
-        else:
-            coeff = torch.tensor(1)
+        # if self.h_params.anneal_kl:
+        #     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+        #     coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
+        #     coeff = torch.tensor(coeff)
+        # else:
+        #     coeff = torch.tensor(1)
 
-        return loss * coeff
+        return loss
 
     def _prepare_metrics(self, loss):
         ce = loss
         with torch.no_grad():
             num_classes = self.supervised_lv.size
-            predictions = self.supervised_lv.post_params['logits'].view(-1, num_classes)
+            predictions = self.supervised_lv.post_params['logits'].reshape(-1, num_classes)
             target = self.net.variables_star[self.supervised_lv].reshape(-1)
             prediction_mask = (target != self.supervised_lv.ignore).float()
             accuracy = torch.sum((torch.argmax(predictions, dim=-1) == target).float()*prediction_mask)

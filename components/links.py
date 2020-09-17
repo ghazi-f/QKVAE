@@ -70,7 +70,7 @@ class MLPLink(BaseLink):
         else:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size) for param in params})
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         if self.residual is not None:
             x_res, x = x
             x_res = self.drp_layer(x_res)
@@ -120,14 +120,16 @@ class LastStateMLPLink(BaseLink):
 
         mlp_out_size = ((output_size * depth) if self.highway else output_size) if depth > 1 else input_size
         if embedding is not None:
-            assert mlp_out_size == embedding.weight.shape[1]
+            assert mlp_out_size == embedding.weight.shape[1], "Output size ({}) and embedding size ({}) are " \
+                                                              "different".format(mlp_out_size,
+                                                                                 embedding.weight.shape[1])
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size)
                                                      for param in params})
             self.hidden_to_z_params['logits'].weight = embedding.weight
         else:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size) for param in params})
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         if self.residual is not None:
             x_res, x = x
             x_res = self.drp_layer(x_res)
@@ -166,15 +168,20 @@ class LastStateMLPLink(BaseLink):
 
 class LSTMLink(BaseLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
-                 dropout=0., batchnorm=False, residual=None):
+                 dropout=0., batchnorm=False, residual=None, last_state=False, bidirectional=False):
         super(LSTMLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
                                       dropout=dropout, batchnorm=batchnorm, residual=residual)
 
-        self.rnn = nn.LSTM(input_size, output_size, depth, batch_first=True, bidirectional=False, dropout=dropout)
+        self.rnn = nn.LSTM(input_size, output_size, depth, batch_first=False, bidirectional=bidirectional,
+                           dropout=dropout)
+        self.last_state = last_state
+        self.bidirectional = bidirectional
 
         self.drp_layer = torch.nn.Dropout(p=dropout)
         self.bn = nn.BatchNorm1d(z_size)
 
+        if bidirectional:
+            output_size *= 2
         if embedding is not None:
             assert output_size == embedding.weight.shape[1], 'output size {} is different from ' \
                                                              'embedding size {}'.format(output_size,
@@ -185,7 +192,7 @@ class LSTMLink(BaseLink):
         else:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         if self.residual is not None:
             x_res, x = x
             x_res = self.drp_layer(x_res)
@@ -197,7 +204,19 @@ class LSTMLink(BaseLink):
         else:
             batch_shape = None
         x = self.drp_layer(x)
-        outputs, _ = self.rnn(x)
+
+        x = x.transpose(0, 1)
+        packed_x = nn.utils.rnn.pack_padded_sequence(x, lens, enforce_sorted=False)
+
+        packed_outputs, (hidden, cell) = self.rnn(packed_x)
+
+        if self.last_state:
+            outputs = torch.cat([hidden[-1, :, :], hidden[-2, :, :]] if self.bidirectional else
+                                [hidden[-1, :, :]], dim=1)
+            outputs = outputs.unsqueeze(1).repeat(1, x.shape[0], 1)
+        else:
+            outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs)
+            outputs = outputs.transpose(0, 1)
         if batch_shape is not None:
             outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
 
@@ -241,7 +260,7 @@ class GRULink(SequentialLink):
             self.project_z_prev = nn.Linear(z_size, output_size*depth)
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(rnn_output_size, z_size) for param in params})
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         if self.residual is not None:
             x_res, x = x
             x_res = self.drp_layer(x_res)
@@ -309,7 +328,7 @@ class TransformerLink(BaseLink):
         else:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         if self.residual is not None:
             x_res, x = x
             z_params_res = self.residual['link'](x_res, z_prev)
@@ -379,7 +398,7 @@ class CoattentiveTransformerLink(NamedLink):
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, int(z_size/n_targets))
                                                      for param in params})
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         if self.sequence is not None:
             if self.memory is not None:
                 memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
@@ -486,7 +505,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
         assert self.residual is None, "Named links still can't have residuals"
 
-    def forward(self, x, z_prev=None):
+    def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
         memory = memory.view((*memory.shape[:-1], self.n_mems, self.output_size))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)

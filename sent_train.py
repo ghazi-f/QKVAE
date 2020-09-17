@@ -30,18 +30,18 @@ parser.add_argument("--dev_index", default=1, type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=500, type=int)
-parser.add_argument("--tied_embeddings", default=False, type=bool)
-parser.add_argument("--pretrained_embeddings", default=True, type=bool)
-parser.add_argument("--pos_embedding_dim", default=100, type=int)
-parser.add_argument("--z_size", default=200, type=int)
+parser.add_argument("--embedding_dim", default=200, type=int)
+parser.add_argument("--tied_embeddings", default=True, type=bool)
+parser.add_argument("--pretrained_embeddings", default=False, type=bool)
+parser.add_argument("--pos_embedding_dim", default=50, type=int)
+parser.add_argument("--z_size", default=100, type=int)
 parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=500, type=int)
-parser.add_argument("--encoder_h", default=500, type=int)
-parser.add_argument("--encoder_l", default=1, type=int)
+parser.add_argument("--text_rep_h", default=200, type=int)
+parser.add_argument("--encoder_h", default=200, type=int)
+parser.add_argument("--encoder_l", default=2, type=int)
 parser.add_argument("--pos_h", default=100, type=int)
 parser.add_argument("--pos_l", default=1, type=int)
-parser.add_argument("--decoder_h", default=500, type=int)
+parser.add_argument("--decoder_h", default=200, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
@@ -51,33 +51,37 @@ parser.add_argument("--testing_iw_samples", default=1, type=int)
 parser.add_argument("--test_prior_samples", default=2, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
-parser.add_argument("--grad_clip", default=5., type=float)
+parser.add_argument("--grad_clip", default=None, type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--dropout", default=0.2, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
-parser.add_argument("--lr", default=2e-3, type=float)
+parser.add_argument("--lr", default=4e-3, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 8 for agnews
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
-if False:
-    flags.losses = 'SSVAE'
-    flags.batch_size = 8
-    flags.grad_accu = 8
-    flags.max_len = 128
-    flags.test_name = "SSVAE/IMDB/test7"
-    flags.supervision_proportion = 1
-    #flags.dataset = "yelp"
-    flags.pretrained_embeddings
+if True:
+    flags.losses = 'S'
+    flags.batch_size = 32
+    flags.grad_accu = 1
+    flags.max_len = 256
+    flags.test_name = "SSVAE/IMDB/test8"
+    flags.supervision_proportion = 1#0.125
+    flags.dev_index = 5
+    flags.pretrained_embeddings = True
+    flags.dataset = "imdb"
 
 if flags.pretrained_embeddings:
     flags.embedding_dim = 300
     flags.tied_embeddings = True
     flags.decoder_h = flags.embedding_dim
+
 # torch.autograd.set_detect_anomaly(True)
+# flags.wait_epochs = int(flags.wait_epochs /flags.supervision_proportion )
+assert flags.dev_index in (1, 2, 3, 4, 5)
 Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp}[flags.dataset]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
@@ -118,10 +122,10 @@ def main():
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
-                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
+                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
                        is_weighted=[], graph_generator=get_sentiment_graph, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
-                       pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip*flags.grad_accu,
+                       pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
                        loss_params=LOSS_PARAMS, piwo=PIWO, ipiwo=IPIWO, optimizer=optim.AdamW, markovian=flags.markovian
@@ -180,8 +184,10 @@ def main():
                     model.eval()
                     accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.sup_iter
                     accuracy = model.get_overall_accuracy(accuracy_split)
+                    train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True)
                     model.train()
-                    print("Accuracy is {} at step {}".format(accuracy, model.step))
+                    print("Validation Accuracy is {} at step {}".format(accuracy, model.step))
+                    print("Train Accuracy is {} at step {}".format(train_accuracy, model.step))
                     if accuracy > max_acc:
                         print('Saving The model ..')
                         max_acc = accuracy
@@ -190,11 +196,11 @@ def main():
                         best_epoch = supervision_epoch
                     else:
                         wait_count += 1
-                    if wait_count == flags.wait_epochs:
-                        model.reduce_lr(flags.lr_reduction)
-                        print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                    # if wait_count == flags.wait_epochs:
+                    #     model.reduce_lr(flags.lr_reduction)
+                    #     print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
-                    if wait_count == flags.wait_epochs * 2:
+                    if wait_count == flags.wait_epochs :
                         break
 
             """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
@@ -245,7 +251,7 @@ def main():
                     model.reduce_lr(flags.lr_reduction)
                     print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
-            if wait_count == flags.wait_epochs*2:
+            if wait_count == flags.wait_epochs:
                 break
 
             model.train()
@@ -259,6 +265,7 @@ def main():
 
     model.eval()
     test_accuracy = model.get_overall_accuracy(data.test_iter).item()
+    train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True).item()
     if 'SS' in flags.losses:
         pp_ub = model.get_perplexity(data.test_iter).item()
     else:
@@ -267,7 +274,8 @@ def main():
     if not os.path.exists(flags.result_csv):
         with open(flags.result_csv, 'w') as f:
             f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight',
-                               'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'pp_ub', 'best_epoch',
+                               'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'train_accuracy',
+                               'pp_ub', 'best_epoch',
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
                                'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained'
@@ -276,7 +284,8 @@ def main():
     with open(flags.result_csv, 'a') as f:
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
                            str(flags.generation_weight),
-                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc.item()), str(pp_ub), str(best_epoch),
+                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc.item()),
+                           str(train_accuracy), str(pp_ub), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),

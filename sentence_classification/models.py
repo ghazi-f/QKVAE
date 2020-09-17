@@ -14,11 +14,17 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
         super(SSSentenceClassification, self).__init__()
 
         self.h_params = h_params
-        self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
+        self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim,
+                                             padding_idx=vocab_index.stoi['<pad>'])
         nn.init.uniform_(self.word_embeddings.weight, -1., 1.)
         if wvs is not None:
             self.word_embeddings.weight.data.copy_(wvs)
+            UNK_IDX = vocab_index.stoi['<unk>']
+            PAD_IDX = vocab_index.stoi['<pad>']
+            self.word_embeddings.weight.data[UNK_IDX] = torch.zeros(h_params.embedding_dim)
+            self.word_embeddings.weight.data[PAD_IDX] = torch.zeros(h_params.embedding_dim)
             self.word_embeddings.weight.requires_grad = False
+
         self.pos_embeddings = nn.Embedding(h_params.tag_size, h_params.pos_embedding_dim)
 
         # Getting vertices
@@ -61,6 +67,9 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
         if (self.step % self.h_params.grad_accumulation_steps) == 0:
             # Reinitializing gradients if accumulation is over
             self.optimizer.zero_grad()
+        # Getting sequence lengths
+        x_len = (samples['x'] != self.generated_v.ignore).float().sum(-1)
+
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
         self.is_supervised_batch = self.supervised_v.name in samples
@@ -68,18 +77,19 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
         if self.generate and not (self.supervised_v.name in samples):
             if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
                 self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
-                                                       prev_states=self.infer_last_states, complete=True)
+                                                       prev_states=self.infer_last_states, complete=True, lens=x_len)
             else:
-                self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
+                self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True
+                                                       , lens=x_len)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'], 'x_prev': samples['x_prev']}}
             if self.iw:
                 gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
             if self.step < self.h_params.anneal_kl[0]:
                 self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
-                                                   prev_states=self.gen_last_states)
+                                                   prev_states=self.gen_last_states, lens=x_len)
             else:
-                self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
+                self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states, lens=x_len)
 
             # Loss computation and backward pass
             losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -91,7 +101,7 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             # Forward pass
             infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev'],
                             self.supervised_v.name: samples[self.supervised_v.name]}
-            self.infer_bn(infer_inputs, target=self.supervised_v)
+            self.infer_bn(infer_inputs, target=self.supervised_v, lens=x_len)
 
             # Loss computation and backward pass
             losses_sup = [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
@@ -99,7 +109,8 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
 
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
             # Applying gradients and gradient clipping if accumulation is over
-            torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
+            if self.h_params.grad_clip:
+                torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
             self.optimizer.step()
         self.step += 1
 
@@ -115,6 +126,8 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             infer_prev, gen_prev = prev_states
         else:
             infer_prev, gen_prev = None, None
+        # Getting sequence lengths
+        x_len = (samples['x'] != self.generated_v.ignore).float().sum(-1)
 
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
@@ -122,16 +135,16 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
         if self.generate:
             infer_prev = self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval,
-                                       prev_states=infer_prev, force_iw=force_iw, complete=True)
+                                       prev_states=infer_prev, force_iw=force_iw, complete=True, lens=x_len)
             gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                           **{'x': samples['x'], 'x_prev': samples['x_prev']}}
             if self.iw or force_iw:
                 gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
             if self.step < self.h_params.anneal_kl[0]:
                 gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
-                                       complete=True)
+                                       complete=True, lens=x_len)
             else:
-                gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+                gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True, lens=x_len)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -141,7 +154,7 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             # Forward pass
             infer_inputs = {'x': samples['x'], 'x_prev': samples['x_prev'],
                             self.supervised_v.name: samples[self.supervised_v.name]}
-            self.infer_bn(infer_inputs, target=self.supervised_v, eval=eval)
+            self.infer_bn(infer_inputs, target=self.supervised_v, eval=eval, lens=x_len)
 
             # Loss computation and backward pass
             [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
@@ -286,17 +299,18 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             self.writer.add_scalar('test/PerplexityUB', perplexity_ub, self.step)
             return perplexity_ub
 
-    def get_overall_accuracy(self, iterator):
+    def get_overall_accuracy(self, iterator, train_split=False):
         with torch.no_grad():
             has_supervision = any([isinstance(l, Supervision) for l in self.losses])
             if has_supervision:
                 accurate_preds = 0
                 total_samples = 0
-                for batch in tqdm(iterator, desc="Getting Model overall Accuracy"):
-                    self({'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1], 'y': batch.label}, eval=False)
+                for batch in tqdm(iterator, desc="Getting Model overall Accuracy on {}".format('train' if train_split
+                                                                                               else 'test')):
+                    self({'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1], 'y': batch.label}, eval=True)
 
                     num_classes = self.supervised_v.size
-                    predictions = self.supervised_v.post_params['logits'].view(-1, num_classes)
+                    predictions = self.supervised_v.post_params['logits'].reshape(-1, num_classes)
                     target = self.infer_bn.variables_star[self.supervised_v].view(-1)
                     prediction_mask = (target != self.supervised_v.ignore).float()
                     accurate_preds += torch.sum((torch.argmax(predictions, dim=-1) == target).float() * prediction_mask)
@@ -305,7 +319,8 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
 
                 accuracy = accurate_preds/total_samples
 
-                self.writer.add_scalar('test/OverallAccuracy', accuracy, self.step)
+                self.writer.add_scalar('{}/OverallAccuracy'.format('train' if train_split else
+                                                                   'test'), accuracy, self.step)
                 return accuracy
             else:
                 print('Model doesn\'t use supervision')

@@ -14,6 +14,8 @@ from nlp.builder import FORCE_REDOWNLOAD
 
 
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
+VOCAB_LIMIT = 25000
+
 
 class HuggingIMDB2:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
@@ -39,14 +41,13 @@ class HuggingIMDB2:
                              int(len(train_data)/5*(dev_index))
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
                                                              int(dev_end+(len(train_data)-dev_end)*sup_proportion)
-        unsup_start, unsup_end = 0, int((len(train_data)+len(unsup_data))*unsup_proportion)
+        unsup_start, unsup_end = 0, int(len(unsup_data)*unsup_proportion)
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
         # experiments
         np.random.seed(42)
         train_examples = [Example.fromdict(ex, fields2) for ex in train_data]
-        unsup_examples = ([Example.fromdict(ex, fields4) for ex in unsup_data] +
-                         [Example.fromdict(ex, fields4) for ex in train_data])
+        unsup_examples = ([Example.fromdict(ex, fields4) for ex in unsup_data])
         np.random.shuffle(train_examples)
         np.random.shuffle(unsup_examples)
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
@@ -54,13 +55,14 @@ class HuggingIMDB2:
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
         unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
                               , fields3)
+        vocab_dataset = Dataset(train_examples, fields1)
 
         unsup_test, unsup_val = test, test
 
         print('data loading took', time() - start)
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train, max_size=10000) #, vectors="fasttext.simple.300d")
+        text_field.build_vocab(vocab_dataset, max_size=VOCAB_LIMIT) #, vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(
@@ -109,7 +111,7 @@ class HuggingIMDB2:
 
 class HuggingAGNews:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
-                 pretrained=True):
+                 pretrained=False):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -120,7 +122,6 @@ class HuggingAGNews:
         train_data, test_data = load_dataset('ag_news')['train'], load_dataset('ag_news')['test']
 
         def expand_labels(datum):
-            # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
             datum['label'] = [str(datum['label'])]*(max_len-1)
             return datum
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
@@ -132,7 +133,8 @@ class HuggingAGNews:
                              int(len(train_data)/5*(dev_index))
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
                                                              int(dev_end+(len(train_data)-dev_end)*sup_proportion)
-        unsup_start, unsup_end = 0, int((len(train_data))*unsup_proportion)
+        unsup_start1, unsup_start2, unsup_end1, unsup_end2 = train_end1, train_end2, dev_start, len(train_data)
+
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
         # experiments
@@ -144,15 +146,16 @@ class HuggingAGNews:
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
         val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
+        unsup_train = Dataset(unsup_examples[unsup_start1:unsup_end1]+unsup_examples[unsup_start2:unsup_end2]
                               , fields3)
+        vocab_dataset = Dataset(train_examples, fields1)
 
         unsup_test, unsup_val = test, test
 
         print('data loading took', time() - start)
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train, max_size=10000)  # , vectors="fasttext.simple.300d")
+        text_field.build_vocab(vocab_dataset, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(
@@ -202,7 +205,7 @@ class HuggingAGNews:
 class HuggingYelp:
 
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
-                 pretrained=True):
+                 pretrained=False):
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -230,7 +233,7 @@ class HuggingYelp:
                              int(len(train_data)/5*(dev_index))
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
                                                              int(dev_end+(len(train_data)-dev_end)*sup_proportion)
-        unsup_start, unsup_end = 0, int((len(train_data))*unsup_proportion)
+        unsup_start1, unsup_start2, unsup_end1, unsup_end2 = train_end1, train_end2, dev_start, len(train_data)
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
         # experiments
@@ -242,15 +245,16 @@ class HuggingYelp:
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
         val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
+        unsup_train = Dataset(unsup_examples[unsup_start1:unsup_end1]+unsup_examples[unsup_start2:unsup_end2]
                               , fields3)
 
+        vocab_dataset = Dataset(train_examples, fields1)
         unsup_test, unsup_val = test, test
 
         print('data loading took', time() - start)
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train, max_size=10000)  # , vectors="fasttext.simple.300d")
+        text_field.build_vocab(vocab_dataset, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(

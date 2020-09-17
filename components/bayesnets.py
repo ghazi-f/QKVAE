@@ -68,7 +68,8 @@ class BayesNet(nn.Module):
         for var in self.variables:
             var.clear_values()
 
-    def forward(self, inputs, n_iw=None, target=None, eval=False, prev_states=None, force_iw=None, complete=False):
+    def forward(self, inputs, n_iw=None, target=None, eval=False, prev_states=None, force_iw=None, complete=False,
+                lens=None):
         # The forward pass propagates the root variable values yielding
         if prev_states is None:
             prev_states = {v: None for v in self.variables}
@@ -118,7 +119,8 @@ class BayesNet(nn.Module):
                 if parents_available and still_unfilled:
                     # Gathering conditioning variables
                     max_cond_lvl = dp_lvl[lv]
-                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl, prev_states, dp_lvl, force_iw)
+                    lv_conditions = {p.name: self._ready_condition(p, n_iw, max_cond_lvl, prev_states, dp_lvl, force_iw,
+                                                                   eval)
                                      for p in self.parent[lv]}
 
                     # Setting up ground truth to be injected if any
@@ -135,7 +137,8 @@ class BayesNet(nn.Module):
                             for _ in range(max_cond_lvl):
                                 expand_arg = [n_iw]+list(gt_lv.shape)
                                 gt_lv = gt_lv.unsqueeze(0).expand(expand_arg)
-                    lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv, complete=(lv in self.child) or complete)
+                    lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv, complete=(lv in self.child) or complete,
+                       lens=lens)
                     if eval:
                         if isinstance(lv, Categorical):
                             self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],
@@ -157,9 +160,11 @@ class BayesNet(nn.Module):
                           for v in self.variables}
         return new_prev_state
 
-    def _ready_condition(self, lv, n_iw, max_lvl, prev_states, dp_lvl, force_iw):
+    def _ready_condition(self, lv, n_iw, max_lvl, prev_states, dp_lvl, force_iw, eval):
         value = lv.rep(self.variables_star[lv], step_wise=False, prev_rep=prev_states[lv])\
-                if lv in self.variables_star else lv.post_reps
+                if lv in self.variables_star \
+                else lv.rep(self.variables_hat[lv], step_wise=False, prev_rep=prev_states[lv]) if eval \
+                else lv.post_reps
         if n_iw is not None and n_iw > 1:
             for _ in range(dp_lvl[lv] + (1 if (lv.iw or lv.name in (force_iw or [])) else 0), max_lvl):
                 expand_arg = [n_iw] + list(value.shape)
