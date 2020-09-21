@@ -60,7 +60,7 @@ def get_sentiment_graph(h_params, word_embeddings, pos_embeddings):
     y_gen = YvalGen(h_params, pos_embeddings)
     x_prev_gen = XPrevGen(h_params, word_embeddings, False)
     x_gen, z_gen = XGen(h_params, word_embeddings), ZGen(h_params, z_repnet, allow_prior=True)
-    z_to_y = MLPLink(zin_size, h_params.decoder_h, yout_size, h_params.pos_l, Categorical.parameter_activations,
+    z_to_y = MLPLink(zin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameter_activations,
                      embedding=pos_embeddings,
                      highway=h_params.highway, dropout=h_params.dropout)
     xprev_y_z_to_x = LSTMLink(xin_size+zin_size+yin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
@@ -75,7 +75,7 @@ def get_sentiment_graph(h_params, word_embeddings, pos_embeddings):
                       highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
 
     x_to_y = LSTMLink(xin_size, h_params.encoder_h, yout_size, h_params.encoder_l, Categorical.parameter_activations,
-                      embedding=pos_embeddings,
+                      #embedding=pos_embeddings,
                       highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
     x_to_y.rnn = x_to_z.rnn
 

@@ -23,7 +23,7 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             PAD_IDX = vocab_index.stoi['<pad>']
             self.word_embeddings.weight.data[UNK_IDX] = torch.zeros(h_params.embedding_dim)
             self.word_embeddings.weight.data[PAD_IDX] = torch.zeros(h_params.embedding_dim)
-            #self.word_embeddings.weight.requires_grad = False
+            self.word_embeddings.weight.requires_grad = False
 
         self.pos_embeddings = nn.Embedding(h_params.tag_size, h_params.pos_embedding_dim)
 
