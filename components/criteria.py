@@ -53,8 +53,13 @@ class Supervision(BaseCriterion):
 
     def get_loss(self):
         num_classes = self.supervised_lv.size
-        predictions = self.supervised_lv.post_params['logits'].reshape(-1, num_classes)
-        target = self.net.variables_star[self.supervised_lv].reshape(-1)
+        predictions = self.supervised_lv.post_params['logits']
+        target = self.net.variables_star[self.supervised_lv]
+        # Taking the first sample in case of importance sampling
+        while predictions.ndim-target.ndim > 1:
+            predictions = predictions[0]
+        predictions = predictions.reshape(-1, num_classes)
+        target = target.reshape(-1)
         loss = self.criterion(predictions, target)
 
         self._prepare_metrics(loss)
@@ -73,8 +78,13 @@ class Supervision(BaseCriterion):
         ce = loss
         with torch.no_grad():
             num_classes = self.supervised_lv.size
-            predictions = self.supervised_lv.post_params['logits'].reshape(-1, num_classes)
-            target = self.net.variables_star[self.supervised_lv].reshape(-1)
+            predictions = self.supervised_lv.post_params['logits']
+            target = self.net.variables_star[self.supervised_lv]
+            # Taking the first sample in case of importance sampling
+            while predictions.ndim-target.ndim > 1:
+                predictions = predictions[0]
+            predictions = predictions.reshape(-1, num_classes)
+            target = target.reshape(-1)
             prediction_mask = (target != self.supervised_lv.ignore).float()
             accuracy = torch.sum((torch.argmax(predictions, dim=-1) == target).float()*prediction_mask)
             accuracy /= torch.sum(prediction_mask)
