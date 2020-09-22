@@ -32,7 +32,7 @@ parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=300, type=int)
 parser.add_argument("--tied_embeddings", default=True, type=bool)
-parser.add_argument("--pretrained_embeddings", default=True, type=bool)
+parser.add_argument("--pretrained_embeddings", default=False, type=bool)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--z_size", default=100, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
@@ -72,7 +72,7 @@ if True:
     flags.unsupervision_proportion = 1
     flags.supervision_proportion = 1/20#0.125
     flags.dev_index = 5
-    flags.pretrained_embeddings = True
+    #flags.pretrained_embeddings = True
     flags.dataset = "imdb"
 
 if flags.pretrained_embeddings:
