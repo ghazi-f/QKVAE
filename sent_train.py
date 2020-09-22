@@ -68,9 +68,22 @@ if True:
     flags.batch_size = 32
     flags.grad_accu = 1
     flags.max_len = 128
-    flags.test_name = "SSVAE/IMDB/test8"
+    flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
     flags.supervision_proportion = 1/20#0.125
+    flags.dev_index = 5
+    #flags.pretrained_embeddings = True
+    flags.dataset = "imdb"
+
+
+if True:
+    flags.losses = 'S'
+    flags.batch_size = 32
+    flags.grad_accu = 1
+    flags.max_len = 256
+    flags.test_name = "SSVAE/IMDB/test8"
+    flags.unsupervision_proportion = 1
+    flags.supervision_proportion = 1#0.125
     flags.dev_index = 5
     #flags.pretrained_embeddings = True
     flags.dataset = "imdb"
@@ -207,9 +220,8 @@ def main():
             """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
                    text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
             loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
-            loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
-                                    'y': supervised_batch.label}) if 'S' in flags.losses \
-                else 0
+            # loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
+            #                         'y': supervised_batch.label}) if 'S' in flags.losses else 0
 
             mean_loss += loss
             if i % 30 == 0:
