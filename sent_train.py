@@ -30,7 +30,7 @@ parser.add_argument("--dev_index", default=1, type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=300, type=int)
+parser.add_argument("--embedding_dim", default=100, type=int)
 parser.add_argument("--tied_embeddings", default=True, type=bool)
 parser.add_argument("--pretrained_embeddings", default=False, type=bool)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)  # must be equal to encoder_h and decoder_h
@@ -46,7 +46,7 @@ parser.add_argument("--decoder_l", default=2, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSiPIWO", "SSIWAE"], type=str)
-parser.add_argument("--training_iw_samples", default=10, type=int)
+parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=1, type=int)
 parser.add_argument("--test_prior_samples", default=2, type=int)
 parser.add_argument("--anneal_kl0", default=000, type=int)
@@ -64,10 +64,10 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if True:
-    flags.losses = 'S'
+    flags.losses = 'SSIWAE'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 256
+    flags.max_len = 128
     flags.test_name = "SSVAE/IMDB/test8"
     flags.unsupervision_proportion = 1
     flags.supervision_proportion = 1/20#0.125

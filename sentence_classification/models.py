@@ -120,8 +120,7 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
                 self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states, lens=x_len)
             # Loss computation and backward pass
             losses_sup = [(loss.get_loss() if isinstance(loss, Supervision)
-                           else 0#loss.get_loss(observed=[self.supervised_v.name])
-                           ) * loss.w  # conditional ELBo
+                           else loss.get_loss(observed=[self.supervised_v.name])) * loss.w  # conditional ELBo
                           for loss in self.losses ]
             sum(losses_sup).backward()
 
