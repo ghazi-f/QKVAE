@@ -30,19 +30,19 @@ parser.add_argument("--dev_index", default=1, type=float)
 parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
-parser.add_argument("--embedding_dim", default=100, type=int)
-parser.add_argument("--tied_embeddings", default=True, type=bool)
-parser.add_argument("--pretrained_embeddings", default=False, type=bool)
+parser.add_argument("--embedding_dim", default=300, type=int)
+parser.add_argument("--tied_embeddings", default=False, type=bool)
+parser.add_argument("--pretrained_embeddings", default=True, type=bool)
 parser.add_argument("--pos_embedding_dim", default=50, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--z_size", default=100, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
 parser.add_argument("--text_rep_h", default=200, type=int) # irrelevant
-parser.add_argument("--encoder_h", default=100, type=int)
+parser.add_argument("--encoder_h", default=200, type=int)
 parser.add_argument("--encoder_l", default=2, type=int)
 parser.add_argument("--pos_h", default=50, type=int) # for y in encoder and y_emb in decoder
 parser.add_argument("--pos_l", default=2, type=int) # for y in encoder and y_emb in decoder
-parser.add_argument("--decoder_h", default=100, type=int)
-parser.add_argument("--decoder_l", default=2, type=int)
+parser.add_argument("--decoder_h", default=200, type=int)
+parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSiPIWO", "SSIWAE"], type=str)
@@ -64,19 +64,19 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if True:
-    flags.losses = 'SSIWAE'
+    flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 128
+    flags.max_len = 256
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
-    flags.supervision_proportion = 1/20#0.125
+    flags.supervision_proportion = 1#0.125
     flags.dev_index = 5
     #flags.pretrained_embeddings = True
     flags.dataset = "imdb"
 
 
-if True:
+if False:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
@@ -210,9 +210,9 @@ def main():
                         best_epoch = supervision_epoch
                     else:
                         wait_count += 1
-                    # if wait_count == flags.wait_epochs:
-                    #     model.reduce_lr(flags.lr_reduction)
-                    #     print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                    if wait_count == flags.wait_epochs:
+                        model.reduce_lr(flags.lr_reduction)
+                        print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
                     if wait_count == flags.wait_epochs :
                         break
@@ -220,8 +220,8 @@ def main():
             """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
                    text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
             loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
-            # loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
-            #                         'y': supervised_batch.label}) if 'S' in flags.losses else 0
+            loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
+                                    'y': supervised_batch.label}) if 'S' in flags.losses else 0
 
             mean_loss += loss
             if i % 30 == 0:
@@ -229,7 +229,7 @@ def main():
                 print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
                 mean_loss = 0
 
-            if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1:
+            if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1 or True:
                 model.eval()
                 try:
                     val_batch = limited_next(val_iterator)
