@@ -277,7 +277,8 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                     self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
                     if gt_samples.dtype == torch.long:
                         gt_samples = F.one_hot(gt_samples, self.size).float()
-                        self.post_gt_log_probas = torch.sum(self.post_params['logits'] * gt_samples, dim=-1)
+                        self.post_gt_log_probas = torch.sum(torch.log_softmax(self.post_params['logits'],
+                                                                              -1) * gt_samples, dim=-1)
                     else:
                         self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
                 else:
