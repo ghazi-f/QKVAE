@@ -93,9 +93,15 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
 
             # Loss computation and backward pass
             losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
+
+            # Cleaning computation graph:
+            self.gen_bn.clear_values()
+            self.infer_bn.clear_values()
+
             sum(losses_uns).backward()
             if not self.h_params.contiguous_lm:
                 self.infer_last_states, self.gen_last_states = None, None
+
         #                          ------------ supervised Forward/Backward -----------------
         if self.supervised_v.name in samples and self.supervise:
             # Getting sequence lengths
@@ -120,8 +126,15 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
                 self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states, lens=x_len)
             # Loss computation and backward pass
             losses_sup = [(loss.get_loss() if isinstance(loss, Supervision)
-                           else loss.get_loss(observed=[self.supervised_v.name])) * loss.w  # conditional ELBo
+                           else loss.get_loss(observed=[self.supervised_v.name])
+                           ) * loss.w  # conditional ELBo
                           for loss in self.losses ]
+
+            # Cleaning computation graph:
+            self.gen_bn.clear_values()
+            self.infer_bn.clear_values()
+            # torch.cuda.synchronize(self.h_params.device)
+            # torch.cuda.ipc_collect()
             sum(losses_sup).backward()
 
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
@@ -135,7 +148,8 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
         total_loss = (sum(losses_uns) if (self.generate and not(self.supervised_v.name in samples)) else 0) + \
                      (sum(losses_sup) if (self.supervise and self.supervised_v.name in samples) else 0)
 
-        return total_loss
+
+        return total_loss.item()
 
     def forward(self, samples, eval=False, prev_states=None, force_iw=None, gen_this=True):
         # Just propagating values through the bayesian networks to get summaries
@@ -163,7 +177,7 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             else:
                 gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True, lens=x_len)
 
-            # Loss computation and backward pass
+            # Loss computation
             [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
 
         #                          ------------ supervised Forward/Backward -----------------
@@ -175,8 +189,9 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
                             self.supervised_v.name: samples[self.supervised_v.name]}
             self.infer_bn(infer_inputs, target=self.supervised_v, eval=eval, lens=x_len)
 
-            # Loss computation and backward pass
+            # Loss computation
             [loss.get_loss() * loss.w for loss in self.losses if isinstance(loss, Supervision)]
+
 
         if self.generate:
             if self.h_params.contiguous_lm:
