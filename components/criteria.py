@@ -291,12 +291,21 @@ class IWLBo(ELBo):
         vocab_size = self.generated_v.size
         criterion = self._unweighted_criterion if actual else self.criterion
         self.sequence_mask = (self.gen_net.variables_star[self.generated_v] != self.generated_v.ignore).float()
-
-        self.log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
-                                     self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                     ).view(self.generated_v.post_params['logits'].shape[:-1])
-
         self.valid_n_samples = torch.sum(self.sequence_mask)
+        loss_shape = self.generated_v.post_params['logits'].shape[:-1]
+        if len(loss_shape) > 2:
+            logits, gt = self.generated_v.post_params['logits'], self.gen_net.variables_star[self.generated_v]
+            batchxseq_size = gt.shape[-2]*gt.shape[-1]
+            logits, gt = logits.reshape(-1, batchxseq_size, vocab_size), torch.unbind(gt.reshape(-1, batchxseq_size))[0]
+            log_p_xIz = []
+            for logits_i in torch.unbind(logits):
+                log_p_xIz.append(- criterion(logits_i, gt))
+            log_p_xIz = torch.cat(log_p_xIz, dim=0).view(loss_shape)
+        else:
+            log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
+                                         self.gen_net.variables_star[self.generated_v].reshape(-1)
+                                         ).view(self.generated_v.post_params['logits'].shape[:-1])
+
 
         # Applying KL Annealing (or it's equivalent for IWAEs)
         if self.h_params.anneal_kl and not actual:
@@ -306,33 +315,33 @@ class IWLBo(ELBo):
         else:
             coeff = torch.tensor(1)
         if coeff == 0:
-            self.log_p_z = 0
-            self.log_q_zIx = 0
+            log_p_z = 0
+            log_q_zIx = 0
         else:
-            self.log_p_z = [self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]
-            self.log_q_zIx = [self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()
+            log_p_z = [self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]
+            log_q_zIx = [self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()
                               if observed is None or (lv.name not in observed)]
 
             # Filling in for additional dimensions in shapes when it's needed
 
-            max_dims = self.log_p_z[0].ndim
-            for i in range(len(self.log_q_zIx)):
-                dims_i = self.log_q_zIx[i].ndim
+            max_dims = log_p_z[0].ndim
+            for i in range(len(log_q_zIx)):
+                dims_i = log_q_zIx[i].ndim
                 for _ in range(max_dims-dims_i):
-                    self.log_q_zIx[i] = self.log_q_zIx[i].unsqueeze(0)
+                    log_q_zIx[i] = log_q_zIx[i].unsqueeze(0)
 
             # Applying sequence mask to all log probabilities
-            self.log_p_z = sum(self.log_p_z) * self.sequence_mask
-            self.log_q_zIx = sum(self.log_q_zIx) * self.sequence_mask
-        self.log_p_xIz = self.log_p_xIz * self.sequence_mask
+            log_p_z = sum(log_p_z) * self.sequence_mask
+            log_q_zIx = sum(log_q_zIx) * self.sequence_mask
+        log_p_xIz = log_p_xIz * self.sequence_mask
 
         # Calculating IWLBo Gradient estimate
-        log_wi = self.log_p_xIz + coeff * (self.log_p_z - self.log_q_zIx)
+        log_wi = coeff * (log_p_z - log_q_zIx) + log_p_xIz
         detached_log_wi = log_wi.detach()
         max_log_wi = torch.max(detached_log_wi)
         detached_exp_log_wi = torch.exp(detached_log_wi - max_log_wi)
 
-        if actual:
+        if actual and False:
             n_samples_correction = 1
             while detached_exp_log_wi.ndim > self.input_dimensions:
                 n_samples_correction *= detached_exp_log_wi.shape[0]
@@ -345,10 +354,10 @@ class IWLBo(ELBo):
 
         with torch.no_grad():
             if observed is None:
-                if actual and False:
+                if actual:
                     unweighted_loss = loss
                 else:
-                    log_wi = self.log_p_xIz + 1 * (self.log_p_z - self.log_q_zIx)
+                    log_wi = (log_p_z - log_q_zIx) + log_p_xIz
                     max_log_wi = torch.max(log_wi)
                     exp_log_wi = torch.exp(log_wi - max_log_wi)
                     n_samples_correction = 1
@@ -357,6 +366,7 @@ class IWLBo(ELBo):
                         exp_log_wi = torch.mean(exp_log_wi, dim=0)
                     summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
                     unweighted_loss = - torch.sum(summed_log_wi)/(self.valid_n_samples/n_samples_correction)
+                self.ll_value = torch.sum(log_p_xIz) / self.valid_n_samples
                 self._prepare_metrics(unweighted_loss)
 
         return loss
@@ -364,7 +374,7 @@ class IWLBo(ELBo):
     def _prepare_metrics(self, loss):
         current_iwlbo = - loss
         LL_name = '/p({}I{}'.format(self.generated_v.name, ', '.join([lv for lv in self.infer_lvs]))
-        LL_value = torch.sum(self.log_p_xIz)/self.valid_n_samples
+        LL_value = self.ll_value
         KL_dict = {}
         kl_sum = 0
         if self.model.step >= self.h_params.anneal_kl[0]:
@@ -381,7 +391,7 @@ class IWLBo(ELBo):
                 KL_value = torch.sum(kl_i)/self.valid_n_samples
                 kl_sum += KL_value
                 KL_dict[KL_name] = KL_value
-        #print("IWLBo:", current_iwlbo.item(), "ELBo:", (LL_value-kl_sum).item(), "KL:", kl_sum.item())
+
         self._prepared_metrics = {'/IWLBo': current_iwlbo, '/ELBo': LL_value-kl_sum, LL_name: LL_value, **KL_dict}
 
 
