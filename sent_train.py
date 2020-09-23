@@ -37,11 +37,11 @@ parser.add_argument("--pos_embedding_dim", default=50, type=int)  # must be equa
 parser.add_argument("--z_size", default=100, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
 parser.add_argument("--text_rep_h", default=200, type=int) # irrelevant
-parser.add_argument("--encoder_h", default=200, type=int)
+parser.add_argument("--encoder_h", default=400, type=int)
 parser.add_argument("--encoder_l", default=2, type=int)
 parser.add_argument("--pos_h", default=50, type=int) # for y in encoder and y_emb in decoder
 parser.add_argument("--pos_l", default=2, type=int) # for y in encoder and y_emb in decoder
-parser.add_argument("--decoder_h", default=200, type=int)
+parser.add_argument("--decoder_h", default=400, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
