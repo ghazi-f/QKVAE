@@ -204,7 +204,7 @@ def main():
                     print("Train Accuracy is {} at step {}".format(train_accuracy, model.step))
                     if accuracy > max_acc:
                         print('Saving The model ..')
-                        max_acc = accuracy
+                        max_acc = accuracy.item()
                         model.save()
                         wait_count = 0
                         best_epoch = supervision_epoch
@@ -296,7 +296,7 @@ def main():
     with open(flags.result_csv, 'a') as f:
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
                            str(flags.generation_weight),
-                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc.item()),
+                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc),
                            str(train_accuracy), str(pp_ub), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),

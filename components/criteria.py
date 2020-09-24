@@ -144,7 +144,8 @@ class ELBo(BaseCriterion):
         kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
                   for lv_n in self.infer_lvs.keys() if observed is None or (lv_n not in observed)])
         if observed is not None:
-            kl += sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values() if lv.name in observed])
+            self.log_p_xIz += sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values() if lv.name in observed]) \
+                              * self.sequence_mask
         kl *= self.sequence_mask
 
         # Applying KL Annealing
@@ -303,8 +304,8 @@ class IWLBo(ELBo):
             log_p_xIz = torch.cat(log_p_xIz, dim=0).view(loss_shape)
         else:
             log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
-                                         self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                         ).view(self.generated_v.post_params['logits'].shape[:-1])
+                                    self.gen_net.variables_star[self.generated_v].reshape(-1)
+                                    ).view(self.generated_v.post_params['logits'].shape[:-1])
 
 
         # Applying KL Annealing (or it's equivalent for IWAEs)
@@ -318,9 +319,10 @@ class IWLBo(ELBo):
             log_p_z = 0
             log_q_zIx = 0
         else:
-            log_p_z = [self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()]
+            log_p_z = [self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()
+                       if observed is None or (lv.name not in observed)]
             log_q_zIx = [self.infer_net.log_proba[lv] for lv in self.infer_lvs.values()
-                              if observed is None or (lv.name not in observed)]
+                         if observed is None or (lv.name not in observed)]
 
             # Filling in for additional dimensions in shapes when it's needed
 
@@ -333,7 +335,9 @@ class IWLBo(ELBo):
             # Applying sequence mask to all log probabilities
             log_p_z = sum(log_p_z) * self.sequence_mask
             log_q_zIx = sum(log_q_zIx) * self.sequence_mask
-        log_p_xIz = log_p_xIz * self.sequence_mask
+        log_p_xIz_obs = sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()
+                         if (lv.name in observed)]) if observed is not None else 0
+        log_p_xIz = (log_p_xIz + log_p_xIz_obs) * self.sequence_mask
 
         # Calculating IWLBo Gradient estimate
         log_wi = coeff * (log_p_z - log_q_zIx) + log_p_xIz

@@ -108,7 +108,7 @@ python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/1.0small3w2" --su
 python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/1.0small4w2" --supervision_proportion 1.0 --batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 4 --generation_weight 0.1 --dataset imdb --result_csv imdb4.csv
 python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/1.0small5w2" --supervision_proportion 1.0 --batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 5 --generation_weight 0.1 --dataset imdb --result_csv imdb4.csv
 # Weighted experiments3
-python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/0.001small1w3" ----batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 1 --generation_weight 0.001 --dataset imdb --result_csv imdb4.csv
+python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/0.001small1w3" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 1 --generation_weight 0.001 --dataset imdb --result_csv imdb4.csv
 python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/0.001small2w3" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 2 --generation_weight 0.001 --dataset imdb --result_csv imdb4.csv
 python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/0.001small3w3" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 3 --generation_weight 0.001 --dataset imdb --result_csv imdb4.csv
 python sent_train.py --losses "SSVAE" --test_name "IMDB4/SSVAE/0.001small4w3" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --device "cuda:2" --dev_index 4 --generation_weight 0.001 --dataset imdb --result_csv imdb4.csv
