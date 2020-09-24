@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=PIWO
 #SBATCH --gres=gpu:1
-#SBATCH --output=./imdbpiwo4txt
+#SBATCH --output=./imdbpiwo4.txt
 #SBATCH --error=./imdbpiwo4.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
