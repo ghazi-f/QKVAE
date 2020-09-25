@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=python_Ghazi
+#SBATCH --job-name=VAE
 #SBATCH --gres=gpu:1
 #SBATCH --output=./imdbvae4.txt
 #SBATCH --error=./imdbvae4.err
