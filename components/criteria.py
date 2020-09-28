@@ -345,7 +345,7 @@ class IWLBo(ELBo):
         max_log_wi = torch.max(detached_log_wi)
         detached_exp_log_wi = torch.exp(detached_log_wi - max_log_wi)
 
-        if actual and False:
+        if actual:
             n_samples_correction = 1
             while detached_exp_log_wi.ndim > self.input_dimensions:
                 n_samples_correction *= detached_exp_log_wi.shape[0]
