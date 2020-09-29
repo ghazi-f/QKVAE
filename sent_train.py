@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser()
 
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
+parser.add_argument("--mode", default='train', choices=["train", "eval"], type=str)
 parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp"], type=str)
 parser.add_argument("--result_csv", default='imdb.csv', type=str)
 parser.add_argument("--max_len", default=256, type=int)
@@ -182,103 +183,108 @@ def main():
     mean_loss = 0
     supervision_epoch = 0
     best_epoch = -1
-    while data.train_iter is not None:
-        for i, training_batch in enumerate(data.train_iter):
-            if training_batch.text.shape[1] < 2:
-                print('Misshaped training sample')
-                continue
+    if flags.mode == 'train':
+        while data.train_iter is not None:
+            for i, training_batch in enumerate(data.train_iter):
+                if training_batch.text.shape[1] < 2:
+                    print('Misshaped training sample')
+                    continue
 
-            '''print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])'''
+                '''print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])'''
 
-            if model.step == h_params.anneal_kl[0]:
-                model.optimizer = h_params.optimizer(model.parameters(), **h_params.optimizer_kwargs)
-                print('Refreshed optimizer !')
-                if model.step != 0 and not torch.isnan(loss):
-                    model.save()
-                    print('Saved model after it\'s pure reconstruction phase')
-            try:
-                supervised_batch = next(supervised_iterator)
-            except StopIteration:
-                print("Reinitialized supervised training iterator")
-                supervision_epoch += 1
-                supervised_iterator = iter(data.sup_iter)
-                if 'S' in flags.losses and model.step >= h_params.anneal_kl[0]:
+                if model.step == h_params.anneal_kl[0]:
+                    model.optimizer = h_params.optimizer(model.parameters(), **h_params.optimizer_kwargs)
+                    print('Refreshed optimizer !')
+                    if model.step != 0 and not torch.isnan(loss):
+                        model.save()
+                        print('Saved model after it\'s pure reconstruction phase')
+                try:
+                    supervised_batch = next(supervised_iterator)
+                except StopIteration:
+                    print("Reinitialized supervised training iterator")
+                    supervision_epoch += 1
+                    supervised_iterator = iter(data.sup_iter)
+                    if 'S' in flags.losses and model.step >= h_params.anneal_kl[0]:
+                        model.eval()
+                        accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.sup_iter
+                        accuracy = model.get_overall_accuracy(accuracy_split)
+                        train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True)
+                        model.train()
+                        print("Validation Accuracy is {} at step {}".format(accuracy, model.step))
+                        print("Train Accuracy is {} at step {}".format(train_accuracy, model.step))
+                        if accuracy > max_acc:
+                            print('Saving The model ..')
+                            max_acc = accuracy.item()
+                            model.save()
+                            wait_count = 0
+                            best_epoch = supervision_epoch
+                        else:
+                            wait_count += 1
+                        if wait_count == flags.wait_epochs:
+                            model.reduce_lr(flags.lr_reduction)
+                            print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+
+                        if wait_count == flags.wait_epochs :
+                            break
+
+                """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
+                       text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
+                loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
+                loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
+                                        'y': supervised_batch.label}) if 'S' in flags.losses else 0
+
+                mean_loss += loss
+                if i % 30 == 0:
+                    mean_loss /= 30
+                    print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
+                    mean_loss = 0
+
+                if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1 or True:
                     model.eval()
-                    accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.sup_iter
-                    accuracy = model.get_overall_accuracy(accuracy_split)
-                    train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True)
+                    try:
+                        val_batch = limited_next(val_iterator)
+                    except StopIteration:
+                        val_iterator = iter(data.val_iter)
+                        print("Reinitialized test data iterator")
+                        val_batch = limited_next(val_iterator)
+                    with torch.no_grad():
+                        model({'x': val_batch.text[..., 1:], 'x_prev': val_batch.text[..., :-1], 'y': val_batch.label})
+                    model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
+                                        COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                     model.train()
-                    print("Validation Accuracy is {} at step {}".format(accuracy, model.step))
-                    print("Train Accuracy is {} at step {}".format(train_accuracy, model.step))
-                    if accuracy > max_acc:
+
+                current_time = time()
+            data.reinit_iterator('valid')
+            if model.step >= h_params.anneal_kl[0]:
+                model.eval()
+                if 'S' not in flags.losses:
+                    pp_ub = model.get_perplexity(data.unsup_val_iter)
+                    print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
+                    data.reinit_iterator('valid')
+                    if pp_ub < min_perp:
                         print('Saving The model ..')
-                        max_acc = accuracy.item()
+                        min_perp = pp_ub
                         model.save()
                         wait_count = 0
-                        best_epoch = supervision_epoch
                     else:
                         wait_count += 1
+
                     if wait_count == flags.wait_epochs:
                         model.reduce_lr(flags.lr_reduction)
                         print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
-                    if wait_count == flags.wait_epochs :
-                        break
-
-            """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
-                   text_i, lab_i in zip(supervised_batch.text[:2], supervised_batch.label[:2])])"""
-            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
-            loss += model.opt_step({'x': supervised_batch.text[..., 1:], 'x_prev': supervised_batch.text[..., :-1],
-                                    'y': supervised_batch.label}) if 'S' in flags.losses else 0
-
-            mean_loss += loss
-            if i % 30 == 0:
-                mean_loss /= 30
-                print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
-                mean_loss = 0
-
-            if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1 or True:
-                model.eval()
-                try:
-                    val_batch = limited_next(val_iterator)
-                except StopIteration:
-                    val_iterator = iter(data.val_iter)
-                    print("Reinitialized test data iterator")
-                    val_batch = limited_next(val_iterator)
-                with torch.no_grad():
-                    model({'x': val_batch.text[..., 1:], 'x_prev': val_batch.text[..., :-1], 'y': val_batch.label})
-                model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
-                                    COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
-                model.train()
-
-            current_time = time()
-        data.reinit_iterator('valid')
-        if model.step >= h_params.anneal_kl[0]:
-            model.eval()
-            if 'S' not in flags.losses:
-                pp_ub = model.get_perplexity(data.unsup_val_iter)
-                print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
-                data.reinit_iterator('valid')
-                if pp_ub < min_perp:
-                    print('Saving The model ..')
-                    min_perp = pp_ub
-                    model.save()
-                    wait_count = 0
-                else:
-                    wait_count += 1
-
                 if wait_count == flags.wait_epochs:
-                    model.reduce_lr(flags.lr_reduction)
-                    print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                    break
 
-            if wait_count == flags.wait_epochs:
-                break
+                model.train()
+            data.reinit_iterator('valid')
+            data.reinit_iterator('unsup_valid')
+            data.reinit_iterator('train')
+        print("Finished training, starting final evaluation :")
+    else:
 
-            model.train()
-        data.reinit_iterator('valid')
-        data.reinit_iterator('unsup_valid')
-        data.reinit_iterator('train')
-    print("Finished training, starting final evaluation :")
+        model.eval()
+        max_acc = model.get_overall_accuracy(data.val_iter).item()
     # Reloading best parameters
     model.load()
     # Getting final test numbers
