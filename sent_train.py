@@ -71,6 +71,7 @@ parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
+# Set this to true to force training slurm scripts to rather perform evaluation
 FORCE_EVAL = True
 if FORCE_EVAL:
     flags.mode = "eval"
@@ -80,13 +81,13 @@ if False:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 256
+    flags.max_len = 64
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
-    flags.supervision_proportion = 1#0.125
+    flags.supervision_proportion = 0.25#0.125
     flags.dev_index = 5
-    #flags.pretrained_embeddings = True
-    flags.dataset = "imdb"
+    #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
+    flags.dataset = "ag_news"
 
 
 if False:
