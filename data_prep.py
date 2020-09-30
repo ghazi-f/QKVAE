@@ -129,11 +129,12 @@ class HuggingAGNews:
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
         fields3 = {'text': text_field}
         fields4 = {'text': ('text', text_field)}
-        dev_start, dev_end = int(len(train_data)/5*(dev_index-1)), \
-                             int(len(train_data)/5*(dev_index))
+        len_train = 32000
+        dev_start, dev_end = int(len_train/5*(dev_index-1)), \
+                             int(len_train/5*(dev_index))
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
-                                                             int(dev_end+(len(train_data)-dev_end)*sup_proportion)
-        unsup_start1, unsup_start2, unsup_end1, unsup_end2 = train_end1, train_end2, dev_start, len(train_data)
+                                                             int(dev_end+(len_train-dev_end)*sup_proportion)
+        unsup_start, unsup_end = len_train, int(len_train+64000*unsup_proportion)
 
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
@@ -146,7 +147,7 @@ class HuggingAGNews:
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
         val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset(unsup_examples[unsup_start1:unsup_end1]+unsup_examples[unsup_start2:unsup_end2]
+        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end]
                               , fields3)
         vocab_dataset = Dataset(train_examples, fields1)
 
