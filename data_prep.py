@@ -32,6 +32,7 @@ class HuggingIMDB2:
         def expand_labels(datum):
             datum['label'] = [str(datum['label'])]*(max_len-1)
             return datum
+
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
@@ -124,6 +125,10 @@ class HuggingAGNews:
         def expand_labels(datum):
             datum['label'] = [str(datum['label'])]*(max_len-1)
             return datum
+        # lens = [len(sample['text'].split(' ')) for sample in train_data]
+        # print(np.quantile(lens, [0.5, 0.7, 0.9, 0.95, 0.99]))
+
+
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}

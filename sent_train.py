@@ -72,7 +72,7 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 
 flags = parser.parse_args()
 # Set this to true to force training slurm scripts to rather perform evaluation
-FORCE_EVAL = True
+FORCE_EVAL = False
 if FORCE_EVAL:
     flags.mode = "eval"
     flags.result_csv = "imdbeval.csv"
