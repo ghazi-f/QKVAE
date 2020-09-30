@@ -54,7 +54,7 @@ class BayesNet(nn.Module):
             self.dp_lvl = {lv: 0 for lv in self.variables}
 
     def _get_max_iw_path(self, lv, lvl, force_lv=None):
-        if lv.iw or (force_lv and lv.name in force_lv):
+        if (lv.iw and force_lv is None) or (force_lv and lv.name in force_lv):
             lvl += 1
         if lv not in self.parent:
             return lvl
@@ -127,7 +127,7 @@ class BayesNet(nn.Module):
                     gt_lv = self.variables_star[lv] if lv in self.variables_star else None
 
                     # Repeating inputs if the latent variable is importance weighted
-                    if (lv.iw or (force_iw and lv.name in force_iw)) and n_iw is not None:
+                    if ((lv.iw and force_iw is None) or (force_iw and lv.name in force_iw)) and n_iw is not None:
                         for k, v in lv_conditions.items():
                             expand_arg = [n_iw]+list(v.shape)
                             lv_conditions[k] = v.unsqueeze(0).expand(expand_arg)

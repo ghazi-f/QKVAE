@@ -310,7 +310,8 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             neg_log_perplexity_lb = 0
             total_samples = 0
             infer_prev, gen_prev = None, None
-            force_iw = [v.name for v in self.infer_bn.variables if v.name in [v.name for v in self.gen_bn.variables]]
+            force_iw = [v.name for v in self.infer_bn.variables if (v.name in [v.name for v in self.gen_bn.variables]
+                                                                    and v in self.infer_bn.parent)]
             iwlbo = IWLBo(self, 1)
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Perplexity")):
                 if batch.text.shape[1] < 2: continue
