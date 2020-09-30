@@ -1,52 +1,52 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=VAE
 #SBATCH --gres=gpu:1
-#SBATCH --output=./imdbvaef.txt
-#SBATCH --error=./imdbvaef.err
+#SBATCH --output=./agnewsvaef.txt
+#SBATCH --error=./agnewsvaef.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #srun python sent_train.py --losse
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small1" --supervision_proportion 0.001 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small2" --supervision_proportion 0.001 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small3" --supervision_proportion 0.001 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small4" --supervision_proportion 0.001 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small5" --supervision_proportion 0.001 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small1" --supervision_proportion 0.003 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small2" --supervision_proportion 0.003 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small3" --supervision_proportion 0.003 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small4" --supervision_proportion 0.003 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small5" --supervision_proportion 0.003 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small1" --supervision_proportion 0.01 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small2" --supervision_proportion 0.01 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small3" --supervision_proportion 0.01 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small4" --supervision_proportion 0.01 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small5" --supervision_proportion 0.01 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small1" --supervision_proportion 0.03 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small2" --supervision_proportion 0.03 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small3" --supervision_proportion 0.03 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small4" --supervision_proportion 0.03 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small5" --supervision_proportion 0.03 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small1" --supervision_proportion 0.1 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small2" --supervision_proportion 0.1 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small3" --supervision_proportion 0.1 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small4" --supervision_proportion 0.1 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small5" --supervision_proportion 0.1 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small1" --supervision_proportion 0.3 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small2" --supervision_proportion 0.3 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small3" --supervision_proportion 0.3 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small4" --supervision_proportion 0.3 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small5" --supervision_proportion 0.3 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small1" --supervision_proportion 1.0 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small2" --supervision_proportion 1.0 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small3" --supervision_proportion 1.0 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small4" --supervision_proportion 1.0 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small5" --supervision_proportion 1.0 ----max_len 64 batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small1" --supervision_proportion 0.001 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small2" --supervision_proportion 0.001 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small3" --supervision_proportion 0.001 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small4" --supervision_proportion 0.001 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small5" --supervision_proportion 0.001 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small1" --supervision_proportion 0.003 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small2" --supervision_proportion 0.003 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small3" --supervision_proportion 0.003 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small4" --supervision_proportion 0.003 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small5" --supervision_proportion 0.003 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small1" --supervision_proportion 0.01 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small2" --supervision_proportion 0.01 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small3" --supervision_proportion 0.01 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small4" --supervision_proportion 0.01 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.01small5" --supervision_proportion 0.01 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small1" --supervision_proportion 0.03 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small2" --supervision_proportion 0.03 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small3" --supervision_proportion 0.03 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small4" --supervision_proportion 0.03 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.03small5" --supervision_proportion 0.03 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small1" --supervision_proportion 0.1 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small2" --supervision_proportion 0.1 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small3" --supervision_proportion 0.1 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small4" --supervision_proportion 0.1 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.1small5" --supervision_proportion 0.1 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small1" --supervision_proportion 0.3 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small2" --supervision_proportion 0.3 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small3" --supervision_proportion 0.3 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small4" --supervision_proportion 0.3 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.3small5" --supervision_proportion 0.3 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small1" --supervision_proportion 1.0 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 1 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small2" --supervision_proportion 1.0 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 2 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small3" --supervision_proportion 1.0 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 3 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small4" --supervision_proportion 1.0 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 4 --dataset ag_news --result_csv agnews.csv
+srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/1.0small5" --supervision_proportion 1.0 --max_len 64 --batch_size 32 --grad_accu 2 --dev_index 5 --dataset ag_news --result_csv agnews.csv
 # Weighted experiments
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small1w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 1 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small2w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 2 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small3w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 3 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small4w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 4 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
-srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small5w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 5 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
+#srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small1w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 1 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
+#srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small2w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 2 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
+#srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small3w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 3 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
+#srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small4w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 4 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
+#srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.001small5w" --supervision_proportion 0.001 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 5 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
 srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small1w" --supervision_proportion 0.003 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 1 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
 srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small2w" --supervision_proportion 0.003 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 2 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
 srun python sent_train.py --losses "SSVAE" --test_name "AGNEWS/SSVAE/0.003small3w" --supervision_proportion 0.003 --batch_size 32 --grad_accu 2 --max_len 64 --dev_index 3 --generation_weight 0.01 --dataset ag_news --result_csv agnews.csv
