@@ -32,6 +32,7 @@ parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=300, type=int)
+parser.add_argument("--divide_by", default=1, type=int)
 parser.add_argument('--tied_embeddings', dest='tied_embeddings', action='store_true')
 parser.add_argument('--no-tied_embeddings', dest='tied_embeddings', action='store_false')
 parser.set_defaults(tied_embeddings=False)
@@ -71,6 +72,14 @@ parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
+if flags.divide_by != 1:
+    flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
+    flags.z_size = int(flags.z_size/flags.divide_by)
+    flags.pos_h = int(flags.pos_h/flags.divide_by)
+    flags.pos_embedding_dim = int(flags.pos_embedding_dim/flags.divide_by)
+    flags.encoder_h = int(flags.encoder_h/flags.divide_by)
+    flags.decoder_h = int(flags.decoder_h/flags.divide_by)
+
 # Set this to true to force training slurm scripts to rather perform evaluation
 FORCE_EVAL = False
 if FORCE_EVAL:
@@ -81,13 +90,13 @@ if False:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 64
+    flags.max_len = 256
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
     flags.supervision_proportion = 0.25#0.125
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
-    flags.dataset = "ag_news"
+    flags.dataset = "yelp"
 
 
 if False:
