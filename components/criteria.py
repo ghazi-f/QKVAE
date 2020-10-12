@@ -4,9 +4,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from components.latent_variables import Categorical
+from components.latent_variables import Categorical, Gaussian, MultiCategorical
 
 from time import time
+
 
 # ============================================== BASE CLASS ============================================================
 
@@ -141,7 +142,7 @@ class ELBo(BaseCriterion):
             thr = None
         else:
             thr = torch.tensor([self.h_params.kl_th]).to(self.h_params.device)
-        kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
+        kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
                   for lv_n in self.infer_lvs.keys() if observed is None or (lv_n not in observed)])
         if observed is not None:
             self.log_p_xIz += sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values() if lv.name in observed]) \
@@ -164,7 +165,7 @@ class ELBo(BaseCriterion):
         if self.h_params.max_elbo:
             # Didn't implement observed here
             if not actual and type(kl) != int:
-                max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=thr)
+                max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
                           for lv_n in self.infer_lvs.keys()]), dim=0)
                 loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl[0]/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * kl/3), dim=(0, 1)) / self.valid_n_samples
@@ -182,7 +183,7 @@ class ELBo(BaseCriterion):
                                                               self.gen_net.variables_star[self.generated_v].reshape(-1)
                                                               ).view(self.gen_net.variables_star[self.generated_v].shape)
                     un_log_p_xIz *= self.sequence_mask
-                    kl = sum([kullback_liebler(self.infer_lvs[lv_n].post_params, self.gen_lvs[lv_n].post_params, thr=None)
+                    kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=None)
                               for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
                     unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
                 self._prepare_metrics(unweighted_loss)
@@ -202,7 +203,7 @@ class ELBo(BaseCriterion):
             gen_v_name = gen_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.gen_net.parent[gen_lv]]))
                                         if gen_lv in self.gen_net.parent else '')
             KL_name = '/KL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
-            kl_i = kullback_liebler(inf_lv.post_params, gen_lv.post_params)*self.sequence_mask
+            kl_i = kullback_liebler(inf_lv, gen_lv)*self.sequence_mask
             KL_value = torch.sum(kl_i)/self.valid_n_samples
             KL_dict[KL_name] = KL_value
         if not (type(self.h_params.n_latents) == int and self.h_params.n_latents == 1):
@@ -217,12 +218,10 @@ class ELBo(BaseCriterion):
                     KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name,gen_v_name)
                     n_latents= self.h_params.n_latents[j]
                     for i in range(n_latents):
+                        if gen_lv.post_params is None: continue
                         start, end = int(i*self.h_params.z_size/n_latents), \
                                      int((i+1)*self.h_params.z_size/n_latents)
-                        inf_params = {k: v[..., start:end] for k, v in inf_lv.post_params.items()}
-                        if gen_lv.post_params is None: continue
-                        gen_params = {k: v[..., start:end] for k, v in gen_lv.post_params.items()}
-                        kl_i = kullback_liebler(inf_params, gen_params) * self.sequence_mask
+                        kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
                         KLs.append(torch.sum(kl_i) / self.valid_n_samples)
                     KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
 
@@ -390,8 +389,7 @@ class IWLBo(ELBo):
                 gen_v_name = gen_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.gen_net.parent[gen_lv]]))
                                             if gen_lv in self.gen_net.parent else '')
                 KL_name = '/KL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
-                inf_pp, gen_pp = inf_lv.post_params, gen_lv.post_params
-                kl_i = kullback_liebler(inf_pp, gen_pp)*self.sequence_mask
+                kl_i = kullback_liebler(inf_lv, gen_lv)*self.sequence_mask
                 KL_value = torch.sum(kl_i)/self.valid_n_samples
                 kl_sum += KL_value
                 KL_dict[KL_name] = KL_value
@@ -399,22 +397,25 @@ class IWLBo(ELBo):
         self._prepared_metrics = {'/IWLBo': current_iwlbo, '/ELBo': LL_value-kl_sum, LL_name: LL_value, **KL_dict}
 
 
-def kullback_liebler(params0, params1, thr=None):
+def kullback_liebler(lv0, lv1, thr=None, slice=None):
     # Accounting for the case when it's not estimated do to pure reconstruction phase
+    params0, params1 = lv0.post_params, lv1.post_params
     if params1 is None:
         return 0
-    if 'loc' in params0:
+    if isinstance(lv0, Gaussian) and isinstance(lv1, Gaussian):
         # The gaussian case
         sig0, sig1 = params0['scale']**2, params1['scale']**2
 
         mu0, mu1 = params0['loc'], params1['loc']
 
         kl_per_dim = 0.5*(sig0/sig1+(mu1-mu0)**2/sig1 + torch.log(sig1) - torch.log(sig0) - 1)
+        if slice is not None:
+            kl_per_dim = kl_per_dim[..., slice[0]:slice[1]]
         if thr is not None:
             kl_per_dim = torch.max(kl_per_dim, thr)
         return torch.sum(kl_per_dim, dim=-1)
-    else:
-
+    elif isinstance(lv0, Categorical) and isinstance(lv1, Categorical):
+        assert slice is None
         # The categorical case
         logit0, logit1 = params0['logits'], params1['logits']
         kl_per_dim = torch.softmax(logit0, dim=-1)*(torch.log_softmax(logit0, dim=-1) -
@@ -422,3 +423,19 @@ def kullback_liebler(params0, params1, thr=None):
         if thr is not None:
             kl_per_dim = torch.max(kl_per_dim, thr)
         return torch.sum(kl_per_dim, dim=-1)
+    elif isinstance(lv0, MultiCategorical) and isinstance(lv1, MultiCategorical):
+        # The multicategorical case
+        logit0, logit1 = params0['logits'], params1['logits']
+        logit0 = logit0.reshape(logit0.shape[:-1]+(lv0.n_disc, int(logit0.shape[-1]/lv0.n_disc)))
+        logit1 = logit1.reshape(logit1.shape[:-1]+(lv1.n_disc, int(logit1.shape[-1]/lv1.n_disc)))
+        kl_per_dim = torch.softmax(logit0, dim=-1)*(torch.log_softmax(logit0, dim=-1) -
+                                                    torch.log_softmax(logit1, dim=-1))
+        kl_per_dim = kl_per_dim.reshape(kl_per_dim.shape[:-2]+(kl_per_dim.shape[-2]*kl_per_dim.shape[-1],))
+        if slice is not None:
+            kl_per_dim = kl_per_dim[..., slice[0]:slice[1]]
+        if thr is not None:
+            kl_per_dim = torch.max(kl_per_dim, thr)
+        return torch.sum(kl_per_dim, dim=-1)
+    else:
+        raise NotImplementedError('The cas where lv0 is {} and lv1 is {} '
+                                  'is not implemented yet'.format(repr(type(lv0)), repr(type(lv0))))

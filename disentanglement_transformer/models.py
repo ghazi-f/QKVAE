@@ -5,6 +5,7 @@ from tqdm import tqdm
 from disentanglement_transformer.h_params import *
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
+from components.latent_variables import MultiCategorical
 
 
 # ==================================================== SSPOSTAG MODEL CLASS ============================================
@@ -299,6 +300,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             infer_prev, gen_prev = None, None
             force_iw = ['z3' if 'z3' in self.infer_bn.name_to_v else 'z1']
             iwlbo = IWLBo(self, 1)
+
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Perplexity")):
                 if batch.text.shape[1] < 2: continue
                 infer_prev, gen_prev = self({'x': batch.text[..., 1:],
@@ -345,11 +347,24 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # This function repeats inputs to the generation network so that they all have the same shape
         max_n_dims = max([val.ndim for val in gen_inputs.values()])
         for k, v in gen_inputs.items():
-            actual_v_ndim = v.ndim + (1 if v.dtype == torch.long else 0)
+            actual_v_ndim = v.ndim + (1 if v.dtype == torch.long and
+                                      not isinstance(self.gen_bn.name_to_v[k], MultiCategorical) else 0)
             for _ in range(max_n_dims-actual_v_ndim):
                 expand_arg = [n_iw]+list(gen_inputs[k].shape)
                 gen_inputs[k] = gen_inputs[k].unsqueeze(0).expand(expand_arg)
         return gen_inputs
+
+    def eval(self):
+        for v in self.infer_bn.variables | self.gen_bn.variables:
+            if v.name != self.generated_v.name and (isinstance(v, MultiCategorical) or isinstance(v, Categorical)):
+                v.switch_to_non_relaxed()
+        super(DisentanglementTransformerVAE, self).eval()
+    
+    def train(self, mode=True):
+        for v in self.infer_bn.variables | self.gen_bn.variables:
+            if v.name != self.generated_v.name and (isinstance(v, MultiCategorical) or isinstance(v, Categorical)):
+                v.switch_to_relaxed()
+        super(DisentanglementTransformerVAE, self).train(mode=mode)
 
 # ======================================================================================================================
 

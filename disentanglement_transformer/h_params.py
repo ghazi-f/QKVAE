@@ -21,6 +21,7 @@ class DefaultHParams:
                  test_name='default',
                  embedding_dim=300,
                  pos_embedding_dim=20,
+                 z_emb_dim=300,
                  z_size=500,
                  text_rep_l=1,
                  text_rep_h=400,
@@ -75,6 +76,7 @@ class DefaultHParams:
         self.max_len = max_len
         self.embedding_dim = embedding_dim
         self.pos_embedding_dim = pos_embedding_dim
+        self.z_emb_dim = z_emb_dim
         self.text_rep_l = text_rep_l
         self.text_rep_h = text_rep_h
 

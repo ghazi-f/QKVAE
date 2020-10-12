@@ -144,6 +144,8 @@ class BayesNet(nn.Module):
                                 expand_arg = [n_iw] + list(this_len.shape)
                                 this_len = this_len.unsqueeze(0).expand(expand_arg)
                             this_len = this_len.reshape(-1)
+                        else:
+                            this_len = lens
                     else:
                         this_len = lens
                     lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv, complete=(lv in self.child) or complete,

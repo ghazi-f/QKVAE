@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torch.distributions import MultivariateNormal, RelaxedOneHotCategorical, Normal, Independent
+from torch.distributions import MultivariateNormal, RelaxedOneHotCategorical, Normal, Independent, OneHotCategorical
 
 from components.links import SequentialLink, NamedLink
 from time import time
@@ -121,8 +121,6 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
     def prior_log_prob(self, sample):
         assert not self.inv_seq, "Reversed priors are still not permitted"
         assert self.allow_prior, "{} Doesn't allow for a prior".format(self)
-        assert isinstance(self, Gaussian), "This is still not implemented for latent variables that are {} " \
-                                           "and not Gaussian".format(repr(self))
         if sample.dtype == torch.long and isinstance(self, Categorical):
             sample = F.one_hot(sample, self.size).float()
         if self.prior_sequential_link is not None:
@@ -144,9 +142,11 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         else:
             prior_distrib = self.prior(**self.prior_params)
             output_params = self.prior_params
-            while any([v.ndim < sample.ndim for v in output_params.values()]):
-                 output_params = {k: v.unsqueeze(0).expand(sample.shape) for k, v in output_params.items()}
-            self.post_params = {k: v.expand((*sample.shape[:-1], self.size)) for k, v in output_params.items()}
+            while any([v.ndim < sample.ndim for k, v in output_params.items() if k not in ('temperature', 'n_disc')]):
+                output_params = {k: v.unsqueeze(0) for k, v in output_params.items()
+                                 if k not in ('temperature', 'n_disc')}
+            self.post_params = {k: v.expand((*sample.shape[:-1], self.size)) for k, v in output_params.items()
+                                if k not in ('temperature', 'n_disc')}
             return prior_distrib.log_prob(sample)
 
     def forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True, lens=None):
@@ -185,7 +185,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             for i in range(prev_zs.ndim - 2):
                 prev_zs = prev_zs.transpose(-3 - i, -2 - i)
             if gt_samples.dtype == torch.long and isinstance(self, Categorical):
-                gt_samples = F.one_hot(gt_samples, self.size).float()
+                gt_samples = F.one_hot(gt_samples, self.size)
+            if gt_samples.dtype == torch.long and isinstance(self, MultiCategorical):
+                gt_samples = F.one_hot(gt_samples, int(self.size/self.n_disc))
             for i in range(gt_samples.ndim - 2):
                 gt_samples = gt_samples.transpose(-3 - i, -2 - i)
             gt_log_probas = []
@@ -210,25 +212,17 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             z_reps.append(self.rep(posterior, prev_rep=prev_z))
             if isinstance(self, Categorical):
                 z_params_i = {**z_params_i, **{'temperature': self.prior_temperature}}
+            if isinstance(self, MultiCategorical):
+                z_params_i = {**z_params_i, **{'temperature': self.prior_temperature, 'n_disc': self.n_disc}}
             for k, v in z_params_i.items():
                 z_params[k].append(z_params_i[k])
             if gt_samples is not None:
                 if gt_samples.dtype == torch.long:
-                    prob = torch.sum(z_params_i['logits'] * gt_samples[len(z_reps)-1], dim=-1)
+                    prob = torch.sum(torch.log_softmax(self.post_params['logits'],
+                                                       -1) * gt_samples[len(z_reps)-1].float(), dim=-1)
                     gt_log_probas.append(prob)
                 else:
                     # Dealing with exploding memory for text probability assessment
-                    '''if gt_samples.ndim > 3 and self.size > 2000 and isinstance(self, Categorical):
-                        orig_shape = gt_samples[len(z_reps)-1].shape[:-1]
-                        flat_gt_i = gt_samples[len(z_reps)-1].view(-1, *gt_samples[len(z_reps)-1].shape[-2:])
-                        z_params_i['logits'] = z_params_i['logits'].view(-1, *z_params_i['logits'].shape[-2:],)
-                        gt_log_proba_i = [self.prior(**{'logits': z_params_ij,
-                                                        'temperature': torch.tensor(1.)}).log_prob(flat_gt_ij)
-                                          for z_params_ij, flat_gt_ij in zip(z_params_i['logits'], flat_gt_i)]
-                        gt_log_proba_i = torch.stack(gt_log_proba_i).view(orig_shape)
-                        gt_log_probas.append(gt_log_proba_i)
-
-                    else:'''
                     gt_log_probas.append(self.prior(**z_params_i).log_prob(gt_samples[len(z_reps)-1]))
             else:
                 prev_zs.append(z_reps[-1])
@@ -262,7 +256,6 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                                 dim=-1),
                       torch.cat([v for k, v in inputs.items() if k not in link_approximator.residual['conditions']],
                                 dim=-1))
-
         self.post_params = link_approximator(inputs, lens=lens)
         if complete:
             self.post_samples, self.post_log_probas = self.posterior_sample(self.post_params)
@@ -277,6 +270,15 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                     self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
                     if gt_samples.dtype == torch.long:
                         gt_samples = F.one_hot(gt_samples, self.size).float()
+                        self.post_gt_log_probas = torch.sum(torch.log_softmax(self.post_params['logits'],
+                                                                              -1) * gt_samples, dim=-1)
+                    else:
+                        self.post_gt_log_probas = self.prior(**self.post_params).log_prob(gt_samples)
+                elif isinstance(self, MultiCategorical):
+                    self.post_params = {**self.post_params, **{'temperature': self.prior_temperature,
+                                                                'n_disc': self.n_disc}}
+                    if gt_samples.dtype == torch.long:
+                        gt_samples = F.one_hot(gt_samples, int(self.size/self.n_disc)).float()
                         self.post_gt_log_probas = torch.sum(torch.log_softmax(self.post_params['logits'],
                                                                               -1) * gt_samples, dim=-1)
                     else:
@@ -358,6 +360,7 @@ class Categorical(BaseLatentVariable):
             self.rep_net = repnet or nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
 
     def infer(self, x_params):
+        # Not sure this works with Relaxed distributions. But it's still not used anyway
         if 'temperature' not in x_params:
             x_params = {**x_params, **{'temperature': self.prior_temperature}}
         inferred = torch.argmax(x_params['logits'], dim=-1)
@@ -406,6 +409,90 @@ class Categorical(BaseLatentVariable):
                 reps = reps.view(*orig_shape[:-1], reps.shape[-1])
         return reps
 
+    def switch_to_relaxed(self):
+        self.prior = self.posterior = RelaxedOneHotCategorical
+
+    def switch_to_non_relaxed(self):
+        self.prior = self.posterior = MyOneHotCategorical
+
+
+class MultiCategorical(BaseLatentVariable):
+    parameter_activations = {'logits': nn.Sequential()}
+
+    def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
+                 allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False,
+                 word_dropout=None, sequence_lv=False, n_disc=1):
+        # IDEA: Try to implement "Direct Optimization through argmax"
+        self.ignore = ignore
+        assert size % n_disc == 0
+        self.n_disc = torch.tensor([n_disc]).to(device)
+        torch.rand(size, device=device, requires_grad=True)
+        self.prior_logits = torch.ones(size).to(device)*5
+        self.prior_temperature = torch.tensor([1.0]).to(device)
+        super(MultiCategorical, self).__init__(MultiRelaxedOneHotCategorical, size,
+                                               {'logits': self.prior_logits, 'temperature': self.prior_temperature,
+                                                'n_disc': self.n_disc},
+                                               name, prior_sequential_link, posterior, markovian, allow_prior,
+                                               is_placeholder, inv_seq, stl, repnet, iw, sequence_lv)
+        assert isinstance(embedding, MultiEmbedding)
+        self.embedding = embedding
+        self.w_drp = nn.Dropout(word_dropout) if word_dropout is not None else None
+        if self.rep_net is not None and not markovian:
+            embedding_size = embedding.embeddings[0].weight.shape[1]*n_disc
+            self.rep_net = repnet or nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
+
+    def infer(self, x_params):
+        # Not sure this works with Relaxed distributions. But it's still not used anyway
+        if 'temperature' not in x_params:
+            x_params = {**x_params, **{'temperature': self.prior_temperature}, 'n_disc':self.n_disc}
+        inferred = torch.argmax(x_params['logits'], dim=-1)
+        return inferred, self.prior(x_params).log_prob(F.one_hot(inferred, x_params['logits'].shape[-1]))
+
+    def posterior_sample(self, x_params):
+        if 'temperature' not in x_params:
+            x_params = {**x_params, **{'temperature': self.prior_temperature}, 'n_disc':self.n_disc}
+        return super(MultiCategorical, self).posterior_sample(x_params)
+
+    def rep(self, samples, step_wise=True, prev_rep=None):
+        embedded = self.embedding(samples)
+
+        if self.w_drp is not None:
+            drp_mask = self.w_drp(torch.ones(embedded.shape[:-1], device=self.prior_logits.device)).unsqueeze(-1)
+            embedded = embedded*drp_mask*(1-self.w_drp.p)
+
+        if self.rep_net is None:
+            reps = embedded
+        else:
+            if step_wise:
+                depth, directions = self.rep_net.num_layers, 2 if self.rep_net.bidirectional else 1
+                if prev_rep is not None and len(prev_rep.shape) != 3:
+                    prev_rep = prev_rep.view(depth * directions, -1, prev_rep.shape[-1])
+                flatten = embedded.ndim > 2
+                if flatten:
+                    orig_shape = embedded.shape
+                    embedded = embedded.view(-1, orig_shape[-1])
+                reps, self.prev_state = self.rep_net(embedded.unsqueeze(-2), hx=prev_rep)
+                reps = reps.squeeze(1)
+            else:
+                flatten = embedded.ndim > 3
+                if flatten:
+                    orig_shape = embedded.shape
+                    embedded = embedded.view(-1, *orig_shape[-2:])
+                if self.inv_seq:
+                    embedded = torch.flip(embedded, dims=[-2])
+                reps, self.prev_state = self.rep_net(embedded, hx=prev_rep)
+                if self.inv_seq:
+                    reps = torch.flip(reps, dims=[-2])
+            if flatten:
+                reps = reps.view(*orig_shape[:-1], reps.shape[-1])
+        return reps
+
+    def switch_to_relaxed(self):
+        self.prior = self.posterior = MultiRelaxedOneHotCategorical
+
+    def switch_to_non_relaxed(self):
+        self.prior = self.posterior = MultiOneHotCategorical
+
 
 def diag_normal(loc, scale):
     return Independent(Normal(loc, scale), 1)
@@ -428,5 +515,74 @@ class SoftmaxBottleneck(nn.Module):
 
         return torch.log(outputs+1e-8)
 
+
+class MultiEmbedding(nn.Module):
+    def __init__(self, size, n_disc, dim):
+        super(MultiEmbedding, self).__init__()
+        assert size % n_disc == 0
+        assert dim % n_disc == 0
+        self.n_disc = n_disc
+        self.dim = dim
+        self.embeddings = nn.ModuleList([nn.Embedding(int(size/n_disc), int(dim/n_disc)) for _ in range(n_disc)])
+
+    def forward(self, inputs):
+        assert inputs.shape[-1] % self.n_disc == 0
+        inputs = inputs.reshape(inputs.shape[:-1]+(self.n_disc, int(inputs.shape[-1]/self.n_disc)))
+        if inputs.dtype == torch.long:
+            outputs = torch.cat([emb[inputs_i] for emb, inputs_i in zip(self.embeddings, inputs[..., :],)], -1)
+        else:
+            outputs = torch.cat([torch.matmul(inputs[..., i, :], emb.weight) for emb, i in zip(self.embeddings,
+                                                                   range(self.n_disc))], -1)
+        return outputs
+
+
+class MultiRelaxedOneHotCategorical(RelaxedOneHotCategorical):
+    def __init__(self, temperature, n_disc, probs=None, logits=None, validate_args=None):
+        probs = None if probs is None else probs.reshape(probs.shape[:-1]+(n_disc, int(probs.shape[-1]/n_disc)))
+        logits = None if logits is None else logits.reshape(logits.shape[:-1]+(n_disc, int(logits.shape[-1]/n_disc)))
+        self.n_disc = n_disc
+        super(MultiRelaxedOneHotCategorical, self).__init__(temperature, probs=probs, logits=logits,
+                                                            validate_args=validate_args)
+
+    def log_prob(self, value):
+        value = value.reshape(value.shape[:-1]+(self.n_disc, int(value.shape[-1]/self.n_disc)))
+        disc_wise_log_prob = super(MultiRelaxedOneHotCategorical, self).log_prob(value)
+        return disc_wise_log_prob.sum(-1)
+
+    def rsample(self, sample_shape=torch.Size()):
+        sample = super(MultiRelaxedOneHotCategorical, self).rsample(sample_shape)
+        return sample.reshape(sample.shape[:-2]+(sample.shape[-1]*sample.shape[-2],))
+
+    def sample(self, sample_shape=torch.Size()):
+        sample = super(MultiRelaxedOneHotCategorical, self).sample(sample_shape)
+        return sample.reshape(sample.shape[:-2]+(sample.shape[-1]*sample.shape[-2],))
+
+
+class MultiOneHotCategorical(OneHotCategorical):
+    def __init__(self, temperature, n_disc, probs=None, logits=None, validate_args=None):
+        probs = None if probs is None else probs.reshape(probs.shape[:-1]+(n_disc, int(probs.shape[-1]/n_disc)))
+        logits = None if logits is None else logits.reshape(logits.shape[:-1]+(n_disc, int(logits.shape[-1]/n_disc)))
+        self.n_disc = n_disc
+        super(MultiOneHotCategorical, self).__init__(probs=probs, logits=logits,
+                                                     validate_args=validate_args)
+
+    def log_prob(self, value):
+        value = value.reshape(value.shape[:-1]+(self.n_disc, int(value.shape[-1]/self.n_disc)))
+        disc_wise_log_prob = super(MultiOneHotCategorical, self).log_prob(value)
+        return disc_wise_log_prob.sum(-1)
+
+    def rsample(self, sample_shape=torch.Size()):
+        sample = super(MultiOneHotCategorical, self).sample(sample_shape)
+        return sample.reshape(sample.shape[:-2]+(sample.shape[-1]*sample.shape[-2],))
+
+    def sample(self, sample_shape=torch.Size()):
+        sample = super(MultiOneHotCategorical, self).sample(sample_shape)
+        return sample.reshape(sample.shape[:-2]+(sample.shape[-1]*sample.shape[-2],))
+
+
+
+class MyOneHotCategorical(OneHotCategorical):
+    def __init__(self, temperature, probs=None, logits=None, validate_args=None):
+        super(MyOneHotCategorical, self).__init__(probs=probs, logits=logits, validate_args=validate_args)
 
 

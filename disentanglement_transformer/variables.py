@@ -1,7 +1,7 @@
 # This files serves defining latent variables for PoS tagging
 import torch.nn as nn
 
-from components.latent_variables import Categorical, Gaussian
+from components.latent_variables import Categorical, Gaussian, MultiCategorical, MultiEmbedding
 from components import links
 from components.criteria import IWLBo
 
@@ -93,4 +93,60 @@ class ZlstmGen(Gaussian):
     def __init__(self, h_params, repnet, allow_prior=False):
         super(ZlstmGen, self).__init__(h_params.z_size, 'zlstm', h_params.device,
                                    markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
+
+
+class ZInferDisc1(MultiCategorical):
+    def __init__(self, h_params, repnet):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
+        size = int(h_params.z_size * h_params.n_latents[0] / max(h_params.n_latents))
+        embedding = MultiEmbedding(size, h_params.n_latents[0], h_params.z_emb_dim)
+        super(ZInferDisc1, self).__init__(size, 'z1', h_params.device, embedding, None, markovian=h_params.markovian,
+                                          stl=True, iw=iw, repnet=repnet, sequence_lv=True,
+                                          n_disc=h_params.n_latents[0])
+
+
+class ZInferDisc2(MultiCategorical):
+    def __init__(self, h_params, repnet):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
+        size = int(h_params.z_size * h_params.n_latents[1] / max(h_params.n_latents))
+        embedding = MultiEmbedding(size, h_params.n_latents[1], h_params.z_emb_dim)
+        super(ZInferDisc2, self).__init__(size, 'z2', h_params.device, embedding, None, markovian=h_params.markovian,
+                                          stl=True, iw=iw, repnet=repnet, sequence_lv=True,
+                                          n_disc=h_params.n_latents[1])
+
+
+class ZInferDisc3(MultiCategorical):
+    def __init__(self, h_params, repnet):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
+        size = int(h_params.z_size * h_params.n_latents[2] / max(h_params.n_latents))
+        embedding = MultiEmbedding(size, h_params.n_latents[2], h_params.z_emb_dim)
+        super(ZInferDisc3, self).__init__(size, 'z3', h_params.device, embedding, None, markovian=h_params.markovian,
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True, n_disc=h_params.n_latents[2])
+
+
+class ZGenDisc1(MultiCategorical):
+    def __init__(self, h_params, repnet, allow_prior=False):
+        size = int(h_params.z_size * h_params.n_latents[0] / max(h_params.n_latents))
+        embedding = MultiEmbedding(size, h_params.n_latents[0], h_params.z_emb_dim)
+        super(ZGenDisc1, self).__init__(size, 'z1', h_params.device, embedding, None, markovian=h_params.markovian,
+                                        allow_prior=allow_prior, repnet=repnet, sequence_lv=True,
+                                        n_disc=h_params.n_latents[0])
+
+
+class ZGenDisc2(MultiCategorical):
+    def __init__(self, h_params, repnet, allow_prior=False):
+        size = int(h_params.z_size * h_params.n_latents[1] / max(h_params.n_latents))
+        embedding = MultiEmbedding(size, h_params.n_latents[1], h_params.z_emb_dim)
+        super(ZGenDisc2, self).__init__(size, 'z2', h_params.device, embedding, None, markovian=h_params.markovian,
+                                        allow_prior=allow_prior, repnet=repnet, sequence_lv=True,
+                                        n_disc=h_params.n_latents[1])
+
+
+class ZGenDisc3(MultiCategorical):
+    def __init__(self, h_params, repnet, allow_prior=False):
+        size = int(h_params.z_size * h_params.n_latents[2] / max(h_params.n_latents))
+        embedding = MultiEmbedding(size, h_params.n_latents[2], h_params.z_emb_dim)
+        super(ZGenDisc3, self).__init__(size, 'z3', h_params.device, embedding, None, markovian=h_params.markovian,
+                                        allow_prior=allow_prior, repnet=repnet, sequence_lv=True,
+                                        n_disc=h_params.n_latents[2])
 

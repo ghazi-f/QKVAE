@@ -465,7 +465,6 @@ class CoattentiveTransformerLink(NamedLink):
 
         if self.residual is not None:
             z_params['loc'] = z_params_res['loc'] + z_params['loc']
-
         return z_params
 
     def _generate_square_subsequent_mask(self, sz):

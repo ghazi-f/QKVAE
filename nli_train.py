@@ -15,19 +15,20 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 
 # Training and Optimization
-k=4
+k, kz =1, 10
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--max_len", default=20, type=int)
 parser.add_argument("--batch_size", default=512, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
-parser.add_argument("--complete_test_freq", default=160, type=int)
+parser.add_argument("--complete_test_freq", default=32, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=300, type=int)#################"
 parser.add_argument("--pretrained_embeddings", default=True, type=bool)#################"
-parser.add_argument("--z_size", default=768*k, type=int)#################"
+parser.add_argument("--z_size", default=768*kz, type=int)#################"
+parser.add_argument("--z_emb_dim", default=768*k, type=int)#################"
 parser.add_argument("--n_latents", default=[16, 16, 16], type=list)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
 parser.add_argument("--text_rep_h", default=768*k, type=int)
@@ -38,12 +39,13 @@ parser.add_argument("--decoder_l", default=2, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
+parser.add_argument("--graph", default='Discrete', choices=["Discrete", "Normal"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=1000, type=int)
-parser.add_argument("--anneal_kl1", default=4000, type=int)
-parser.add_argument("--grad_clip", default=100., type=float)
+parser.add_argument("--anneal_kl0", default=3000, type=int)
+parser.add_argument("--anneal_kl1", default=6000, type=int)
+parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=0*12/(1536*28/16), type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.0, type=float)
@@ -61,9 +63,11 @@ if True:
     flags.batch_size = 64
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/StructuredAutoregFasttext"
+    flags.test_name = "nliLM/Discrete3"
 
 # torch.autograd.set_detect_anomaly(True)
+GRAPH = {"Discrete": get_discrete_auto_regressive_disentanglement_graph,
+         "Normal": get_structured_auto_regressive_disentanglement_graph}[flags.graph]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 MAS_ELBO = 5
@@ -93,13 +97,14 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
-                       is_weighted=[], graph_generator=get_structured_auto_regressive_disentanglement_graph2,
+                       is_weighted=[], graph_generator=GRAPH,
                        z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo= 6)
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=5,
+                       z_emb_dim=flags.z_emb_dim)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
