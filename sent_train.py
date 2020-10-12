@@ -8,7 +8,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import HuggingIMDB2, HuggingAGNews, HuggingYelp
+from data_prep import HuggingIMDB2, HuggingAGNews, HuggingYelp, UDPoSDaTA
 from sentence_classification.models import SSSentenceClassification as Model
 from sentence_classification.h_params import DefaultSSSentenceClassificationHParams as HParams
 from sentence_classification.graphs import *
@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--mode", default='train', choices=["train", "eval"], type=str)
-parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp"], type=str)
+parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp", "ud"], type=str)
 parser.add_argument("--result_csv", default='imdb.csv', type=str)
 parser.add_argument("--max_len", default=256, type=int)
 parser.add_argument("--batch_size", default=8, type=int)
@@ -90,13 +90,13 @@ if False:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 256
+    flags.max_len = 64
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
-    flags.supervision_proportion = 0.25#0.125
+    flags.supervision_proportion = 0.1#0.125
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
-    flags.dataset = "yelp"
+    flags.dataset = "ud"
 
 
 if False:
@@ -119,7 +119,9 @@ if flags.pretrained_embeddings:
 # torch.autograd.set_detect_anomaly(True)
 # flags.wait_epochs = int(flags.wait_epochs /flags.supervision_proportion )
 assert flags.dev_index in (1, 2, 3, 4, 5)
-Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp}[flags.dataset]
+Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp, 'ud': UDPoSDaTA}[flags.dataset]
+this_graph = {'imdb': get_sentiment_graph, 'ag_news': get_sentiment_graph, 'yelp': get_sentiment_graph,
+              'ud': get_postag_graph}[flags.dataset]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -160,7 +162,7 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
-                       is_weighted=[], graph_generator=get_sentiment_graph, z_size=flags.z_size,
+                       is_weighted=[], graph_generator=this_graph, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
@@ -234,7 +236,7 @@ def main():
                             best_epoch = supervision_epoch
                         else:
                             wait_count += 1
-                        if wait_count == flags.wait_epochs:
+                        if wait_count == flags.wait_epochs * 2:
                             model.reduce_lr(flags.lr_reduction)
                             print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
@@ -283,7 +285,7 @@ def main():
                     else:
                         wait_count += 1
 
-                    if wait_count == flags.wait_epochs:
+                    if wait_count == flags.wait_epochs * 2:
                         model.reduce_lr(flags.lr_reduction)
                         print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 

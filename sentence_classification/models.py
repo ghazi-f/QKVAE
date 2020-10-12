@@ -273,9 +273,10 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             for i in range(gen_len):
                 if z_sample is not None:
                     z_input = {'z': z_sample.unsqueeze(1).expand(z_sample.shape[0], i+1, z_sample.shape[1])}
+                    self.gen_bn({'x_prev': x_prev, **z_input})
                 else:
                     z_sample = None
-                self.gen_bn({'x_prev': x_prev, **z_input})
+                    self.gen_bn({'x_prev': x_prev})
                 if only_z_sampling:
                     samples_i = self.generated_v.post_params['logits']
                 else:

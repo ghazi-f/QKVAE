@@ -128,7 +128,6 @@ class HuggingAGNews:
         # lens = [len(sample['text'].split(' ')) for sample in train_data]
         # print(np.quantile(lens, [0.5, 0.7, 0.9, 0.95, 0.99]))
 
-
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
@@ -221,25 +220,28 @@ class HuggingYelp:
         print('Current working directory:', os.getcwd())
         yelp_data = load_dataset('csv', data_files={'train': os.path.join('.data', 'yelp', 'train.csv'),
                                                                 'test': os.path.join('.data', 'yelp', 'test.csv')},
-                                             column_names=['label', 'text'], version='0.0.1')
+                                             column_names=['label', 'text'], version='0.0.2')
                                              #download_mode=FORCE_REDOWNLOAD)
 
         start = time()
         train_data, test_data = yelp_data['train'], yelp_data['test']
         def expand_labels(datum):
-            # data['label'] = ' '.join([str(data['label'])]*(max_len-1))
             datum['label'] = [str(datum['label'])]*(max_len-1)
             return datum
+        lens = [len(sample['text'].split(' ')) for sample in train_data]
+
         train_data, test_data = train_data.map(expand_labels), test_data.map(expand_labels)
         fields1 = {'text': text_field, 'label': label_field}
         fields2 = {'text': ('text', text_field), 'label': ('label', label_field)}
         fields3 = {'text': text_field}
         fields4 = {'text': ('text', text_field)}
-        dev_start, dev_end = int(len(train_data)/5*(dev_index-1)), \
-                             int(len(train_data)/5*(dev_index))
+
+        len_train = int(len(train_data)/3)
+        dev_start, dev_end = int(len_train/5*(dev_index-1)), \
+                             int(len_train/5*(dev_index))
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
-                                                             int(dev_end+(len(train_data)-dev_end)*sup_proportion)
-        unsup_start1, unsup_start2, unsup_end1, unsup_end2 = train_end1, train_end2, dev_start, len(train_data)
+                                                             int(dev_end+(len_train-dev_end)*sup_proportion)
+        unsup_start, unsup_end = len_train, int(len_train+len_train*2*unsup_proportion)
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
         # experiments
@@ -251,8 +253,7 @@ class HuggingYelp:
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
         val = Dataset(train_examples[dev_start:dev_end], fields1)
         test = Dataset([Example.fromdict(ex, fields2) for ex in test_data], fields1)
-        unsup_train = Dataset(unsup_examples[unsup_start1:unsup_end1]+unsup_examples[unsup_start2:unsup_end2]
-                              , fields3)
+        unsup_train = Dataset(unsup_examples[unsup_start:unsup_end], fields3)
 
         vocab_dataset = Dataset(train_examples, fields1)
         unsup_test, unsup_val = test, test
@@ -365,8 +366,9 @@ class IMDBData:
 
 
 class UDPoSDaTA:
-    def __init__(self, max_len, batch_size, max_epochs, device):
-        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<eos>'
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
+                 pretrained=False):
+        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<go>'
                                 , is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len-1, batch_first=True)
 
@@ -374,12 +376,12 @@ class UDPoSDaTA:
         #unsup_train, unsup_val, unsup_test = MyPennTreebank.splits(text_field)
         #unsup_train, unsup_val, unsup_test = datasets.PennTreebank.splits(text_field)
         #unsup_train, unsup_val, unsup_test = datasets.WikiText2.splits(text_field)
-        #unsup_train, unsup_val, unsup_test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
-        unsup_train, unsup_val, unsup_test = YahooLM.splits(text_field)
+        unsup_train, unsup_val, unsup_test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
+        #unsup_train, unsup_val, unsup_test = YahooLM.splits(text_field)
         train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train, max_size=30000)  # , vectors="fasttext.simple.300d")
+        text_field.build_vocab(unsup_train, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
         # self.train_iter, _,  _ = data.BPTTIterator.splits((unsup_train, unsup_val, unsup_test),
         #                                                                     batch_size=batch_size, bptt_len=max_len,
@@ -389,8 +391,21 @@ class UDPoSDaTA:
         #                                                                     batch_size=int(batch_size/10), bptt_len=max_len,
         #                                                                     device=device, repeat=False, shuffle=False,
         #                                                                     sort=False)
+        # Remaking splits according to supervision proportions
+        exlist = [ex for ex in train+val]
+        train =Dataset(exlist, {'text': text_field, 'label': label_field})
+        dev_start, dev_end = int(len(train) / 5 * (dev_index - 1)), \
+                             int(len(train) / 5 * (dev_index))
+        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start * sup_proportion), \
+                                                             int(dev_end + (len(train) - dev_end) * sup_proportion)
+        unsup_start, unsup_end = 0, int(len(unsup_train) * unsup_proportion)
+        val = Dataset(train[dev_start:dev_end], {'text': text_field, 'label': label_field})
+        train = Dataset(train[train_start1:train_end1] + train[train_start2:train_end2],
+                        {'text': text_field, 'label': label_field})
+        unsup_train = Dataset(unsup_train[unsup_start:unsup_end], {'text': text_field})
 
         # make iterator for splits
+
         self.train_iter, _,  _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         _, self.unsup_val_iter,  _ = data.BucketIterator.splits(
@@ -408,7 +423,11 @@ class UDPoSDaTA:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.wvs = None
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
 
     def reinit_iterator(self, split):
         if split == 'train':
@@ -584,6 +603,7 @@ class MyVocab:
     def __init__(self, itos, stoi):
         self.itos = itos
         self.stoi = stoi
+
 
 class LanguageModelingDataset(data.Dataset):
     """Defines a dataset for language modeling."""

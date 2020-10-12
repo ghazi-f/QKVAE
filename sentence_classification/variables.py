@@ -37,17 +37,17 @@ class XPrevGen(Categorical):
 
 
 class ZInfer(Gaussian):
-    def __init__(self, h_params, repnet):
+    def __init__(self, h_params, repnet, sequence_lv=True):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
         super(ZInfer, self).__init__(h_params.z_size, 'z', h_params.device, markovian=h_params.markovian,
-                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=sequence_lv)
 
 
 class ZGen(Gaussian):
-    def __init__(self, h_params, repnet, allow_prior=False):
+    def __init__(self, h_params, repnet, allow_prior=False, sequence_lv=True):
         super(ZGen, self).__init__(h_params.z_size, 'z', h_params.device,
                                    markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet,
-                                   sequence_lv=True)
+                                   sequence_lv=sequence_lv)
 
 
 class YEmbInfer(Gaussian):
@@ -64,14 +64,14 @@ class YEmbGen(Gaussian):
 
 
 class YvalInfer(Categorical):
-    def __init__(self, h_params, pos_embeddings):
+    def __init__(self, h_params, pos_embeddings, sequence_lv=True):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.piwo
         super(YvalInfer, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
-                                        h_params.pos_ignore_index, markovian=True, sequence_lv=True, iw=iw)
+                                        h_params.pos_ignore_index, markovian=True, sequence_lv=sequence_lv, iw=iw)
 
 
 class YvalGen(Categorical):
-    def __init__(self, h_params, pos_embeddings):
+    def __init__(self, h_params, pos_embeddings, sequence_lv=True):
         super(YvalGen, self).__init__(h_params.tag_size, 'y', h_params.device,  pos_embeddings,
-                                      h_params.pos_ignore_index, markovian=True, sequence_lv=True)
+                                      h_params.pos_ignore_index, markovian=True, sequence_lv=sequence_lv)
 
