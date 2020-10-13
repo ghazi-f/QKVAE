@@ -66,7 +66,7 @@ parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
-parser.add_argument("--lr", default=4e-3, type=float)
+parser.add_argument("--lr", default=4e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 8 for agnews
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
@@ -86,17 +86,18 @@ if FORCE_EVAL:
     flags.mode = "eval"
     flags.result_csv = "imdbeval.csv"
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 64
+    flags.max_len = 256
+    flags.encoder_h = 512
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
-    flags.supervision_proportion = 0.1#0.125
+    flags.supervision_proportion = 0.125
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
-    flags.dataset = "ud"
+    flags.dataset = "imdb"
 
 
 if False:
