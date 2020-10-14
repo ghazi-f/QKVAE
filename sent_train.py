@@ -7,6 +7,7 @@ from torch import device
 import torch
 from torch import optim
 import numpy as np
+from uuid import uuid4
 
 from data_prep import HuggingIMDB2, HuggingAGNews, HuggingYelp, UDPoSDaTA
 from sentence_classification.models import SSSentenceClassification as Model
@@ -17,7 +18,7 @@ parser = argparse.ArgumentParser()
 
 # Training and Optimization
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--mode", default='train', choices=["train", "eval"], type=str)
+parser.add_argument("--mode", default='train', choices=["train", "eval", "grid_search"], type=str)
 parser.add_argument("--dataset", default='imdb', choices=["imdb", "ag_news", "yelp", "ud"], type=str)
 parser.add_argument("--result_csv", default='imdb.csv', type=str)
 parser.add_argument("--max_len", default=256, type=int)
@@ -32,6 +33,9 @@ parser.add_argument("--unsupervision_proportion", default=1., type=float)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=300, type=int)
+parser.add_argument('--emb_batch_norm', dest='emb_batch_norm', action='store_true')
+parser.add_argument('--no-emb_batch_norm', dest='emb_batch_norm', action='store_false')
+parser.set_defaults(emb_batch_norm=False)
 parser.add_argument("--divide_by", default=1, type=int)
 parser.add_argument('--tied_embeddings', dest='tied_embeddings', action='store_true')
 parser.add_argument('--no-tied_embeddings', dest='tied_embeddings', action='store_false')
@@ -67,19 +71,15 @@ parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=4e-3, type=float)
+parser.add_argument("--opt_alg", default='adam', choices=["adam", "sgd", "nesterov"], type=str)
+parser.add_argument("--beta1", default=0.9, type=float)
+parser.add_argument("--beta2", default=0.99, type=float)
+parser.add_argument("--epsilon", default=1e-8, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 8 for agnews
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
 
 flags = parser.parse_args()
-if flags.divide_by != 1:
-    flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
-    flags.z_size = int(flags.z_size/flags.divide_by)
-    flags.pos_h = int(flags.pos_h/flags.divide_by)
-    flags.pos_embedding_dim = int(flags.pos_embedding_dim/flags.divide_by)
-    flags.encoder_h = int(flags.encoder_h/flags.divide_by)
-    flags.decoder_h = int(flags.decoder_h/flags.divide_by)
-
 # Set this to true to force training slurm scripts to rather perform evaluation
 FORCE_EVAL = False
 if FORCE_EVAL:
@@ -98,19 +98,30 @@ if True:
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
     flags.dataset = "imdb"
+    flags.mode = "grid_search"
 
 
-if False:
-    flags.losses = 'S'
-    flags.batch_size = 32
-    flags.grad_accu = 1
-    flags.max_len = 256
-    flags.test_name = "SSVAE/IMDB/test8"
-    flags.unsupervision_proportion = 1
-    flags.supervision_proportion = 1#0.125
-    flags.dev_index = 5
-    #flags.pretrained_embeddings = True
-    flags.dataset = "imdb"
+if flags.mode == "grid_search":
+    flags.dev_index = np.random.choice([1, 2, 3, 4, 5])
+    flags.batch_size = np.random.choice([16, 32, 64])
+    flags.divide_by = np.random.choice([2, 1, 0.5])
+    flags.opt_alg = np.random.choice(["adam", "sgd", "nesterov"])
+    flags.lr = np.random.choice([4e-3, 1e-3, 4e-4])
+    flags.dropout = np.random.choice([0.3, 0.5, 0.7])
+    flags.emb_batch_norm = np.random.choice([True, False])
+    flags.beta1 = np.random.choice([0.9, 0.99, 0.999])
+    flags.beta2 = np.random.choice([0.85, 0.99, 0.999])
+    flags.epsilon = np.random.choice([1e-7, 1e-8, 1e-9])
+    n_layers = [(2, 1), (1, 1), (3, 1), (3, 2)][np.random.choice([0, 1, 2, 3])]
+    flags.encoder_l, flags.decoder_l = n_layers[0], n_layers[1]
+    flags.test_name += str(uuid4())
+if flags.divide_by != 1:
+    flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
+    flags.z_size = int(flags.z_size/flags.divide_by)
+    flags.pos_h = int(flags.pos_h/flags.divide_by)
+    flags.pos_embedding_dim = int(flags.pos_embedding_dim/flags.divide_by)
+    flags.encoder_h = int(flags.encoder_h/flags.divide_by)
+    flags.decoder_h = int(flags.decoder_h/flags.divide_by)
 
 if flags.pretrained_embeddings:
     flags.embedding_dim = 300
@@ -133,6 +144,12 @@ SUP_PROPORTION = flags.supervision_proportion
 DEV_INDEX = flags.dev_index
 UNSUP_PROPORTION = flags.unsupervision_proportion
 DEVICE = device(flags.device)
+OPT_ALG = {'adam': optim.AdamW, 'sgd': optim.SGD, 'nesterov':optim.SGD}[flags.opt_alg]
+OPT_ARGS = {'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (flags.beta1, flags.beta2),
+                    'eps': flags.epsilon},
+            'sgd': {'lr': flags.lr, 'momentum': flags.beta1, 'nesterov': False},
+            'nesterov': {'lr': flags.lr, 'momentum': flags.beta1, 'nesterov': True}}[flags.opt_alg]
+
 # This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
 if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
@@ -161,15 +178,15 @@ def main():
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
-                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
+                       optimizer_kwargs=OPT_ARGS,
                        is_weighted=[], graph_generator=this_graph, z_size=flags.z_size,
                        embedding_dim=flags.embedding_dim, pos_embedding_dim=flags.pos_embedding_dim, pos_h=flags.pos_h,
                        pos_l=flags.pos_l, anneal_kl=ANNEAL_KL, grad_clip=flags.grad_clip,
                        kl_th=flags.kl_th, highway=flags.highway, losses=LOSSES, dropout=flags.dropout,
                        training_iw_samples=flags.training_iw_samples, testing_iw_samples=flags.testing_iw_samples,
-                       loss_params=LOSS_PARAMS, piwo=PIWO, ipiwo=IPIWO, optimizer=optim.AdamW, markovian=flags.markovian
-                       , word_dropout=flags.word_dropout, contiguous_lm=False, tied_embeddings=flags.tied_embeddings)
+                       loss_params=LOSS_PARAMS, piwo=PIWO, ipiwo=IPIWO, optimizer=OPT_ALG, markovian=flags.markovian
+                       , word_dropout=flags.word_dropout, contiguous_lm=False, tied_embeddings=flags.tied_embeddings,
+                       emb_batch_norm=flags.emb_batch_norm)
     val_iterator = iter(data.val_iter)
     supervised_iterator = iter(data.sup_iter)
     print("Launching experiment ", flags.test_name)
@@ -200,7 +217,7 @@ def main():
     mean_loss = 0
     supervision_epoch = 0
     best_epoch = -1
-    if flags.mode == 'train':
+    if flags.mode != "eval":
         while data.train_iter is not None:
             for i, training_batch in enumerate(data.train_iter):
                 if training_batch.text.shape[1] < 2:
@@ -321,7 +338,8 @@ def main():
                                'pp_ub', 'best_epoch',
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
-                               'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained'
+                               'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained',
+                               'opt_alg', 'beta1', 'beta2', 'lr', 'batch_size', 'dropout', 'emb_batch_norm'
                                ]) + '\n')
 
     with open(flags.result_csv, 'a') as f:
@@ -332,7 +350,9 @@ def main():
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
-                           str(flags.training_iw_samples), str(flags.tied_embeddings), str(flags.pretrained_embeddings)
+                           str(flags.training_iw_samples), str(flags.tied_embeddings), str(flags.pretrained_embeddings),
+                           flags.opt_alg, str(flags.beta1), str(flags.beta2), str(flags.lr), str(flags.batch_size),
+                           str(flags.dropout), str(flags.emb_batch_norm)
                            ])+'\n')
 
 
