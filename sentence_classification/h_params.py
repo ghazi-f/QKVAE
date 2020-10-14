@@ -54,7 +54,8 @@ class DefaultHParams:
                  markovian=True,
                  word_dropout=0.0,
                  contiguous_lm=False,
-                 n_latents=1):
+                 n_latents=1,
+                 emb_batch_norm=False):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -76,6 +77,7 @@ class DefaultHParams:
         # Architectural hyper-parameters
         self.max_len = max_len
         self.embedding_dim = embedding_dim
+        self.emb_batch_norm = emb_batch_norm
         self.tied_embeddings = tied_embeddings
         self.pos_embedding_dim = pos_embedding_dim
         self.text_rep_l = text_rep_l

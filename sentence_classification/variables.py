@@ -14,13 +14,15 @@ class XInfer(Categorical):
         else:
             repnet = None
         super(XInfer, self).__init__(word_embeddings.weight.shape[0], 'x', h_params.device, word_embeddings,
-                                     h_params.vocab_ignore_index, markovian=not has_rep, repnet=repnet)
+                                     h_params.vocab_ignore_index, markovian=not has_rep, repnet=repnet,
+                                     emb_batch_norm=h_params.emb_batch_norm)
 
 
 class XGen(Categorical):
     def __init__(self, h_params, word_embeddings):
         super(XGen, self).__init__(word_embeddings.weight.shape[0], 'x', h_params.device, word_embeddings,
-                                   h_params.vocab_ignore_index, markovian=True)
+                                   h_params.vocab_ignore_index, markovian=True,
+                                   emb_batch_norm=h_params.emb_batch_norm)
 
 
 class XPrevGen(Categorical):
@@ -33,7 +35,8 @@ class XPrevGen(Categorical):
             repnet = None
         super(XPrevGen, self).__init__(word_embeddings.weight.shape[0], 'x_prev', h_params.device, word_embeddings,
                                        h_params.vocab_ignore_index, markovian=not has_rep, is_placeholder=True,
-                                       repnet=repnet, word_dropout=h_params.word_dropout)
+                                       repnet=repnet, word_dropout=h_params.word_dropout,
+                                       emb_batch_norm=h_params.emb_batch_norm)
 
 
 class ZInfer(Gaussian):

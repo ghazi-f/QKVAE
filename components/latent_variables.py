@@ -343,7 +343,7 @@ class Categorical(BaseLatentVariable):
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1,
-                 word_dropout=None, sequence_lv=False):
+                 word_dropout=None, sequence_lv=False, emb_batch_norm=False):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
@@ -358,7 +358,7 @@ class Categorical(BaseLatentVariable):
         embedding_size = embedding.weight.shape[1]
         if self.rep_net is not None and not markovian:
             self.rep_net = repnet or nn.GRU(embedding_size, embedding_size, 1, batch_first=True)
-        # self.batch_norm = nn.BatchNorm1d(embedding_size)
+        self.batch_norm = nn.BatchNorm1d(embedding_size) if emb_batch_norm else None
 
     def infer(self, x_params):
         # Not sure this works with Relaxed distributions. But it's still not used anyway
@@ -378,8 +378,9 @@ class Categorical(BaseLatentVariable):
             embedded = torch.matmul(samples, self.embedding.weight)
         else:
             embedded = self.embedding(samples)
-        # embd_shape = embedded.shape
-        # embedded = self.batch_norm(embedded.view((-1, embedded.shape[-1]))).view(embd_shape)
+        if self.batch_norm is not None:
+            embd_shape = embedded.shape
+            embedded = self.batch_norm(embedded.view((-1, embedded.shape[-1]))).view(embd_shape)
 
         if self.w_drp is not None:
             drp_mask = self.w_drp(torch.ones(embedded.shape[:-1], device=self.prior_logits.device)).unsqueeze(-1)
