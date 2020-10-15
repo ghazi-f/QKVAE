@@ -91,29 +91,28 @@ if False:
     flags.batch_size = 32
     flags.grad_accu = 1
     flags.max_len = 256
-    flags.encoder_h = 512
+    flags.encoder_h = 200
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
-    flags.supervision_proportion = 0.125
+    flags.supervision_proportion = 1.
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
     flags.dataset = "imdb"
-    flags.mode = "grid_search"
+    #flags.mode = "grid_search"
 
 
 if flags.mode == "grid_search":
     flags.dev_index = np.random.choice([1, 2, 3, 4, 5])
-    flags.batch_size = np.random.choice([16, 32, 64])
-    flags.divide_by = np.random.choice([2, 1, 0.5])
-    flags.opt_alg = np.random.choice(["adam", "sgd", "nesterov"])
+    flags.batch_size = 32 #np.random.choice([16, 32, 64])
+    flags.divide_by = np.random.choice([4, 1, 0.5])
+    flags.opt_alg = "adam"
     flags.lr = np.random.choice([4e-3, 1e-3, 4e-4])
     flags.dropout = np.random.choice([0.3, 0.5, 0.7])
-    flags.emb_batch_norm = np.random.choice([True, False])
-    flags.beta1 = np.random.choice([0.9, 0.99, 0.999])
-    flags.beta2 = np.random.choice([0.85, 0.99, 0.999])
-    flags.epsilon = np.random.choice([1e-7, 1e-8, 1e-9])
-    n_layers = [(2, 1), (1, 1), (3, 1), (3, 2)][np.random.choice([0, 1, 2, 3])]
-    flags.encoder_l, flags.decoder_l = n_layers[0], n_layers[1]
+    flags.emb_batch_norm = True
+    flags.beta1 = 0.999#np.random.choice([0.9, 0.99, 0.999])
+    flags.beta2 = 0.99#np.random.choice([0.85, 0.99, 0.999])
+    flags.epsilon = 1e-8#np.random.choice([1e-7, 1e-8, 1e-9])
+    flags.encoder_l = np.random.choice([1, 2, 3])
     flags.test_name += str(uuid4())
 if flags.divide_by != 1:
     flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
@@ -339,7 +338,7 @@ def main():
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
                                'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained',
-                               'opt_alg', 'beta1', 'beta2', 'lr', 'batch_size', 'dropout', 'emb_batch_norm'
+                               'opt_alg', 'beta1', 'beta2', 'lr', 'batch_size', 'dropout', 'emb_batch_norm', 'epsilon'
                                ]) + '\n')
 
     with open(flags.result_csv, 'a') as f:
@@ -352,7 +351,7 @@ def main():
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
                            str(flags.training_iw_samples), str(flags.tied_embeddings), str(flags.pretrained_embeddings),
                            flags.opt_alg, str(flags.beta1), str(flags.beta2), str(flags.lr), str(flags.batch_size),
-                           str(flags.dropout), str(flags.emb_batch_norm)
+                           str(flags.dropout), str(flags.emb_batch_norm), str(flags.epsilon)
                            ])+'\n')
 
 
