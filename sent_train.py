@@ -112,7 +112,7 @@ if flags.mode == "grid_search":
     flags.beta1 = 0.999#np.random.choice([0.9, 0.99, 0.999])
     flags.beta2 = 0.99#np.random.choice([0.85, 0.99, 0.999])
     flags.epsilon = 1e-8#np.random.choice([1e-7, 1e-8, 1e-9])
-    flags.encoder_l = np.random.choice([1, 2, 3])
+    flags.encoder_l = int(np.random.choice([1, 2, 3]))
     flags.test_name += str(uuid4())
 if flags.divide_by != 1:
     flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
