@@ -86,19 +86,23 @@ if FORCE_EVAL:
     flags.mode = "eval"
     flags.result_csv = "imdbeval.csv"
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
     flags.max_len = 256
     flags.encoder_h = 200
+    flags.encoder_l = 1
+    flags.lr = 4e-4
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
     flags.supervision_proportion = 1.
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
     flags.dataset = "imdb"
-    #flags.mode = "grid_search"
+    flags.emb_batch_norm = True
+    flags.beta1 = 0.999
+    flags.beta2 = 0.99
 
 
 if flags.mode == "grid_search":
