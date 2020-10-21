@@ -165,10 +165,23 @@ class ELBo(BaseCriterion):
         if self.h_params.max_elbo:
             # Didn't implement observed here
             if not actual and type(kl) != int:
-                max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
-                          for lv_n in self.infer_lvs.keys()]), dim=0)
-                loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl[0]/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
-                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * kl/3), dim=(0, 1)) / self.valid_n_samples
+                # max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
+                #           for lv_n in self.infer_lvs.keys()]), dim=0)
+                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl[0]/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
+                anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+                zi_coeffs = {'z'+str(len(self.h_params.n_latents)+1-i): 0 if self.model.step < anl0 else (
+                                    (self.model.step - anl0) / ((anl1 - anl0)*i))
+                             if (anl1 - anl0)*i+anl0 > self.model.step >= anl0 else 1
+                             for i in range(1, len(self.h_params.n_latents)+1)
+                             }
+                this_kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)*zi_coeffs[lv_n]
+                               for lv_n in self.infer_lvs.keys()
+                               if observed is None or (lv_n not in observed)])
+                this_kl *= self.sequence_mask
+                loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                                   dim=(0, 1)) / self.valid_n_samples
+                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/self.h_params.max_elbo),
+                #                    dim=(0, 1)) / self.valid_n_samples
             else:
                 loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
         else:
@@ -192,7 +205,7 @@ class ELBo(BaseCriterion):
 
     def _prepare_metrics(self, loss):
         current_elbo = - loss
-        LL_name = '/p({}I{}'.format(self.generated_v.name, ', '.join([lv for lv in self.infer_lvs]))
+        LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join([lv for lv in self.infer_lvs]))
         LL_value = torch.sum(self.log_p_xIz)/self.valid_n_samples
         KL_dict = {}
         for lv in self.gen_lvs.keys():
@@ -274,7 +287,7 @@ class Reconstruction(BaseCriterion):
 
     def _prepare_metrics(self, loss):
         current_ll = - loss
-        LL_name = '/p({}'.format(self.generated_v.name)
+        LL_name = '/p({})'.format(self.generated_v.name)
 
         self._prepared_metrics = {LL_name: current_ll}
 
@@ -376,7 +389,7 @@ class IWLBo(ELBo):
 
     def _prepare_metrics(self, loss):
         current_iwlbo = - loss
-        LL_name = '/p({}I{}'.format(self.generated_v.name, ', '.join([lv for lv in self.infer_lvs]))
+        LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join([lv for lv in self.infer_lvs]))
         LL_value = self.ll_value
         KL_dict = {}
         kl_sum = 0
