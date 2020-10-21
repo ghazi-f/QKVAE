@@ -15,44 +15,44 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 
 # Training and Optimization
-k, kz =1, 10
+k, kz = 1, 1
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--max_len", default=20, type=int)
 parser.add_argument("--batch_size", default=512, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
-parser.add_argument("--complete_test_freq", default=32, type=int)
+parser.add_argument("--complete_test_freq", default=160, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=300, type=int)#################"
 parser.add_argument("--pretrained_embeddings", default=True, type=bool)#################"
-parser.add_argument("--z_size", default=768*kz, type=int)#################"
-parser.add_argument("--z_emb_dim", default=768*k, type=int)#################"
-parser.add_argument("--n_latents", default=[16, 16, 16], type=list)#################"
+parser.add_argument("--z_size", default=192*kz, type=int)#################"
+parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
+parser.add_argument("--n_latents", default=[1, 4, 16], type=list)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
-parser.add_argument("--text_rep_h", default=768*k, type=int)
-parser.add_argument("--encoder_h", default=768*k, type=int)#################"
-parser.add_argument("--encoder_l", default=2, type=int)#################"
-parser.add_argument("--decoder_h", default=768*k, type=int)
+parser.add_argument("--text_rep_h", default=192*k, type=int)
+parser.add_argument("--encoder_h", default=192*k, type=int)#################"
+parser.add_argument("--encoder_l", default=3, type=int)#################"
+parser.add_argument("--decoder_h", default=192*k, type=int)
 parser.add_argument("--decoder_l", default=2, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
-parser.add_argument("--graph", default='Discrete', choices=["Discrete", "Normal"], type=str)
+parser.add_argument("--graph", default='Normal', choices=["Discrete", "Normal"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=3000, type=int)
-parser.add_argument("--anneal_kl1", default=6000, type=int)
+parser.add_argument("--anneal_kl0", default=4000, type=int)
+parser.add_argument("--anneal_kl1", default=5000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
-parser.add_argument("--kl_th", default=0*12/(1536*28/16), type=float or None)
+parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.0, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
-parser.add_argument("--wait_epochs", default=3, type=float)
+parser.add_argument("--wait_epochs", default=6, type=float)
 parser.add_argument("--save_all", default=True, type=bool)
 
 flags = parser.parse_args()
@@ -63,7 +63,7 @@ if True:
     flags.batch_size = 64
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/Discrete3"
+    flags.test_name = "nliLM/NormalRe3"
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Discrete": get_discrete_auto_regressive_disentanglement_graph,
