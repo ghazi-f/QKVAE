@@ -106,7 +106,6 @@ if False:
 
 
 if flags.mode == "grid_search":
-    flags.dev_index = np.random.choice([1, 2, 3, 4, 5])
     flags.batch_size = 32 #np.random.choice([16, 32, 64])
     flags.divide_by = np.random.choice([4, 1, 0.5])
     flags.opt_alg = "adam"
@@ -117,7 +116,6 @@ if flags.mode == "grid_search":
     flags.beta2 = 0.99#np.random.choice([0.85, 0.99, 0.999])
     flags.epsilon = 1e-8#np.random.choice([1e-7, 1e-8, 1e-9])
     flags.encoder_l = int(np.random.choice([1, 2, 3]))
-    flags.test_name += str(uuid4())
 if flags.divide_by != 1:
     flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
     flags.z_size = int(flags.z_size/flags.divide_by)
@@ -368,6 +366,14 @@ def limited_next(iterator):
 
 
 if __name__ == '__main__':
-    main()
+    if flags.mode == "grid_search":
+        name = flags.test_name
+        for i in range(5):
+            flags.test_name = name + str(uuid4())
+            flags.dev_index = i+1
+            DEV_INDEX = i+1
+            main()
+    else:
+        main()
 
 
