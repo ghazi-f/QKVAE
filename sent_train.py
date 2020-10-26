@@ -78,6 +78,9 @@ parser.add_argument("--epsilon", default=1e-8, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 8 for agnews
 parser.add_argument("--stopping_crit", default="early", choices=["convergence", "early"], type=str)
+parser.add_argument('--rm_save', dest='rm_save', action='store_true')
+parser.add_argument('--no-rm_save', dest='rm_save', action='store_false')
+parser.set_defaults(rm_save=True)
 
 flags = parser.parse_args()
 # Set this to true to force training slurm scripts to rather perform evaluation
@@ -332,6 +335,9 @@ def main():
     else:
         pp_ub = -1
     print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(test_accuracy, pp_ub))
+    if flags.rm_save:
+        os.remove(h_params.save_path)
+
     if not os.path.exists(flags.result_csv):
         with open(flags.result_csv, 'w') as f:
             f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight',
