@@ -9,9 +9,8 @@ from torchtext.vocab import FastText
 import numpy as np
 from time import time
 
-from nlp import load_dataset
-from nlp.builder import FORCE_REDOWNLOAD
-
+from datasets import load_dataset
+import datasets
 
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
 VOCAB_LIMIT = 10000
@@ -20,14 +19,23 @@ VOCAB_LIMIT = 10000
 class HuggingIMDB2:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
                  pretrained=False):
+        self.data_path = os.path.join(".data", "imdb")
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
                                 is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
         start = time()
-        train_data, test_data, unsup_data = load_dataset('imdb')['train'], load_dataset('imdb')['test'],\
-                                            load_dataset('imdb')['unsupervised']
+        try:
+            train_data, test_data, unsup_data = datasets.Dataset.load_from_disk(self.data_path+"_train"), \
+                                                datasets.Dataset.load_from_disk(self.data_path + "_test"), \
+                                                datasets.Dataset.load_from_disk(self.data_path + "_unsup")
+        except FileNotFoundError:
+            train_data, test_data, unsup_data = load_dataset('imdb')['train'], load_dataset('imdb')['test'],\
+                                                load_dataset('imdb')['unsupervised']
+            train_data.save_to_disk(self.data_path+"_train")
+            test_data.save_to_disk(self.data_path+"_test")
+            unsup_data.save_to_disk(self.data_path+"_unsup")
 
         def expand_labels(datum):
             datum['label'] = [str(datum['label'])]*(max_len-1)
@@ -113,6 +121,7 @@ class HuggingIMDB2:
 class HuggingAGNews:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
                  pretrained=False):
+        self.data_path = os.path.join(".data", "ag_news")
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
@@ -120,7 +129,14 @@ class HuggingAGNews:
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
 
         start = time()
-        train_data, test_data = load_dataset('ag_news')['train'], load_dataset('ag_news')['test']
+
+        try:
+            train_data, test_data = datasets.Dataset.load_from_disk(self.data_path+"_train"), \
+                                                datasets.Dataset.load_from_disk(self.data_path + "_test")
+        except FileNotFoundError:
+            train_data, test_data = load_dataset('ag_news')['train'], load_dataset('ag_news')['test']
+            train_data.save_to_disk(self.data_path+"_train")
+            test_data.save_to_disk(self.data_path+"_test")
 
         def expand_labels(datum):
             datum['label'] = [str(datum['label'])]*(max_len-1)
@@ -211,20 +227,23 @@ class HuggingYelp:
 
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
                  pretrained=False):
+        self.data_path = os.path.join(".data", "yelp_all")
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
                                 init_token='<go>'
                                 ,
                                 is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
 
-        print('Current working directory:', os.getcwd())
-        yelp_data = load_dataset('csv', data_files={'train': os.path.join('.data', 'yelp', 'train.csv'),
-                                                                'test': os.path.join('.data', 'yelp', 'test.csv')},
-                                             column_names=['label', 'text'], version='0.0.2')
-                                             #download_mode=FORCE_REDOWNLOAD)
-
         start = time()
+        try:
+            yelp_data = datasets.Dataset.load_from_disk(self.data_path)
+        except FileNotFoundError:
+            yelp_data = load_dataset('csv', data_files={'train': os.path.join('.data', 'yelp', 'train.csv'),
+                                                                    'test': os.path.join('.data', 'yelp', 'test.csv')},
+                                                 column_names=['label', 'text'], version='0.0.2')
+            yelp_data.save_to_disk(self.data_path)
         train_data, test_data = yelp_data['train'], yelp_data['test']
+
         def expand_labels(datum):
             datum['label'] = [str(datum['label'])]*(max_len-1)
             return datum
