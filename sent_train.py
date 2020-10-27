@@ -74,6 +74,7 @@ parser.add_argument("--lr", default=4e-3, type=float)
 parser.add_argument("--opt_alg", default='adam', choices=["adam", "sgd", "nesterov"], type=str)
 parser.add_argument("--beta1", default=0.9, type=float)
 parser.add_argument("--beta2", default=0.99, type=float)
+parser.add_argument("--lr_decay", default=0.0, type=float)
 parser.add_argument("--epsilon", default=1e-8, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=4, type=float) # changed from 4 to 8 for agnews
@@ -81,6 +82,9 @@ parser.add_argument("--stopping_crit", default="early", choices=["convergence", 
 parser.add_argument('--rm_save', dest='rm_save', action='store_true')
 parser.add_argument('--no-rm_save', dest='rm_save', action='store_false')
 parser.set_defaults(rm_save=True)
+parser.add_argument('--best_hp', dest='best_hp', action='store_true')
+parser.add_argument('--no-best_hp', dest='best_hp', action='store_false')
+parser.set_defaults(best_hp=True)
 
 flags = parser.parse_args()
 # Set this to true to force training slurm scripts to rather perform evaluation
@@ -93,32 +97,70 @@ if False:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 256
-    flags.encoder_h = 200
-    flags.encoder_l = 1
-    flags.lr = 4e-4
+    flags.max_len = 64
+    # flags.encoder_h = 400
+    # flags.encoder_l = 2
+    # # flags.grad_clip = 5.0
+    # flags.lr = 4e-4
+    # flags.dropout = 0.5
+    # # flags.embedding_dim = 128
+    # # flags.pretrained_embeddings = False
+    # flags.lr_decay = 0.0#5
+    # flags.opt_alg = "adam"
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1
     flags.supervision_proportion = 1.
     flags.dev_index = 5
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
     flags.dataset = "imdb"
-    flags.emb_batch_norm = True
-    flags.beta1 = 0.999
-    flags.beta2 = 0.99
+    # flags.emb_batch_norm = True
+    # flags.beta1 = 0.999
+    # flags.beta2 = 0.99
+
+if flags.best_hp:
+    if flags.dataset == "ud":
+        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l = {
+            0.001: (1.0, 0.0010, 0.3, False, 1),
+            0.003: (0.5, 0.0040, 0.7, False, 1),
+            0.010: (0.5, 0.0004, 0.5, False, 1),
+            0.030: (0.5, 0.0010, 0.5, False, 2),
+            0.100: (0.5, 0.0004, 0.7, False, 1),
+            0.300: (0.5, 0.0004, 0.5, False, 1),
+            1.000: (0.5, 0.0004, 0.5, False, 2),
+        }[flags.supervision_proportion]
+    if flags.dataset == "ag_news":
+        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l = {
+            0.001: (0.5, 0.0010, 0.3, True, 3),
+            0.003: (0.5, 0.0004, 0.3, True, 2),
+            0.010: (1.0, 0.0004, 0.5, True, 2),
+            0.030: (0.5, 0.0004, 0.7, True, 3),
+            0.100: (1.0, 0.0004, 0.7, True, 2),
+            0.300: (1.0, 0.0004, 0.7, True, 3),
+            1.000: (0.5, 0.0004, 0.7, True, 1),
+        }[flags.supervision_proportion]
+    if flags.dataset == "imdb":
+        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l = {
+            0.001: (0.5, 0.0010, 0.7, True, 3),
+            0.003: (1.0, 0.0040, 0.3, True, 3),
+            0.010: (0.5, 0.0010, 0.7, True, 3),
+            0.030: (0.5, 0.0004, 0.5, True, 1),
+            0.100: (0.5, 0.0010, 0.7, True, 3),
+            0.300: (0.5, 0.0010, 0.7, True, 1),
+            1.000: (0.5, 0.0004, 0.5, True, 1),
+        }[flags.supervision_proportion]
 
 
 if flags.mode == "grid_search":
-    flags.batch_size = 32 #np.random.choice([16, 32, 64])
-    flags.divide_by = np.random.choice([4, 1, 0.5])
+    flags.batch_size = np.random.choice([16, 32, 64])
     flags.opt_alg = "adam"
-    flags.lr = np.random.choice([4e-3, 1e-3, 4e-4])
-    flags.dropout = np.random.choice([0.3, 0.5, 0.7])
-    flags.emb_batch_norm = True
-    flags.beta1 = 0.999#np.random.choice([0.9, 0.99, 0.999])
-    flags.beta2 = 0.99#np.random.choice([0.85, 0.99, 0.999])
-    flags.epsilon = 1e-8#np.random.choice([1e-7, 1e-8, 1e-9])
-    flags.encoder_l = int(np.random.choice([1, 2, 3]))
+    flags.beta1 = {"adam":0.999, "sgd": 0.9, "nesterov": 0.9}[flags.opt_alg]
+    if flags.opt_alg in ('adam', 'nesterov'):
+        flags.lr = 0.01
+        flags.lr_decay = 0.05
+    flags.beta2 = np.random.choice([0.85, 0.99])
+    flags.epsilon = np.random.choice([1e-7, 1e-8, 1e-9])
+    flags.emb_batch_norm = np.random.choice([True, False])
+
 if flags.divide_by != 1:
     flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
     flags.z_size = int(flags.z_size/flags.divide_by)
@@ -197,6 +239,11 @@ def main():
     print("Words: ", len(data.vocab.itos), ", Target tags: ", len(data.tags.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses, ", Supervision proportion: ", SUP_PROPORTION)
     model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
+    if flags.lr_decay > 0.0:
+        lr_func = lambda epoch: 1 / (1.0 + epoch * flags.lr_decay)
+        scheduler = optim.lr_scheduler.MultiplicativeLR(model.optimizer, lr_lambda=lr_func)
+    else:
+        scheduler = None
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
@@ -221,6 +268,8 @@ def main():
     mean_loss = 0
     supervision_epoch = 0
     best_epoch = -1
+
+    # accuracy = model.get_overall_accuracy(data.val_iter)
     if flags.mode != "eval":
         while data.train_iter is not None:
             for i, training_batch in enumerate(data.train_iter):
@@ -242,6 +291,8 @@ def main():
                     print("Reinitialized supervised training iterator")
                     supervision_epoch += 1
                     supervised_iterator = iter(data.sup_iter)
+                    if scheduler:
+                        scheduler.step()
                     if 'S' in flags.losses and model.step >= h_params.anneal_kl[0]:
                         model.eval()
                         accuracy_split = data.val_iter if flags.stopping_crit == "early" else data.sup_iter
