@@ -349,10 +349,14 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
                     predictions = self.supervised_v.post_params['logits'].reshape(-1, num_classes)
                     target = self.infer_bn.variables_star[self.supervised_v].view(-1)
                     prediction_mask = (target != self.supervised_v.ignore).float()
+                    # print([(self.index[self.generated_v].itos[wi], self.index[self.supervised_v].itos[ti],
+                    #          self.index[self.supervised_v].itos[pi], (pi != ti).to('cpu').item()
+                    #         and ti != self.supervised_v.ignore)
+                    #        for wi, ti, pi in zip(batch.text[0, ..., 1:], batch.label[0],
+                    #                              torch.argmax(self.supervised_v.post_params['logits'], dim=-1)[0])])
                     accurate_preds += torch.sum((torch.argmax(predictions, dim=-1) == target).float() * prediction_mask)
 
                     total_samples += torch.sum(prediction_mask)
-
                 accuracy = accurate_preds/total_samples
 
                 self.writer.add_scalar('{}/OverallAccuracy'.format('train' if train_split else
