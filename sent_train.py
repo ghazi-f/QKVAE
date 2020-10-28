@@ -154,7 +154,7 @@ if flags.mode == "grid_search":
     flags.batch_size = np.random.choice([16, 32, 64])
     flags.opt_alg = "adam"
     flags.beta1 = {"adam":0.999, "sgd": 0.9, "nesterov": 0.9}[flags.opt_alg]
-    if flags.opt_alg in ('adam', 'nesterov'):
+    if flags.opt_alg in ('sgd', 'nesterov'):
         flags.lr = 0.01
         flags.lr_decay = 0.05
     flags.beta2 = np.random.choice([0.85, 0.99])
