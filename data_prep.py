@@ -1,6 +1,7 @@
 # This file is destined to wrap all the data pipelining utilities (reading, tokenizing, padding, batchifying .. )
 import io
 import os
+import json
 
 import torchtext.data as data
 from torchtext.data import Dataset, Example
@@ -50,7 +51,7 @@ class HuggingIMDB2:
                              int(len(train_data)/5*(dev_index))
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
                                                              int(dev_end+(len(train_data)-dev_end)*sup_proportion)
-        unsup_start, unsup_end = 0, int(len(unsup_data)*unsup_proportion)
+        unsup_start, unsup_end = 0, int(len(unsup_data)*min(unsup_proportion, 1))
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
         # experiments
@@ -68,8 +69,13 @@ class HuggingIMDB2:
 
         unsup_test, unsup_val = test, test
 
-        print('data loading took', time() - start)
+        self.other_domains = self.get_other_domains(text_field, label_field, batch_size, device, max_len)
+        if unsup_proportion > 1:
+            for ds in [AmazonBeauty, AmazonIndus, AmazonSoftware]:
+                unsup_train = Dataset(unsup_train.examples+ds(text_field, label_field, "train", max_len).examples,
+                                      fields3)
 
+        print('data loading took', time() - start)
         # build the vocabulary
         text_field.build_vocab(vocab_dataset, max_size=VOCAB_LIMIT) #, vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
@@ -116,6 +122,15 @@ class HuggingIMDB2:
             self.unsup_val_iter.init_epoch()
         else:
             raise NameError('Misspelled split name : {}'.format(split))
+
+    def get_other_domains(self, text_field, label_field, batch_size, device, max_len):
+        others = {}
+        for ds in [AmazonBeauty, AmazonIndus, AmazonSoftware]:
+            train, test = ds(text_field, label_field, "train", max_len), ds(text_field, label_field, "test", max_len)
+            train_iter, test_iter = data.BucketIterator.splits(
+                (train, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+            others[ds.name] = {'train': train_iter, 'test': test_iter}
+        return others
 
 
 class HuggingAGNews:
@@ -172,7 +187,7 @@ class HuggingAGNews:
         vocab_dataset = Dataset(train_examples, fields1)
 
         unsup_test, unsup_val = test, test
-
+        self.other_domains = {}
         print('data loading took', time() - start)
 
         # build the vocabulary
@@ -277,6 +292,7 @@ class HuggingYelp:
         vocab_dataset = Dataset(train_examples, fields1)
         unsup_test, unsup_val = test, test
 
+        self.other_domains = {}
         print('data loading took', time() - start)
 
         # build the vocabulary
@@ -387,7 +403,7 @@ class IMDBData:
 class UDPoSDaTA:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
                  pretrained=False):
-        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<go>'
+        text_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<go>'
                                 , is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len-1, batch_first=True)
 
@@ -422,6 +438,7 @@ class UDPoSDaTA:
         train = Dataset(train[train_start1:train_end1] + train[train_start2:train_end2],
                         {'text': text_field, 'label': label_field})
         unsup_train = Dataset(unsup_train[unsup_start:unsup_end], {'text': text_field})
+        self.other_domains = {}
 
         # make iterator for splits
 
@@ -443,7 +460,7 @@ class UDPoSDaTA:
         self.n_epochs = 0
         self.max_epochs = max_epochs
         if pretrained:
-            ftxt = FastText()
+            ftxt = GloVe('6B', dim=100)
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
@@ -1019,3 +1036,69 @@ class UDPOS1_2(Dataset):
         return super(UDPOS1_2, cls).splits(
             fields=fields, root=root, train=train, validation=validation,
             test=test, **kwargs)
+
+
+class AmazonBase(Dataset):
+
+    def __init__(self, text_field, label_field, split, max_len, **kwargs):
+        fields = [('text', text_field), ('label', label_field)]
+        pos_examples = []
+        neg_examples = []
+        label_list = []
+
+        # Counting the maximum number from each class
+        with open(self.data_path, 'r', encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                json_line = json.loads(line)
+                if "reviewText" in json_line:
+                    review, stars = json_line["reviewText"].replace('\n', ' ').strip(), json_line["overall"]
+                    # if stars != 3:
+                    label = int(stars > 3)
+                    label_list.append(label)
+        max_per_class = min(sum(label_list), len(label_list) - sum(label_list))
+        label_list = []
+        with open(self.data_path, 'r', encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                json_line = json.loads(line)
+                if "reviewText" in json_line:
+                    review, stars = json_line["reviewText"].replace('\n', ' ').strip(), json_line["overall"]
+                    # if stars != 3:
+                    label = int(stars > 3)
+                    # Checking that the number of examples from this class doesn't break the balance
+                    if label and sum(label_list) < max_per_class:
+                        label_list.append(label)
+                        pos_examples.append(data.Example.fromlist([review, [str(label)] * (max_len - 1)], fields))
+                    elif not label and len(label_list) - sum(label_list) < max_per_class:
+                        label_list.append(label)
+                        neg_examples.append(data.Example.fromlist([review, [str(label)] * (max_len - 1)], fields))
+        np.random.seed(42)
+        if split == "train":
+            pos_examples = pos_examples[0:int(len(pos_examples) / 2)]
+            neg_examples = neg_examples[0:int(len(neg_examples) / 2)]
+            examples = pos_examples+neg_examples
+            np.random.shuffle(examples)
+            label_list = label_list[0:int(len(label_list) / 2)]
+        else:
+            pos_examples = pos_examples[int(len(pos_examples) / 2):len(pos_examples)]
+            neg_examples = neg_examples[int(len(neg_examples) / 2):len(neg_examples)]
+            examples = pos_examples+neg_examples
+            np.random.shuffle(examples)
+            label_list = label_list[int(len(label_list) / 2):len(label_list)]
+        print("{}'s {} split contains {} balanced examples".format(self.name, split, len(label_list)))
+
+        super(AmazonBase, self).__init__(examples, fields, **kwargs)
+
+
+class AmazonBeauty(AmazonBase):
+    name = "amazon_beauty"
+    data_path = os.path.join(".data", "amazon", "Luxury_Beauty_5.json")
+
+
+class AmazonSoftware(AmazonBase):
+    name = "amazon_software"
+    data_path = os.path.join(".data", "amazon", "Software_5.json")
+
+
+class AmazonIndus(AmazonBase):
+    name = "amazon_industrial"
+    data_path = os.path.join(".data", "amazon", "Industrial_and_Scientific_5.json")

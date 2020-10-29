@@ -334,14 +334,15 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
             self.writer.add_scalar('test/PerplexityUB', perplexity_ub, self.step)
             return perplexity_ub
 
-    def get_overall_accuracy(self, iterator, train_split=False):
+    def get_overall_accuracy(self, iterator, train_split=False, external=None):
         with torch.no_grad():
             has_supervision = any([isinstance(l, Supervision) for l in self.losses])
             if has_supervision:
                 accurate_preds = 0
                 total_samples = 0
-                for batch in tqdm(iterator, desc="Getting Model overall Accuracy on {}".format('train' if train_split
-                                                                                               else 'test')):
+                for batch in tqdm(iterator, desc="Getting Model overall Accuracy on {}".format(external or
+                                                                                               ('train' if train_split
+                                                                                                else 'test'))):
                     self({'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1], 'y': batch.label}, eval=True,
                          gen_this=False)
 
@@ -358,9 +359,9 @@ class SSSentenceClassification(nn.Module, metaclass=abc.ABCMeta):
 
                     total_samples += torch.sum(prediction_mask)
                 accuracy = accurate_preds/total_samples
-
-                self.writer.add_scalar('{}/OverallAccuracy'.format('train' if train_split else
-                                                                   'test'), accuracy, self.step)
+                if external is None:
+                    self.writer.add_scalar('{}/OverallAccuracy'.format('train' if train_split else
+                                                                        'test'), accuracy, self.step)
                 return accuracy
             else:
                 print('Model doesn\'t use supervision')

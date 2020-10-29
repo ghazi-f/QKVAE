@@ -97,69 +97,95 @@ if False:
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 64
-    # flags.encoder_h = 400
-    # flags.encoder_l = 2
-    # # flags.grad_clip = 5.0
-    # flags.lr = 4e-4
+    flags.max_len = 256
+    flags.encoder_h = 400
+    flags.encoder_l = 1
+    # flags.grad_clip = 5.0
+    flags.lr = 4e-4
     # flags.dropout = 0.5
-    # # flags.embedding_dim = 128
-    # # flags.pretrained_embeddings = False
-    # flags.lr_decay = 0.0#5
+    # flags.embedding_dim = 100
+    flags.pretrained_embeddings = True
+    # flags.lr_decay = 0.05
     # flags.opt_alg = "adam"
     flags.test_name = "SSVAE/IMDB/test7"
-    flags.unsupervision_proportion = 1
+    flags.unsupervision_proportion = 1.1
     flags.supervision_proportion = 1.
     flags.dev_index = 5
+    flags.best_hp = False
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
     flags.dataset = "imdb"
     # flags.emb_batch_norm = True
     # flags.beta1 = 0.999
     # flags.beta2 = 0.99
+if False:
+    flags.losses = 'S'
+    flags.batch_size = 10
+    flags.grad_accu = 1
+    flags.max_len = 128
+    flags.encoder_h = 100
+    flags.encoder_l = 1
+    flags.grad_clip = 5.0
+    flags.lr = 0.01  # 4e-3
+    flags.lr_decay = 0.05
+    flags.opt_alg = "sgd"
+    flags.dropout = 0.1
+    flags.embedding_dim = 100
+    flags.pretrained_embeddings = True
+    flags.test_name = "SSVAE/IMDB/test7"
+    flags.unsupervision_proportion = 1
+    flags.supervision_proportion = 1.
+    flags.dev_index = 5
+    flags.best_hp = False
+    # flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
+    flags.dataset = "ud"
+    flags.emb_batch_norm = False
+    flags.beta1 = 0.9
+    # flags.beta2 = 0.99
 
 if flags.best_hp:
+    print("Selecting the best Hyper_parameters for {}/{}".format(flags.dataset, flags.supervision_proportion))
     if flags.dataset == "ud":
-        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l = {
-            0.001: (1.0, 0.0010, 0.3, False, 1),
-            0.003: (0.5, 0.0040, 0.7, False, 1),
-            0.010: (0.5, 0.0004, 0.5, False, 1),
-            0.030: (0.5, 0.0010, 0.5, False, 2),
-            0.100: (0.5, 0.0004, 0.7, False, 1),
-            0.300: (0.5, 0.0004, 0.5, False, 1),
-            1.000: (0.5, 0.0004, 0.5, False, 2),
+        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
+            flags.batch_size = {
+            0.001: (1.0, 0.0010, 0.3, True, 1, 0.99, 1e-9, 64),
+            0.003: (0.5, 0.0040, 0.7, True, 1, 0.99, 1e-9, 64),
+            0.010: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-7, 64),
+            0.030: (0.5, 0.0010, 0.5, True, 2, 0.99, 1e-7, 32),
+            0.100: (0.5, 0.0004, 0.7, True, 1, 0.99, 1e-8, 64),
+            0.300: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-9, 64),
+            1.000: (0.5, 0.0004, 0.5, True, 2, 0.99, 1e-7, 32),
         }[flags.supervision_proportion]
     if flags.dataset == "ag_news":
-        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l = {
-            0.001: (0.5, 0.0010, 0.3, True, 3),
-            0.003: (0.5, 0.0004, 0.3, True, 2),
-            0.010: (1.0, 0.0004, 0.5, True, 2),
-            0.030: (0.5, 0.0004, 0.7, True, 3),
-            0.100: (1.0, 0.0004, 0.7, True, 2),
-            0.300: (1.0, 0.0004, 0.7, True, 3),
-            1.000: (0.5, 0.0004, 0.7, True, 1),
+        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
+            flags.batch_size = {
+            0.001: (0.5, 0.0010, 0.3, True, 3, 0.85, 1e-9, 32),
+            0.003: (0.5, 0.0004, 0.3, True, 2, 0.99, 1e-7, 16),
+            0.010: (1.0, 0.0004, 0.5, True, 2, 0.99, 1e-8, 32),
+            0.030: (0.5, 0.0004, 0.7, True, 3, 0.99, 1e-9, 32),
+            0.100: (1.0, 0.0004, 0.7, True, 2, 0.99, 1e-9, 64),
+            0.300: (1.0, 0.0004, 0.7, False, 3, 0.99, 1e-8, 64),
+            1.000: (0.5, 0.0004, 0.7, True, 1, 0.99, 1e-9, 64),
         }[flags.supervision_proportion]
     if flags.dataset == "imdb":
-        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l = {
-            0.001: (0.5, 0.0010, 0.7, True, 3),
-            0.003: (1.0, 0.0040, 0.3, True, 3),
-            0.010: (0.5, 0.0010, 0.7, True, 3),
-            0.030: (0.5, 0.0004, 0.5, True, 1),
-            0.100: (0.5, 0.0010, 0.7, True, 3),
-            0.300: (0.5, 0.0010, 0.7, True, 1),
-            1.000: (0.5, 0.0004, 0.5, True, 1),
+        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
+            flags.batch_size = {
+            0.001: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 64),
+            0.003: (1.0, 0.0040, 0.3, True, 3, 0.99, 1e-7, 64),
+            0.010: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 32),
+            0.030: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-8, 32),
+            0.100: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 64),
+            0.300: (0.5, 0.0010, 0.7, True, 1, 0.99, 1e-8, 64),
+            1.000: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-7, 64),
         }[flags.supervision_proportion]
 
 
 if flags.mode == "grid_search":
-    flags.batch_size = np.random.choice([16, 32, 64])
-    flags.opt_alg = "adam"
-    flags.beta1 = {"adam":0.999, "sgd": 0.9, "nesterov": 0.9}[flags.opt_alg]
+    flags.opt_alg = np.random.choice(["adam", "sgd", "nesterov"])
+    flags.beta1 = 0.999
     if flags.opt_alg in ('sgd', 'nesterov'):
         flags.lr = 0.01
         flags.lr_decay = 0.05
-    flags.beta2 = np.random.choice([0.85, 0.99])
-    flags.epsilon = np.random.choice([1e-7, 1e-8, 1e-9])
-    flags.emb_batch_norm = np.random.choice([True, False])
+        flags.beta1 = 0.9
 
 if flags.divide_by != 1:
     flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
@@ -170,7 +196,7 @@ if flags.divide_by != 1:
     flags.decoder_h = int(flags.decoder_h/flags.divide_by)
 
 if flags.pretrained_embeddings:
-    flags.embedding_dim = 300
+    flags.embedding_dim = 300 if flags.dataset != "ud" else 100
     #flags.tied_embeddings = True
     flags.decoder_h = flags.embedding_dim
 
@@ -301,6 +327,9 @@ def main():
                         model.train()
                         print("Validation Accuracy is {} at step {}".format(accuracy, model.step))
                         print("Train Accuracy is {} at step {}".format(train_accuracy, model.step))
+                        # for ds_name, ds in data.other_domains.items():
+                        #     ext_acc = model.get_overall_accuracy(ds['test'], external=ds_name)
+                        #     print("Accuracy on {} is {} at step {}".format(ds_name, ext_acc, model.step))
                         if accuracy > max_acc:
                             print('Saving The model ..')
                             max_acc = accuracy.item()
@@ -381,6 +410,13 @@ def main():
     model.eval()
     test_accuracy = model.get_overall_accuracy(data.test_iter).item()
     train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True).item()
+
+    beauty_acc = model.get_overall_accuracy(data.other_domains['amazon_beauty']['test'],
+                                            external='amazon_beauty') if 'amazon_beauty' in data.other_domains else -1
+    softwar_acc = model.get_overall_accuracy(data.other_domains['amazon_software']['test'],
+                                             external='amazon_software') if 'amazon_software' in data.other_domains else -1
+    indus_acc = model.get_overall_accuracy(data.other_domains['amazon_industrial']['test'],
+                                           external='amazon_industrial') if 'amazon_industrial' in data.other_domains else -1
     if 'SS' in flags.losses:
         pp_ub = model.get_perplexity(data.test_iter).item()
     else:
@@ -393,6 +429,7 @@ def main():
         with open(flags.result_csv, 'w') as f:
             f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight',
                                'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'train_accuracy',
+                               'amazon_beauty', 'amazon_software', 'amazon_industrial',
                                'pp_ub', 'best_epoch',
                                'embedding_dim', 'pos_embedding_dim', 'z_size',
                                'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
@@ -404,7 +441,8 @@ def main():
         f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
                            str(flags.generation_weight),
                            str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc),
-                           str(train_accuracy), str(pp_ub), str(best_epoch),
+                           str(train_accuracy), str(beauty_acc), str(softwar_acc), str(indus_acc),
+                           str(pp_ub), str(best_epoch),
                            str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
                            str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
                            str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
