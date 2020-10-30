@@ -154,7 +154,7 @@ if flags.best_hp:
             0.100: (0.5, 0.0004, 0.7, True, 1, 0.99, 1e-8, 64),
             0.300: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-9, 64),
             1.000: (0.5, 0.0004, 0.5, True, 2, 0.99, 1e-7, 32),
-        }[flags.supervision_proportion]
+            }[flags.supervision_proportion]
     if flags.dataset == "ag_news":
         flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
             flags.batch_size = {
@@ -165,7 +165,7 @@ if flags.best_hp:
             0.100: (1.0, 0.0004, 0.7, True, 2, 0.99, 1e-9, 64),
             0.300: (1.0, 0.0004, 0.7, False, 3, 0.99, 1e-8, 64),
             1.000: (0.5, 0.0004, 0.7, True, 1, 0.99, 1e-9, 64),
-        }[flags.supervision_proportion]
+            }[flags.supervision_proportion]
     if flags.dataset == "imdb":
         flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
             flags.batch_size = {
@@ -176,16 +176,16 @@ if flags.best_hp:
             0.100: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 64),
             0.300: (0.5, 0.0010, 0.7, True, 1, 0.99, 1e-8, 64),
             1.000: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-7, 64),
-        }[flags.supervision_proportion]
+            }[flags.supervision_proportion]
+        if flags.batch_size == 64 and flags.losses in ("SSPIWO", "SSiPIWO", "SSIWAE"):
+            flags.batch_size = 32
+            flags.grad_accu = 4
+    flags.opt_alg = "adam"
+    flags.beta1 = 0.999
 
 
 if flags.mode == "grid_search":
-    flags.opt_alg = np.random.choice(["adam", "sgd", "nesterov"])
-    flags.beta1 = 0.999
-    if flags.opt_alg in ('sgd', 'nesterov'):
-        flags.lr = 0.01
-        flags.lr_decay = 0.05
-        flags.beta1 = 0.9
+    raise NotImplementedError("Nor search grid has been set")
 
 if flags.divide_by != 1:
     flags.embedding_dim = int(flags.embedding_dim/flags.divide_by)
@@ -412,11 +412,14 @@ def main():
     train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True).item()
 
     beauty_acc = model.get_overall_accuracy(data.other_domains['amazon_beauty']['test'],
-                                            external='amazon_beauty') if 'amazon_beauty' in data.other_domains else -1
+                                            external='amazon_beauty').item() if 'amazon_beauty' \
+                                                                                in data.other_domains else -1
     softwar_acc = model.get_overall_accuracy(data.other_domains['amazon_software']['test'],
-                                             external='amazon_software') if 'amazon_software' in data.other_domains else -1
+                                             external='amazon_software').item() if 'amazon_software' \
+                                                                                   in data.other_domains else -1
     indus_acc = model.get_overall_accuracy(data.other_domains['amazon_industrial']['test'],
-                                           external='amazon_industrial') if 'amazon_industrial' in data.other_domains else -1
+                                           external='amazon_industrial').item() if 'amazon_industrial' \
+                                                                                   in data.other_domains else -1
     if 'SS' in flags.losses:
         pp_ub = model.get_perplexity(data.test_iter).item()
     else:
