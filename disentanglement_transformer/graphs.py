@@ -2,7 +2,8 @@
 
 import torch.nn as nn
 
-from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, LastStateMLPLink
+from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, LastStateMLPLink, \
+    LSTMLink
 from disentanglement_transformer.variables import *
 
 
@@ -243,7 +244,7 @@ from disentanglement_transformer.variables import *
 #                                     ])}, None, x_gen
 
 
-def get_structured_auto_regressive_disentanglement_graph(h_params, word_embeddings):
+def get_structured_auto_regressive_graph(h_params, word_embeddings):
     xin_size, zin_size = h_params.embedding_dim, h_params.z_size
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
     z_repnet = None
@@ -311,7 +312,7 @@ def get_structured_auto_regressive_disentanglement_graph(h_params, word_embeddin
                                     ])}, None, x_gen
 
 
-def get_discrete_auto_regressive_disentanglement_graph(h_params, word_embeddings):
+def get_discrete_auto_regressive_graph(h_params, word_embeddings):
     xin_size, zin_size = h_params.embedding_dim, h_params.z_emb_dim
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
     z_repnet = None
@@ -380,7 +381,7 @@ def get_discrete_auto_regressive_disentanglement_graph(h_params, word_embeddings
                                     ])}, None, x_gen
 
 
-def get_structured_auto_regressive_disentanglement_graph2(h_params, word_embeddings):
+def get_structured_auto_regressive_graph2(h_params, word_embeddings):
     # in this one, generation only depends on z3
     xin_size, zin_size = h_params.embedding_dim, h_params.z_size
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
@@ -408,10 +409,10 @@ def get_structured_auto_regressive_disentanglement_graph2(h_params, word_embeddi
                                           Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z1'],
                                           n_mems=h_params.n_latents[0],
                                           highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n2)
-    z1_z2_to_z3 = CoattentiveTransformerLink(z2_size, # Input size doesn't matter here because there's no input
+    z2_to_z3 = CoattentiveTransformerLink(z2_size, # Input size doesn't matter here because there's no input
                                              int(h_params.decoder_h*lv_size_prop3), z3_size, h_params.decoder_l,
-                                             Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z1', 'z2'],
-                                             n_mems=h_params.n_latents[0]+h_params.n_latents[1],
+                                             Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z2'],
+                                             n_mems=h_params.n_latents[1],
                                              highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n3)
 
     # Inference
@@ -441,14 +442,13 @@ def get_structured_auto_regressive_disentanglement_graph2(h_params, word_embeddi
                                     ]),
             'gen':   nn.ModuleList([
                                     nn.ModuleList([z_gen1, z1_to_z2, z_gen2]),
-                                    nn.ModuleList([z_gen1, z1_z2_to_z3, z_gen3]),
-                                    nn.ModuleList([z_gen2, z1_z2_to_z3, z_gen3]),
+                                    nn.ModuleList([z_gen2, z2_to_z3, z_gen3]),
                                     nn.ModuleList([z_gen3, z3_xprev_to_x, x_gen]),
                                     nn.ModuleList([xprev_gen, z3_xprev_to_x, x_gen]),
                                     ])}, None, x_gen
 
 
-def get_non_auto_regressive_structured_disentanglement_graph(h_params, word_embeddings):
+def get_non_auto_regressive_structured_graph(h_params, word_embeddings):
     xin_size, zin_size = h_params.embedding_dim, h_params.z_size
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
     z_repnet = None
@@ -519,4 +519,67 @@ def get_non_auto_regressive_structured_disentanglement_graph(h_params, word_embe
                                     nn.ModuleList([z_gen, z_z1_z2_to_zlstm, zlstm_gen]),
                                     nn.ModuleList([z_gen1, z_z1_z2_to_zlstm, zlstm_gen]),
                                     nn.ModuleList([z_gen2, z_z1_z2_to_zlstm, zlstm_gen]),
+                                    ])}, None, x_gen
+
+def get_lstm_graph(h_params, word_embeddings):
+
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    z_repnet = None
+    #nn.LSTM(h_params.z_size, h_params.z_size, h_params.text_rep_l,
+    # batch_first=True,
+    # dropout=h_params.dropout)
+    lv_n1, lv_n2, lv_n3 = h_params.n_latents
+    lv_size_prop1, lv_size_prop2, lv_size_prop3 = lv_n1/max(h_params.n_latents), lv_n2/max(h_params.n_latents),\
+                                                     lv_n3/max(h_params.n_latents)
+    z1_size, z2_size, z3_size = int(zin_size*lv_size_prop1), int(zin_size*lv_size_prop2), int(zin_size*lv_size_prop3)
+    # Generation
+    x_gen, z_gen1, z_gen2, z_gen3, xprev_gen = \
+        XGen(h_params, word_embeddings), ZGen1(h_params, z_repnet, allow_prior=True), \
+        ZGen2(h_params, z_repnet, allow_prior=True), ZGen3(h_params, z_repnet, allow_prior=True), \
+        XPrevGen(h_params, word_embeddings, has_rep=False)
+    z1_z2_z3_xprev_to_x = ConditionalCoattentiveTransformerLink(xin_size,
+                                                                int(zout_size*sum(h_params.n_latents)/max(h_params.n_latents)),
+                                                                xout_size,h_params.decoder_l, Categorical.parameter_activations,
+                                                                word_embeddings, highway=h_params.highway, sbn=None,
+                                                                dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                                memory=['z1', 'z2', 'z3'], targets=['x_prev'],
+                                                                nheads=4, bidirectional=False)
+    z1_to_z2 = CoattentiveTransformerLink(z1_size, int(h_params.decoder_h*lv_size_prop2), z2_size, h_params.decoder_l,
+                                          Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z1'],
+                                          n_mems=h_params.n_latents[0],
+                                          highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n2)
+    z2_to_z3 = CoattentiveTransformerLink(z2_size, # Input size doesn't matter here because there's no input
+                                             int(h_params.decoder_h*lv_size_prop3), z3_size, h_params.decoder_l,
+                                             Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z2'],
+                                             n_mems=h_params.n_latents[1],
+                                             highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n3)
+
+    # Inference
+    x_inf, z_inf1, z_inf2, z_inf3 = XInfer(h_params, word_embeddings, has_rep=False),\
+                                          ZInfer1(h_params, z_repnet), \
+                                          ZInfer2(h_params, z_repnet), ZInfer3(h_params, z_repnet)
+    x_to_z3 = LSTMLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameter_activations,
+                      highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
+    x_z3_to_z2 = LSTMLink(xin_size+z3_size, int(lv_size_prop2*h_params.encoder_h), z2_size, h_params.encoder_l,
+                          Gaussian.parameter_activations, highway=h_params.highway, dropout=h_params.dropout,
+                          bidirectional=True, last_state=True)
+    x_z2_z3_to_z1 = LSTMLink(xin_size+z3_size+z2_size, int(lv_size_prop1*h_params.encoder_h), z1_size,
+                             h_params.encoder_l, Gaussian.parameter_activations, highway=h_params.highway,
+                             dropout=h_params.dropout, bidirectional=True, last_state=True)
+
+    return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_z2_z3_to_z1, z_inf1]),
+                                    nn.ModuleList([z_inf2, x_z2_z3_to_z1, z_inf1]),
+                                    nn.ModuleList([z_inf3, x_z2_z3_to_z1, z_inf1]),
+                                    nn.ModuleList([z_inf3, x_z3_to_z2, z_inf2]),
+                                    nn.ModuleList([x_inf, x_z3_to_z2, z_inf2]),
+                                    nn.ModuleList([x_inf, x_to_z3, z_inf3]),
+                                    ]),
+            'gen':   nn.ModuleList([
+                                    nn.ModuleList([z_gen1, z1_to_z2, z_gen2]),
+                                    nn.ModuleList([z_gen2, z2_to_z3, z_gen3]),
+                                    nn.ModuleList([z_gen1, z1_z2_z3_xprev_to_x, x_gen]),
+                                    nn.ModuleList([z_gen2, z1_z2_z3_xprev_to_x, x_gen]),
+                                    nn.ModuleList([z_gen3, z1_z2_z3_xprev_to_x, x_gen]),
+                                    nn.ModuleList([xprev_gen, z1_z2_z3_xprev_to_x, x_gen]),
                                     ])}, None, x_gen
