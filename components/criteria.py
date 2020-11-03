@@ -165,21 +165,54 @@ class ELBo(BaseCriterion):
         if self.h_params.max_elbo:
             # Didn't implement observed here
             if not actual and type(kl) != int:
-                # max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
-                #           for lv_n in self.infer_lvs.keys()]), dim=0)
-                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl[0]/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
-                anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
-                zi_coeffs = {'z'+str(len(self.h_params.n_latents)+1-i): 0 if self.model.step < anl0 else (
-                                    (self.model.step - anl0) / ((anl1 - anl0)*i))
-                             if (anl1 - anl0)*i+anl0 > self.model.step >= anl0 else 1
-                             for i in range(1, len(self.h_params.n_latents)+1)
-                             }
-                this_kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)*zi_coeffs[lv_n]
-                               for lv_n in self.infer_lvs.keys()
-                               if observed is None or (lv_n not in observed)])
-                this_kl *= self.sequence_mask
-                loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
-                                   dim=(0, 1)) / self.valid_n_samples
+                loss_choice = 0
+                if loss_choice == 0:
+                    max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
+                              for lv_n in self.infer_lvs.keys()]), dim=0)[0]
+                    loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
+                elif loss_choice == 1:
+                    anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+                    zi_coeffs = {'z'+str(len(self.h_params.n_latents)+1-i): 0 if self.model.step < anl0 else (
+                                        (self.model.step - anl0) / ((anl1 - anl0)*i))
+                                 if (anl1 - anl0)*i+anl0 > self.model.step >= anl0 else 1
+                                 for i in range(1, len(self.h_params.n_latents)+1)
+                                 }
+                    this_kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)*zi_coeffs[lv_n]
+                                   for lv_n in self.infer_lvs.keys()
+                                   if observed is None or (lv_n not in observed)])
+                    this_kl *= self.sequence_mask
+                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                                       dim=(0, 1)) / self.valid_n_samples
+                elif loss_choice == 2:
+                    anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+                    n_lat = self.h_params.n_latents
+                    zi_coeffs = {'z'+str(len(n_lat)+1-i): (0 if self.model.step < anl0 else (
+                                        (self.model.step - anl0) / ((anl1 - anl0)*i))
+                                 if (anl1 - anl0)*i+anl0 > self.model.step >= anl0 else 1) * max(n_lat) / n_lat[-i]
+                                 for i in range(1, len(self.h_params.n_latents)+1)
+                                 }
+                    this_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
+                                                     * zi_coeffs[lv_n]
+                                                     for lv_n in self.infer_lvs.keys()]), dim=0)[0]
+                    this_kl *= self.sequence_mask
+                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                                       dim=(0, 1)) / self.valid_n_samples
+                elif loss_choice == 3:
+
+                    anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
+                    anl_gap = anl1-anl0
+                    zi_coeffs = {'z'+str(len(self.h_params.n_latents)+1-i): 0 if self.model.step < anl0+anl_gap*(i-1)
+                                 else ((self.model.step - (anl0+anl_gap*(i-1))) / anl_gap)
+                                 if anl_gap*i+anl0 > self.model.step >= anl0+anl_gap*(i-1) else 1
+                                 for i in range(1, len(self.h_params.n_latents)+1)
+                                 }
+                    this_kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)*zi_coeffs[lv_n]
+                                   for lv_n in self.infer_lvs.keys()
+                                   if observed is None or (lv_n not in observed)])
+                    this_kl *= self.sequence_mask
+                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                                       dim=(0, 1)) / self.valid_n_samples
+
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/self.h_params.max_elbo),
                 #                    dim=(0, 1)) / self.valid_n_samples
             else:
