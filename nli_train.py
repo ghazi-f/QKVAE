@@ -63,7 +63,7 @@ if True:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/Normal3"
+    flags.test_name = "nliLM/maxkl6"
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
@@ -107,7 +107,7 @@ def main():
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=5,
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=6,
                        z_emb_dim=flags.z_emb_dim)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
