@@ -144,44 +144,44 @@ if False:
 
 if flags.best_hp:
     print("Selecting the best Hyper_parameters for {}/{}".format(flags.dataset, flags.supervision_proportion))
-    if flags.dataset == "ud":
-        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
-            flags.batch_size = {
-            0.001: (1.0, 0.0010, 0.3, True, 1, 0.99, 1e-9, 64),
-            0.003: (0.5, 0.0040, 0.7, True, 1, 0.99, 1e-9, 64),
-            0.010: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-7, 64),
-            0.030: (0.5, 0.0010, 0.5, True, 2, 0.99, 1e-7, 32),
-            0.100: (0.5, 0.0004, 0.7, True, 1, 0.99, 1e-8, 64),
-            0.300: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-9, 64),
-            1.000: (0.5, 0.0004, 0.5, True, 2, 0.99, 1e-7, 32),
-            }[flags.supervision_proportion]
-    if flags.dataset == "ag_news":
-        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
-            flags.batch_size = {
-            0.001: (0.5, 0.0010, 0.3, True, 3, 0.85, 1e-9, 32),
-            0.003: (0.5, 0.0004, 0.3, True, 2, 0.99, 1e-7, 16),
-            0.010: (1.0, 0.0004, 0.5, True, 2, 0.99, 1e-8, 32),
-            0.030: (0.5, 0.0004, 0.7, True, 3, 0.99, 1e-9, 32),
-            0.100: (1.0, 0.0004, 0.7, True, 2, 0.99, 1e-9, 64),
-            0.300: (1.0, 0.0004, 0.7, False, 3, 0.99, 1e-8, 64),
-            1.000: (0.5, 0.0004, 0.7, True, 1, 0.99, 1e-9, 64),
-            }[flags.supervision_proportion]
-    if flags.dataset == "imdb":
-        flags.divide_by, flags.lr, flags.dropout, flags.emb_batch_norm, flags.encoder_l, flags.beta2, flags.epsilon,\
-            flags.batch_size = {
-            0.001: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 64),
-            0.003: (1.0, 0.0040, 0.3, True, 3, 0.99, 1e-7, 64),
-            0.010: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 32),
-            0.030: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-8, 32),
-            0.100: (0.5, 0.0010, 0.7, True, 3, 0.99, 1e-8, 64),
-            0.300: (0.5, 0.0010, 0.7, True, 1, 0.99, 1e-8, 64),
-            1.000: (0.5, 0.0004, 0.5, True, 1, 0.99, 1e-7, 64),
-            }[flags.supervision_proportion]
-        if flags.batch_size == 64 and flags.losses in ("SSPIWO", "SSiPIWO", "SSIWAE"):
-            flags.batch_size = 32
-            flags.grad_accu = 4
+
     flags.opt_alg = "adam"
     flags.beta1 = 0.999
+    flags.emb_batch_norm = True
+    flags.batch_size = 32
+    if flags.dataset == "ud":
+        flags.divide_by, flags.lr, flags.dropout, flags.encoder_l, flags.beta2 = {
+            0.001: (1.0, 0.0010, 0.3, 1, 0.99),
+            0.003: (0.5, 0.0040, 0.7, 1, 0.99),
+            0.010: (0.5, 0.0004, 0.5, 1, 0.99),
+            0.030: (0.5, 0.0010, 0.5, 2, 0.99),
+            0.100: (0.5, 0.0004, 0.7, 1, 0.99),
+            0.300: (0.5, 0.0004, 0.5, 1, 0.99),
+            1.000: (0.5, 0.0004, 0.5, 2, 0.99),
+            }[flags.supervision_proportion]
+    if flags.dataset == "ag_news":
+        flags.divide_by, flags.lr, flags.dropout, flags.encoder_l, flags.beta2 = {
+            0.001: (0.5, 0.0010, 0.3, 3, 0.85),
+            0.003: (0.5, 0.0004, 0.3, 2, 0.99),
+            0.010: (1.0, 0.0004, 0.5, 2, 0.99),
+            0.030: (0.5, 0.0004, 0.7, 3, 0.99),
+            0.100: (1.0, 0.0004, 0.7, 2, 0.99),
+            0.300: (1.0, 0.0004, 0.7, 3, 0.99),
+            1.000: (0.5, 0.0004, 0.7, 1, 0.99),
+            }[flags.supervision_proportion]
+    if flags.dataset == "imdb":
+        flags.divide_by, flags.lr, flags.dropout, flags.encoder_l, flags.beta2 = {
+            0.001: (0.5, 0.0010, 0.7, 3, 0.99),
+            0.003: (1.0, 0.0040, 0.3, 3, 0.99),
+            0.010: (0.5, 0.0010, 0.7, 3, 0.99),
+            0.030: (0.5, 0.0004, 0.5, 1, 0.99),
+            0.100: (0.5, 0.0010, 0.7, 3, 0.99),
+            0.300: (0.5, 0.0010, 0.7, 1, 0.99),
+            1.000: (0.5, 0.0004, 0.5, 1, 0.99),
+            }[flags.supervision_proportion]
+        if flags.divide_by == 0.5 and flags.losses in ("SSPIWO", "SSiPIWO", "SSIWAE"):
+            flags.batch_size = 16
+            flags.grad_accu = 4
 
 
 if flags.mode == "grid_search":
