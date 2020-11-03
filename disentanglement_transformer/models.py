@@ -1,11 +1,22 @@
 from torch.utils.tensorboard import SummaryWriter
 import torch
+import numpy as np
 from tqdm import tqdm
+import pandas as pd
 
 from disentanglement_transformer.h_params import *
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
+import spacy
+from allennlp.predictors.predictor import Predictor
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
+
+nlp = spacy.load("en_core_web_sm")
+
+predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/openie-model.2020.03.26.tar.gz")
 
 
 # ==================================================== SSPOSTAG MODEL CLASS ============================================
@@ -293,6 +304,24 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         return text
 
+    def decode_to_text2(self, x_hat_params, vocab_size, vocab_index):
+        # It is assumed that this function is used at test time for display purposes
+        # Getting the argmax from the one hot if it's not done
+        while x_hat_params.shape[-1] == vocab_size and x_hat_params.ndim > 3:
+            x_hat_params = x_hat_params.mean(0)
+        while x_hat_params.ndim > 2 and x_hat_params.shape[-1] != self.h_params.vocab_size:
+            x_hat_params = x_hat_params[0]
+        if x_hat_params.shape[-1] == vocab_size:
+            x_hat_params = torch.argmax(x_hat_params, dim=-1)
+        assert x_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(x_hat_params.shape)
+
+        samples = [' '.join([vocab_index.itos[w]
+                             for w in sen]).split('<eos>')[0].replace('<go>', '').replace('</go>', '')
+                       .replace('<pad>', '_').replace('_unk', '<?>')
+                   for sen in x_hat_params]
+
+        return samples
+
     def get_perplexity(self, iterator):
         with torch.no_grad():
             neg_log_perplexity_lb = 0
@@ -366,5 +395,277 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 v.switch_to_relaxed()
         super(DisentanglementTransformerVAE, self).train(mode=mode)
 
-# ======================================================================================================================
+    def get_disentanglement_summaries(self):
+        df = self._get_stat_data_frame(n_samples=25, n_alterations=10, batch_size=25)
+        df.to_csv(os.path.join(self.h_params.viz_path, 'statdf_{}.csv'.format(self.step)))
+        # df = pd.read_csv('Autoreg5stats2.csv')
+        df['new_rels'] = df['new_rels'].map(revert_to_l1)
+        df['rel_diff'] = df['rel_diff'].map(revert_to_l1)
+        rel_types = np.unique(np.concatenate(df['new_rels'].array))
+        for ty in rel_types:
+            concerned = []
+            for deps in df['new_rels'].array:
+                concerned.append(ty in deps)
+            df[ty] = concerned
+        d_rel_types = ['d_' + ty for ty in np.unique(np.concatenate(df['rel_diff'].array))]
+        for ty in d_rel_types:
+            concerned = []
+            for deps in df['rel_diff'].array:
+                concerned.append(str(ty[2:]) in deps)
+            df[ty] = concerned
+        grouped = df.groupby('alteration_id')
+
+        dis_diffs1 = 0
+        for ty in d_rel_types:
+            largest2 = np.array(grouped.mean().nlargest(2, ty)[ty].array)
+            dis_diffs1 += largest2[0] - largest2[1]
+        dis_diffs2 = 0
+        for ty in rel_types:
+            largest2 = np.array(grouped.mean().nlargest(2, ty)[ty].array)
+            dis_diffs2 += largest2[0] - largest2[1]
+        plt.figure(figsize=(20, 5))
+        img_arr1 = get_hm_array(grouped.mean()[d_rel_types].transpose())
+        img_arr2 = get_hm_array(grouped.mean()[rel_types].transpose())
+        img_arr1 = torch.from_numpy(img_arr1).permute(2, 0, 1)
+        img_arr2 = torch.from_numpy(img_arr2).permute(2, 0, 1)
+        self.writer.add_scalar('test/diff_disentanglement', dis_diffs1)
+        self.writer.add_scalar('test/struct_disentanglement', dis_diffs2)
+        self.writer.add_image('test/struct_dis_img', img_arr2)
+        self.writer.add_image('test/diff_dis_img', img_arr1)
+        return dis_diffs1, dis_diffs2, img_arr1, img_arr2
+
+    def _get_alternative_sentences(self, prev_latent_vals, params, var_z_ids, n_samples, gen_len, complete=None):
+        h_params = self.h_params
+        n_orig_sentences = prev_latent_vals['z1'].shape[0]
+        go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
+                    self.index[self.generated_v].stoi['<go>']
+        go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
+        x_prev = go_symbol
+        if complete is not None:
+            for token in complete.split(' '):
+                x_prev = torch.cat(
+                    [x_prev, torch.ones([n_samples * n_orig_sentences, 1]).long().to(self.h_params.device) * \
+                     self.index[self.generated_v].stoi[token]], dim=1)
+            gen_len = gen_len - len(complete.split(' '))
+        orig_z = prev_latent_vals['z1'].repeat(n_samples, 1)
+        orig_z1 = prev_latent_vals['z2'].repeat(n_samples, 1)
+        orig_z2 = prev_latent_vals['z3'].repeat(n_samples, 1)
+        z_gen, z1, z2 = self.gen_bn.name_to_v['z1'], self.gen_bn.name_to_v['z2'], self.gen_bn.name_to_v['z3']
+
+        self.gen_bn({'z1': orig_z.unsqueeze(1), 'z2': orig_z1.unsqueeze(1),
+                    'z3': orig_z2.unsqueeze(1),
+                    'x_prev': torch.zeros((n_samples * n_orig_sentences, 1, self.generated_v.size)).to(
+                        self.h_params.device)})
+        z_sample = z_gen.prior_sample((n_samples * n_orig_sentences,))[0]
+        z1_sample, z2_sample = z1.post_samples.squeeze(1), z2.post_samples.squeeze(1)
+        z1_params, z2_params = z1.post_params, z2.post_params
+        for id in var_z_ids:
+            assert id < sum(h_params.n_latents)
+            z_number = sum([id > sum(h_params.n_latents[:i + 1]) for i in range(len(h_params.n_latents))])
+            z_index = id - sum(h_params.n_latents[:z_number])
+            start, end = int(h_params.z_size / max(h_params.n_latents) * z_index), int(
+                h_params.z_size / max(h_params.n_latents) * (z_index + 1))
+            source, destination = [z_sample, z1_sample, z2_sample][z_number], [orig_z, orig_z1, orig_z2][z_number]
+            destination[:, start:end] = source[:, start:end]
+
+        z_input = {'z1': orig_z.unsqueeze(1), 'z2': orig_z1.unsqueeze(1), 'z3': orig_z2.unsqueeze(1)}
+
+        # Normal Autoregressive generation
+        for i in range(gen_len):
+            self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
+                                             for k, v in z_input.items()}})
+            samples_i = self.generated_v.post_params['logits']
+
+            x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
+                               dim=-1)
+
+        text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
+        return text, {'z1': z_sample.tolist(), 'z2': z1_sample.tolist(),
+                      'z3': z2_sample}, None  # {'z1': z1_params, 'z2': z2_params}
+
+    def get_sentences(self, n_samples, gen_len=16, sample_w=False, vary_z=True, complete=None, contains=None,
+                      max_tries=100):
+        final_text, final_samples, final_params = [], \
+                                                  {'z1': [], 'z2': [], 'z3': []}, \
+                                                  {'z2': None, 'z3': None}
+        trys = 0
+        while n_samples > 0:
+            trys += 1
+            go_symbol = torch.ones([n_samples]).long() * \
+                        self.index[self.generated_v].stoi['<go>']
+            go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
+            x_prev = go_symbol
+            if complete is not None:
+                for token in complete.split(' '):
+                    x_prev = torch.cat([x_prev, torch.ones([n_samples, 1]).long().to(self.h_params.device) * \
+                                        self.index[self.generated_v].stoi[token]], dim=1)
+                gen_len = gen_len - len(complete.split(' '))
+            temp = 1.
+            z_gen = self.gen_bn.name_to_v['z1']
+            if vary_z:
+                z_sample = z_gen.prior_sample((n_samples,))[0]
+            else:
+                z_sample = z_gen.prior_sample((1,))[0]
+                z_sample = z_sample.repeat(n_samples, 1)
+            z_input = {'z1': z_sample.unsqueeze(1)}
+            # Structured Z case
+            z1, z2 = self.gen_bn.name_to_v['z2'], self.gen_bn.name_to_v['z3']
+            if vary_z:
+                self.gen_bn({'z1': z_sample.unsqueeze(1),
+                            'x_prev': torch.zeros((n_samples, 1, self.generated_v.size)).to(self.h_params.device)})
+                z1_sample, z2_sample = z1.post_samples.squeeze(1), z2.post_samples.squeeze(1)
+                z1_params, z2_params = z1.post_params, z2.post_params
+            else:
+                self.gen_bn({'z1': z_sample[0].unsqueeze(0).unsqueeze(1),
+                            'x_prev': torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
+                z1_sample, z2_sample = z1.post_samples.squeeze(1).repeat(n_samples, 1), z2.post_samples.squeeze(
+                    1).repeat(n_samples, 1)
+                z1_params, z2_params = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in z1.post_params.items()}, \
+                                       {k: v.squeeze(1).repeat(n_samples, 1) for k, v in z2.post_params.items()}
+            z_input['z2'] = z1_sample.unsqueeze(1)
+            z_input['z3'] = z2_sample.unsqueeze(1)
+
+            # Normal Autoregressive generation
+            for i in range(gen_len):
+                self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
+                                                 for k, v in z_input.items()}})
+                if not sample_w:
+                    samples_i = self.generated_v.post_params['logits']
+                else:
+                    samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'] / temp,
+                                                          temperature=1).rsample()
+                x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
+                                   dim=-1)
+
+            text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
+            if contains is None:
+                return text, {'z1': z_sample, 'z2': z1_sample, 'z3': z2_sample}, {'z2': z1_params, 'z3': z2_params}
+            else:
+                for i in range(n_samples):
+                    if any([w in text[i].split(' ') for w in contains]):
+                        n_samples -= 1
+                        final_text.append(text[i])
+                        final_samples['z1'].append(z_sample[i])
+                        final_samples['z2'].append(z1_sample[i])
+                        final_samples['z3'].append(z2_sample[i])
+                        if final_params['z2'] is None:
+                            final_params['z2'] = {k: v[i].unsqueeze(0) for k, v in z1_params.items()}
+                            final_params['z3'] = {k: v[i].unsqueeze(0) for k, v in z2_params.items()}
+                        else:
+
+                            final_params['z2'] = {k: torch.cat([final_params['z2'][k], v[i].unsqueeze(0)])
+                                                  for k, v in z1_params.items()}
+                            final_params['z3'] = {k: torch.cat([final_params['z3'][k], v[i].unsqueeze(0)])
+                                                  for k, v in z2_params.items()}
+
+            if max_tries == trys:
+                raise TimeoutError('Could only find {} sentences containing "{}" in {} samples'
+                                   ''.format(len(final_text), contains, n_samples * max_tries))
+
+        final_samples = {k: torch.cat([v_i.unsqueeze(0) for v_i in v]) for k, v in final_samples.items()}
+        return final_text, final_samples, final_params
+
+    def _get_stat_data_frame(self, n_samples=50, n_alterations=10, batch_size=25):
+        stats = []
+        nlatents = self.h_params.n_latents
+        # Generating n_samples sentences
+        text, samples, params = self.get_sentences(n_samples=n_samples, gen_len=self.h_params.max_len-1, sample_w=False,
+                                                   vary_z=True, complete=None)
+        orig_rels = batch_sent_relations(text)
+        for i in range(int(n_samples / batch_size)):
+            for j in tqdm(range(sum(nlatents)), desc="Processing sample {}".format(str(i))):
+                # Altering the sentences
+                alt_text, _, _ = self._get_alternative_sentences(
+                                                           prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
+                                                                             for k, v in samples.items()},
+                                                           params=None, var_z_ids=[j], n_samples=n_alterations,
+                                                           gen_len=self.h_params.max_len-1, complete=None)
+                alt_rels = batch_sent_relations(alt_text)
+                # Getting alteration statistics
+                for k in range(n_alterations * batch_size):
+                    orig_text = text[(i * batch_size) + k % batch_size]
+                    try:
+                        new_rels, rel_diff = get_sentence_statistics(orig_text, alt_text[k],
+                                                                     orig_rels[(i * batch_size) + k % batch_size],
+                                                                     alt_rels[k])
+                    except RecursionError or IndexError:
+                        continue
+                    stats.append([orig_text, alt_text[k], j, new_rels, rel_diff])
+
+        header = ['original', 'altered', 'alteration_id', 'new_rels', 'rel_diff']
+        df = pd.DataFrame(stats, columns=header)
+        return df
+
+
+# =========================================== DISENTANGLEMENT UTILITIES ================================================
+
+def batch_sent_relations(sents):
+    target = [{'sentence': sent} for sent in sents]
+    preds = predictor.predict_batch_json(target)
+    sent_dicts = []
+    for pred in preds:
+        sent_dict = []
+        for el in pred['verbs']:
+            sent_dict.append({})
+            for v_i in el['description'].split('[')[1:]:
+                in_bracket = v_i.split(']')[0]
+                arg_l, arg_str = in_bracket.split(':')
+                sent_dict[-1][arg_l] = arg_str
+        sent_dicts.append(sent_dict)
+    return sent_dicts
+
+
+def get_depth(root, toks, tree, depth=0):
+    root_tree = list([tok for tok in tree[root]])
+    if len(root_tree) > 0:
+        child_ids = [i for i, tok in enumerate(toks) if tok in root_tree]
+        return 1 + max([get_depth(child_id, toks, tree) for child_id in child_ids])
+    else:
+        return depth
+
+
+def get_sentence_statistics(orig, sen, orig_relations=None, relations=None):
+    # print(orig, sen)
+    orig, sen = orig.replace('<?>', 'UNK'), sen.replace('<?>', 'UNK')
+    # Orig properties
+    orig_relations = orig_relations
+    orig_rel_labs = list(orig_relations[0].keys()) if len(orig_relations) else []
+
+    # Alt properties
+    relations = relations
+    rel_labs = list(relations[0].keys()) if len(relations) else []
+    # Differences
+    new_rels = np.union1d(np.setdiff1d(orig_rel_labs, rel_labs), np.setdiff1d(rel_labs, orig_rel_labs)).tolist()
+
+    if len(new_rels) or len(rel_labs) == 0 or len(orig_rel_labs) == 0:
+        rel_diff = []
+    else:
+        rel_diff = [k for k, v in orig_relations[0].items() if orig_relations[0][k] != relations[0][k]]
+    return new_rels, rel_diff
+
+
+def get_hm_array(df):
+    snsplt = sns.heatmap(df, cmap='RdYlGn', linewidths=0.20, annot=False)
+    b, t = plt.ylim() # discover the values for bottom and top
+    b += 0.5 # Add 0.5 to the bottom
+    t -= 0.5 # Subtract 0.5 from the top
+    plt.ylim(b, t) # update the ylim(bottom, top) values
+    plt.gcf().canvas.draw()
+    fig_shape = plt.gcf().get_size_inches()*plt.gcf().dpi
+    fig_shape = (int(fig_shape[1]), int(fig_shape[0]), 3)
+    img_arr = np.fromstring(plt.gcf().canvas.tostring_rgb(), dtype=np.uint8, sep='').reshape(fig_shape)
+    return img_arr
+
+
+def revert_to_l1(el):
+    if type(el) == list or type(el) == np.ndarray:
+        return el
+    if len(el[1:-1]):
+        el = el.replace('(', '').replace("'", '').replace(' ', '').replace('),', ')').replace(']', '').replace('[', '')
+        output = [el_i.split(",") for el_i in el.split(')') if len(el_i)>3]
+        if len(output)>1:
+            output = np.concatenate(output)
+        return np.unique(output)
+    else:
+        return []
 
