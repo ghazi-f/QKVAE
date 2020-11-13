@@ -1,4 +1,5 @@
 # This file defines the links between variables in the inference and generation networks of the PoS_tagging task
+from itertools import chain
 
 import torch.nn as nn
 
@@ -248,68 +249,92 @@ def get_structured_auto_regressive_graph(h_params, word_embeddings):
     xin_size, zin_size = h_params.embedding_dim, h_params.z_size
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
     z_repnet = None
-    #nn.LSTM(h_params.z_size, h_params.z_size, h_params.text_rep_l,
-    # batch_first=True,
-    # dropout=h_params.dropout)
-    lv_n1, lv_n2, lv_n3 = h_params.n_latents
-    lv_size_prop1, lv_size_prop2, lv_size_prop3 = lv_n1/max(h_params.n_latents), lv_n2/max(h_params.n_latents),\
-                                                     lv_n3/max(h_params.n_latents)
-    z1_size, z2_size, z3_size = int(zin_size*lv_size_prop1), int(zin_size*lv_size_prop2), int(zin_size*lv_size_prop3)
+    n_lvls = len(h_params.n_latents)
+    lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
+    z_sizes = [int(zin_size*lv_size_prop) for lv_size_prop in lv_size_props]
     # Generation
-    x_gen, z_gen1, z_gen2, z_gen3, xprev_gen = \
-        XGen(h_params, word_embeddings), ZGen1(h_params, z_repnet, allow_prior=True), \
-        ZGen2(h_params, z_repnet, allow_prior=True), ZGen3(h_params, z_repnet, allow_prior=True), \
-        XPrevGen(h_params, word_embeddings, has_rep=False)
-    z1_z2_z3_xprev_to_x = ConditionalCoattentiveTransformerLink(xin_size,
-                                                                int(zout_size*sum(h_params.n_latents)/max(h_params.n_latents)),
-                                                                xout_size,h_params.decoder_l, Categorical.parameter_activations,
-                                                                word_embeddings, highway=h_params.highway, sbn=None,
-                                                                dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
-                                                                memory=['z1', 'z2', 'z3'], targets=['x_prev'],
-                                                                nheads=4, bidirectional=False)
-    z1_to_z2 = CoattentiveTransformerLink(z1_size, int(h_params.decoder_h*lv_size_prop2), z2_size, h_params.decoder_l,
-                                          Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z1'],
-                                          n_mems=h_params.n_latents[0],
-                                          highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n2)
-    z2_to_z3 = CoattentiveTransformerLink(z2_size, # Input size doesn't matter here because there's no input
-                                             int(h_params.decoder_h*lv_size_prop3), z3_size, h_params.decoder_l,
-                                             Gaussian.parameter_activations, nheads=4, sequence=None, memory=['z2'],
-                                             n_mems=h_params.n_latents[1],
-                                             highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n3)
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=(i == 0)) for i in range(n_lvls)]
+    zs_xprev_to_x = ConditionalCoattentiveTransformerLink(xin_size,
+                                                          int(zout_size*sum(h_params.n_latents)/max(h_params.n_latents)),
+                                                          xout_size,h_params.decoder_l, Categorical.parameter_activations,
+                                                          word_embeddings, highway=h_params.highway, sbn=None,
+                                                          dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                          memory=[z.name for z in z_gens], targets=['x_prev'],
+                                                          nheads=4, bidirectional=False)
+    z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1], h_params.decoder_l,
+                                          Gaussian.parameter_activations, nheads=4, sequence=None,
+                                          memory=[z_gens[i].name],
+                                          n_mems=h_params.n_latents[i],
+                                          highway=h_params.highway, dropout=h_params.dropout,
+                                          n_targets=h_params.n_latents[i+1])
+               for i in range(n_lvls-1)]
 
     # Inference
-    x_inf, z_inf1, z_inf2, z_inf3 = XInfer(h_params, word_embeddings, has_rep=False),\
-                                          ZInfer1(h_params, z_repnet), \
-                                          ZInfer2(h_params, z_repnet), ZInfer3(h_params, z_repnet)
+    x_inf, z_infs = XInfer(h_params, word_embeddings, has_rep=False), [ZInferi(h_params, z_repnet, i) for i in
+                                                                       range(n_lvls)]
+    z_posterior = [CoattentiveTransformerLink(xin_size, int(lv_size_props[i]*h_params.encoder_h),
+                                              z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations, nheads=4,
+                                              sequence=['x'], memory=[z.name for z in z_infs[i+1:n_lvls]] or None,
+                                              n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
+                                              highway=h_params.highway, dropout=h_params.dropout,
+                                              n_targets=h_params.n_latents[i]) for i in range(n_lvls)]
+    infer_edges = [nn.ModuleList([x_inf, z_posti, z_infi]) for z_posti, z_infi in zip(z_posterior, z_infs)] + \
+                   list(chain(*[[nn.ModuleList([z_infs[j], z_posterior[i], z_infs[i]])
+                                for j in range(i+1, n_lvls)] for i in range(n_lvls-1)]))
+    # for retrocompatibility:
+    infer_edges = [infer_edges[0]]+infer_edges[n_lvls:]+infer_edges[1:n_lvls]
+    gen_edges = [nn.ModuleList([z_gens[i], z_prior[i], z_gens[i+1]]) for i in range(n_lvls-1)]+\
+                [nn.ModuleList([var, zs_xprev_to_x, x_gen]) for var in z_gens+[xprev_gen]]
 
-    x_to_z3 = CoattentiveTransformerLink(xin_size, h_params.encoder_h, z3_size, h_params.encoder_l,
-                                         Gaussian.parameter_activations, nheads=4, sequence=['x'], memory=None,
-                                         highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n3)
 
-    x_z3_to_z2 = CoattentiveTransformerLink(xin_size, int(lv_size_prop2*h_params.encoder_h), z2_size, h_params.encoder_l,
-                                            Gaussian.parameter_activations, nheads=4, sequence=['x'], memory=['z3'],
-                                            n_mems=lv_n3,
-                                            highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n2)
-    x_z2_z3_to_z1 = CoattentiveTransformerLink(xin_size, int(lv_size_prop1*h_params.encoder_h), z1_size, h_params.encoder_l,
-                                        Gaussian.parameter_activations, nheads=4, sequence=['x'], memory=['z2', 'z3'],
-                                        n_mems=lv_n3+lv_n2,
-                                        highway=h_params.highway, dropout=h_params.dropout, n_targets=lv_n1)
+    return {'infer': nn.ModuleList(infer_edges),
+            'gen':   nn.ModuleList(gen_edges)}, None, x_gen
 
-    return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_z2_z3_to_z1, z_inf1]),
-                                    nn.ModuleList([z_inf2, x_z2_z3_to_z1, z_inf1]),
-                                    nn.ModuleList([z_inf3, x_z2_z3_to_z1, z_inf1]),
-                                    nn.ModuleList([z_inf3, x_z3_to_z2, z_inf2]),
-                                    nn.ModuleList([x_inf, x_z3_to_z2, z_inf2]),
-                                    nn.ModuleList([x_inf, x_to_z3, z_inf3]),
-                                    ]),
-            'gen':   nn.ModuleList([
-                                    nn.ModuleList([z_gen1, z1_to_z2, z_gen2]),
-                                    nn.ModuleList([z_gen2, z2_to_z3, z_gen3]),
-                                    nn.ModuleList([z_gen1, z1_z2_z3_xprev_to_x, x_gen]),
-                                    nn.ModuleList([z_gen2, z1_z2_z3_xprev_to_x, x_gen]),
-                                    nn.ModuleList([z_gen3, z1_z2_z3_xprev_to_x, x_gen]),
-                                    nn.ModuleList([xprev_gen, z1_z2_z3_xprev_to_x, x_gen]),
-                                    ])}, None, x_gen
+def get_structured_auto_regressive_graphConGen(h_params, word_embeddings):
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    z_repnet = None
+    n_lvls = len(h_params.n_latents)
+    lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
+    z_sizes = [int(zin_size*lv_size_prop) for lv_size_prop in lv_size_props]
+    # Generation
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=(i == 0)) for i in range(n_lvls)]
+    zs_xprev_to_x = ConditionalCoattentiveTransformerLink(xin_size,
+                                                          int(zout_size*sum(h_params.n_latents)/max(h_params.n_latents)),
+                                                          xout_size,h_params.decoder_l, Categorical.parameter_activations,
+                                                          word_embeddings, highway=h_params.highway, sbn=None,
+                                                          dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                          memory=[z.name for z in z_gens], targets=['x_prev'],
+                                                          nheads=4, bidirectional=False)
+    z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1], 1,
+                                          Gaussian.parameter_activations, nheads=4, sequence=None,
+                                          memory=[z.name for z in z_gens[:i+1]],
+                                          n_mems=sum(h_params.n_latents[:i+1]),
+                                          highway=h_params.highway, dropout=h_params.dropout,
+                                          n_targets=h_params.n_latents[i+1])
+               for i in range(n_lvls-1)]
+
+    # Inference
+    x_inf, z_infs = XInfer(h_params, word_embeddings, has_rep=False), [ZInferi(h_params, z_repnet, i) for i in
+                                                                       range(n_lvls)]
+    z_posterior = [CoattentiveTransformerLink(xin_size, int(lv_size_props[i]*h_params.encoder_h),
+                                              z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations, nheads=4,
+                                              sequence=['x'], memory=[z.name for z in z_infs[i+1:n_lvls]] or None,
+                                              n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
+                                              highway=h_params.highway, dropout=h_params.dropout,
+                                              n_targets=h_params.n_latents[i]) for i in range(n_lvls)]
+    infer_edges = [nn.ModuleList([x_inf, z_posti, z_infi]) for z_posti, z_infi in zip(z_posterior, z_infs)] + \
+                   list(chain(*[[nn.ModuleList([z_infs[j], z_posterior[i], z_infs[i]])
+                                for j in range(i+1, n_lvls)] for i in range(n_lvls-1)]))
+    gen_edges = [nn.ModuleList([var, zs_xprev_to_x, x_gen]) for var in z_gens+[xprev_gen]]+ \
+                list(chain(*[[nn.ModuleList([z_gens[i], z_prior[i], z_gens[j]])
+                              for j in range(i + 1, n_lvls)] for i in range(n_lvls - 1)]))
+
+
+    return {'infer': nn.ModuleList(infer_edges),
+            'gen':   nn.ModuleList(gen_edges)}, None, x_gen
 
 
 def get_discrete_auto_regressive_graph(h_params, word_embeddings):
@@ -520,6 +545,7 @@ def get_non_auto_regressive_structured_graph(h_params, word_embeddings):
                                     nn.ModuleList([z_gen1, z_z1_z2_to_zlstm, zlstm_gen]),
                                     nn.ModuleList([z_gen2, z_z1_z2_to_zlstm, zlstm_gen]),
                                     ])}, None, x_gen
+
 
 def get_lstm_graph(h_params, word_embeddings):
 

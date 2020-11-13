@@ -13,7 +13,7 @@ from disentanglement_transformer.h_params import DefaultTransformerHParams as HP
 from disentanglement_transformer.graphs import *
 from components.criteria import *
 parser = argparse.ArgumentParser()
-
+from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 4, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
@@ -39,12 +39,12 @@ parser.add_argument("--decoder_l", default=3, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
-parser.add_argument("--graph", default='Normal', choices=["Discrete", "Normal", "Normal2", "NormalLSTM"], type=str)
+parser.add_argument("--graph", default='NormalConGen', choices=["Discrete", "Normal", "NormalConGen", "Normal2", "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=2000, type=int)
-parser.add_argument("--anneal_kl1", default=4000, type=int)
+parser.add_argument("--anneal_kl0", default=3000, type=int)
+parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--grad_clip", default=10., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
@@ -52,7 +52,7 @@ parser.add_argument("--word_dropout", default=.0, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
-parser.add_argument("--wait_epochs", default=6, type=float)
+parser.add_argument("--wait_epochs", default=1, type=float)
 parser.add_argument("--save_all", default=True, type=bool)
 
 flags = parser.parse_args()
@@ -63,11 +63,12 @@ if True:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/maxkl6"
+    flags.test_name = "nliLM/NonProgLV3ConGen"
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
          "Normal": get_structured_auto_regressive_graph,
+         "NormalConGen": get_structured_auto_regressive_graphConGen,
          "Normal2": get_structured_auto_regressive_graph2,
          "NormalLSTM": get_lstm_graph}[flags.graph]
 if flags.graph == "NormalLSTM":
@@ -107,7 +108,7 @@ def main():
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=6,
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=3,
                        z_emb_dim=flags.z_emb_dim)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
@@ -186,11 +187,15 @@ def main():
                 model.save()
 
             if wait_count == flags.wait_epochs:
-                model.reduce_lr(flags.lr_reduction)
-                print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                if h_params.max_elbo:
+                    h_params.max_elbo *= 0.9
+                #model.reduce_lr(flags.lr_reduction)
+                #print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                if h_params.max_elbo < 3 *(3/len(h_params.n_latents)):
+                    break
 
-            if wait_count == flags.wait_epochs*2:
-                break
+            # if wait_count == flags.wait_epochs*2:
+            #     break
 
             model.train()
         data.reinit_iterator('valid')

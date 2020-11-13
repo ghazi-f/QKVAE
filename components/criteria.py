@@ -238,7 +238,7 @@ class ELBo(BaseCriterion):
 
     def _prepare_metrics(self, loss):
         current_elbo = - loss
-        LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join([lv for lv in self.infer_lvs]))
+        LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join([lv for lv in sorted(self.infer_lvs.keys())]))
         LL_value = torch.sum(self.log_p_xIz)/self.valid_n_samples
         KL_dict = {}
         for lv in self.gen_lvs.keys():
@@ -253,7 +253,7 @@ class ELBo(BaseCriterion):
             KL_value = torch.sum(kl_i)/self.valid_n_samples
             KL_dict[KL_name] = KL_value
         if not (type(self.h_params.n_latents) == int and self.h_params.n_latents == 1):
-            for j, name in enumerate(['z1', 'z2', 'z3']):
+            for j, name in enumerate(self.infer_lvs.keys()):
                 if name in self.gen_lvs:
                     gen_lv, inf_lv = self.gen_lvs[name], self.infer_lvs[name]
                     infer_v_name = inf_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.infer_net.parent[inf_lv]]))

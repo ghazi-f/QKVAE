@@ -36,6 +36,14 @@ class XPrevGen(Categorical):
                                        repnet=repnet, word_dropout=h_params.word_dropout)
 
 
+class ZInferi(Gaussian):
+    def __init__(self, h_params, repnet, index):
+        iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
+        size = int(h_params.z_size * h_params.n_latents[index] / max(h_params.n_latents))
+        super(ZInferi, self).__init__(size, 'z{}'.format(index+1), h_params.device, markovian=h_params.markovian,
+                                     stl=True, iw=iw, repnet=repnet, sequence_lv=True)
+
+
 class ZInfer1(Gaussian):
     def __init__(self, h_params, repnet):
         iw = any([l == IWLBo for l in h_params.losses]) and not h_params.ipiwo
@@ -58,6 +66,13 @@ class ZInfer3(Gaussian):
         size = int(h_params.z_size * h_params.n_latents[2] / max(h_params.n_latents))
         super(ZInfer3, self).__init__(size, 'z3', h_params.device, markovian=h_params.markovian,
                                      stl=True, iw=iw, repnet=repnet, sequence_lv=True)
+
+
+class ZGeni(Gaussian):
+    def __init__(self, h_params, repnet, index, allow_prior=False):
+        size = int(h_params.z_size * h_params.n_latents[index] / max(h_params.n_latents))
+        super(ZGeni, self).__init__(size, 'z{}'.format(index+1), h_params.device,
+                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
 
 
 class ZGen1(Gaussian):
