@@ -72,7 +72,7 @@ parser.add_argument("--word_dropout", default=0.0, type=float)
 parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=4e-3, type=float)
 parser.add_argument("--opt_alg", default='adam', choices=["adam", "sgd", "nesterov"], type=str)
-parser.add_argument("--beta1", default=0.9, type=float)
+parser.add_argument("--beta1", default=0.99, type=float)
 parser.add_argument("--beta2", default=0.999, type=float)
 parser.add_argument("--lr_decay", default=0.0, type=float)
 parser.add_argument("--epsilon", default=1e-8, type=float)
@@ -95,10 +95,10 @@ if FORCE_EVAL:
 # Manual Settings, Deactivate before pushing
 if False:
     flags.wait_epochs = 4
-    flags.losses = 'S'
+    flags.losses = 'SSVAE'
     flags.batch_size = 32
     flags.grad_accu = 1
-    # flags.max_len = 256
+    # flags.max_len = 64
     # flags.encoder_h = 100
     # flags.encoder_l = 1
     # flags.pos_embedding_dim = 1
@@ -115,7 +115,7 @@ if False:
     flags.dev_index = 5
     flags.best_hp = False
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
-    flags.dataset = "imdb"
+    flags.dataset = "ag_news"
     # flags.emb_batch_norm = True
     # flags.beta1 = 0.999
     # flags.beta2 = 0.99

@@ -143,7 +143,7 @@ class DANLink(BaseLink):
             input = torch.cat([input, self.drp_layer(F.gelu(outputs[-1]))], dim=-1) if self.highway else outputs[-1]
 
         outputs = (torch.cat(outputs, dim=-1) if self.highway else outputs[-1]) if len(self.mlp) else input
-        outputs = outputs.unsqueeze(1).repeat(1, x.shape[-2], 1)
+        outputs = outputs.unsqueeze(-2).repeat(*([1]*(outputs.ndim-1)), x.shape[-2], 1)
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
                     self.params.items()}
