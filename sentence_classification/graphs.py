@@ -2,7 +2,7 @@
 
 import torch.nn as nn
 
-from components.links import MLPLink, LastStateMLPLink, LSTMLink
+from components.links import MLPLink, LastStateMLPLink, LSTMLink, DANLink
 from sentence_classification.variables import *
 
 
@@ -74,10 +74,10 @@ def get_sentiment_graph(h_params, word_embeddings, pos_embeddings):
     x_to_z = LSTMLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameter_activations,
                       highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
 
-    x_to_y = LSTMLink(xin_size, h_params.encoder_h, yout_size, h_params.encoder_l, Categorical.parameter_activations,
+    x_to_y = DANLink(xin_size, h_params.pos_h, yout_size, h_params.pos_l, Categorical.parameter_activations,
                       #embedding=pos_embeddings,
-                      highway=h_params.highway, dropout=h_params.dropout, bidirectional=True, last_state=True)
-    x_to_y.rnn = x_to_z.rnn
+                      highway=h_params.highway, dropout=h_params.dropout)#, bidirectional=True, last_state=True)
+    #x_to_y.rnn = x_to_z.rnn
 
 
     return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_to_y, y_inf]),

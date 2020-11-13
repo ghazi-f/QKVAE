@@ -99,7 +99,7 @@ class HuggingIMDB2:
         self.n_epochs = 0
         self.max_epochs = max_epochs
         if pretrained:
-            ftxt = FastText()
+            ftxt = GloVe('6B', dim=100)#FastText()
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
@@ -213,7 +213,7 @@ class HuggingAGNews:
         self.n_epochs = 0
         self.max_epochs = max_epochs
         if pretrained:
-            ftxt = FastText()
+            ftxt = GloVe('6B', dim=100)#FastText()
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
@@ -733,7 +733,8 @@ class LanguageModelingDataset(data.Dataset):
                 # if len(processed_line) > 1 and not any(['=' in tok for tok in  processed_line]):
                 #     examples.append(data.Example.fromlist([processed_line], fields))
             print("Mean length: ", sum(seq_lens)/len(seq_lens), ' Quantiles .25, 0.5, 0.7, and 0.9 :',
-                  np.quantile(seq_lens, [0.25, 0.5, 0.7, 0.9, 0.95, 0.99]))
+                  np.quantile(seq_lens, [0.25, 0.5, 0.7, 0.9, 0.95, 0.99]), 'std:', np.std(seq_lens),
+                  'n_examples:', len(seq_lens))
 
         super(LanguageModelingDataset, self).__init__(
             examples, fields, **kwargs)

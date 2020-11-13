@@ -104,6 +104,65 @@ class MLPLink(BaseLink):
         return z_params
 
 
+class DANLink(BaseLink):
+    # Deep Averaging Network link
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None):
+        super(DANLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
+                                      dropout=dropout, batchnorm=batchnorm, residual=residual)
+
+        if depth>1:
+            self.mlp = nn.ModuleList([nn.Linear(input_size, output_size)] +
+                                     [nn.Linear((input_size + output_size*i) if self.highway else output_size, output_size)
+                                      for i in range(2, depth)])
+        else:
+            self.mlp = []
+        self.drp_layer = torch.nn.Dropout(p=dropout)
+        self.bn = nn.BatchNorm1d(z_size)
+
+        mlp_out_size = ((output_size * depth) if self.highway else output_size) if depth > 1 else input_size
+        if embedding is not None:
+            assert mlp_out_size == embedding.weight.shape[1], "The MLP output size {} while the embedding size is " \
+                                                              "{}".format(mlp_out_size, embedding.weight.shape[1])
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size)
+                                                     for param in params})
+            self.hidden_to_z_params['logits'].weight = embedding.weight
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(mlp_out_size, z_size) for param in params})
+
+    def forward(self, x, z_prev=None, lens=None):
+        if self.residual is not None:
+            x_res, x = x
+            x_res = self.drp_layer(x_res)
+            z_params_res = self.residual['link'](x_res, z_prev)
+        x = self.drp_layer(x)
+        outputs = []
+        input = x.mean(-2)
+        for layer in self.mlp:
+            outputs.append(layer(input))
+            input = torch.cat([input, self.drp_layer(F.gelu(outputs[-1]))], dim=-1) if self.highway else outputs[-1]
+
+        outputs = (torch.cat(outputs, dim=-1) if self.highway else outputs[-1]) if len(self.mlp) else input
+        outputs = outputs.unsqueeze(1).repeat(1, x.shape[-2], 1)
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
+                    self.params.items()}
+
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            z_params['loc'] = z_params_res['loc'] + z_params['loc']
+
+        #z_params = {'logits': self.hidden_to_logits(self.hidden_to_z_params['logits'](self.mlp[0](self.drp_layer(x))))}
+        #z_params = {'logits': self.hidden_to_logits((self.drp_layer(x)))}
+        return z_params
+
+
 class LastStateMLPLink(BaseLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None):

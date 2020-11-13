@@ -43,14 +43,14 @@ parser.set_defaults(tied_embeddings=False)
 parser.add_argument('--pretrained_embeddings', dest='pretrained_embeddings', action='store_true')
 parser.add_argument('--no-pretrained_embeddings', dest='pretrained_embeddings', action='store_false')
 parser.set_defaults(pretrained_embeddings=True)
-parser.add_argument("--pos_embedding_dim", default=50, type=int)  # must be equal to encoder_h and decoder_h
+parser.add_argument("--pos_embedding_dim", default=100, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--z_size", default=100, type=int)  # must be equal to encoder_h and decoder_h
 parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
 parser.add_argument("--text_rep_h", default=200, type=int) # irrelevant
 parser.add_argument("--encoder_h", default=200, type=int)
 parser.add_argument("--encoder_l", default=2, type=int)
-parser.add_argument("--pos_h", default=50, type=int) # for y in encoder and y_emb in decoder
-parser.add_argument("--pos_l", default=2, type=int) # for y in encoder and y_emb in decoder
+parser.add_argument("--pos_h", default=100, type=int) # for y in encoder and y_emb in decoder
+parser.add_argument("--pos_l", default=1, type=int) # for y in encoder and y_emb in decoder
 parser.add_argument("--decoder_h", default=200, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument('--highway', dest='highway', action='store_true')
@@ -73,7 +73,7 @@ parser.add_argument("--l2_reg", default=0., type=float)
 parser.add_argument("--lr", default=4e-3, type=float)
 parser.add_argument("--opt_alg", default='adam', choices=["adam", "sgd", "nesterov"], type=str)
 parser.add_argument("--beta1", default=0.9, type=float)
-parser.add_argument("--beta2", default=0.99, type=float)
+parser.add_argument("--beta2", default=0.999, type=float)
 parser.add_argument("--lr_decay", default=0.0, type=float)
 parser.add_argument("--epsilon", default=1e-8, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
@@ -84,7 +84,7 @@ parser.add_argument('--no-rm_save', dest='rm_save', action='store_false')
 parser.set_defaults(rm_save=True)
 parser.add_argument('--best_hp', dest='best_hp', action='store_true')
 parser.add_argument('--no-best_hp', dest='best_hp', action='store_false')
-parser.set_defaults(best_hp=True)
+parser.set_defaults(best_hp=False)
 
 flags = parser.parse_args()
 # Set this to true to force training slurm scripts to rather perform evaluation
@@ -94,22 +94,24 @@ if FORCE_EVAL:
     flags.result_csv = "imdbeval.csv"
 # Manual Settings, Deactivate before pushing
 if False:
+    flags.wait_epochs = 4
     flags.losses = 'S'
     flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 256
-    flags.encoder_h = 400
-    flags.encoder_l = 1
+    # flags.max_len = 256
+    # flags.encoder_h = 100
+    # flags.encoder_l = 1
+    # flags.pos_embedding_dim = 1
+    # flags.pos_h = 1
     # flags.grad_clip = 5.0
-    flags.lr = 4e-4
+    # flags.lr = 8e-4
     # flags.dropout = 0.5
-    # flags.embedding_dim = 100
-    flags.pretrained_embeddings = True
+    # flags.embedding_dim = 50
+    # flags.pretrained_embeddings = True
     # flags.lr_decay = 0.05
-    # flags.opt_alg = "adam"
     flags.test_name = "SSVAE/IMDB/test7"
-    flags.unsupervision_proportion = 1.1
-    flags.supervision_proportion = 1.
+    flags.unsupervision_proportion = 1.
+    flags.supervision_proportion = 0.01
     flags.dev_index = 5
     flags.best_hp = False
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
@@ -196,7 +198,7 @@ if flags.divide_by != 1:
     flags.decoder_h = int(flags.decoder_h/flags.divide_by)
 
 if flags.pretrained_embeddings:
-    flags.embedding_dim = 300 if flags.dataset != "ud" else 100
+    flags.embedding_dim = 100
     #flags.tied_embeddings = True
     flags.decoder_h = flags.embedding_dim
 
@@ -338,11 +340,11 @@ def main():
                             best_epoch = supervision_epoch
                         else:
                             wait_count += 1
-                        if wait_count == flags.wait_epochs * 2:
-                            model.reduce_lr(flags.lr_reduction)
-                            print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                        # if wait_count >= flags.wait_epochs * 2:
+                        #     model.reduce_lr(flags.lr_reduction)
+                        #     print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
-                        if wait_count == flags.wait_epochs :
+                        if wait_count >= flags.wait_epochs and model.step > 50:
                             break
 
                 """print([' '.join(['('+data.vocab.itos[t]+' '+data.tags.itos[l]+')' for t, l in zip(text_i[1:], lab_i)]) for
@@ -387,11 +389,11 @@ def main():
                     else:
                         wait_count += 1
 
-                    if wait_count == flags.wait_epochs * 2:
-                        model.reduce_lr(flags.lr_reduction)
-                        print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+                    # if wait_count == flags.wait_epochs * 2:
+                    #     model.reduce_lr(flags.lr_reduction)
+                    #     print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
 
-                if wait_count == flags.wait_epochs:
+                if wait_count >= flags.wait_epochs and model.step > 50:
                     break
 
                 model.train()
