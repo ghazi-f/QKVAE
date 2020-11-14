@@ -83,12 +83,12 @@ class HuggingIMDB2:
         self.train_iter, _, _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         _, self.unsup_val_iter, _ = data.BucketIterator.splits(
-            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False,
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/5), device=device, shuffle=False,
             sort=False)
         self.sup_iter, _, _ = data.BucketIterator.splits(
             (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
-            (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+            (train, val, test), batch_size=int(batch_size/5), device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab
         self.tags = label_field.vocab

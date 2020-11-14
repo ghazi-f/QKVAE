@@ -49,8 +49,8 @@ parser.add_argument("--text_rep_l", default=2, type=int) # irrelevant
 parser.add_argument("--text_rep_h", default=200, type=int) # irrelevant
 parser.add_argument("--encoder_h", default=200, type=int)
 parser.add_argument("--encoder_l", default=2, type=int)
-parser.add_argument("--pos_h", default=100, type=int) # for y in encoder and y_emb in decoder
-parser.add_argument("--pos_l", default=1, type=int) # for y in encoder and y_emb in decoder
+parser.add_argument("--pos_h", default=100, type=int) # for y in encoder and in decoder
+parser.add_argument("--pos_l", default=1, type=int) # for y in encoder and in decoder
 parser.add_argument("--decoder_h", default=200, type=int)
 parser.add_argument("--decoder_l", default=1, type=int)
 parser.add_argument('--highway', dest='highway', action='store_true')
@@ -95,9 +95,9 @@ if FORCE_EVAL:
 # Manual Settings, Deactivate before pushing
 if False:
     flags.wait_epochs = 4
-    flags.losses = 'SSVAE'
-    flags.batch_size = 32
-    flags.grad_accu = 1
+    flags.losses = 'SSPIWO'
+    flags.batch_size = 16
+    flags.grad_accu = 4
     # flags.max_len = 64
     # flags.encoder_h = 100
     # flags.encoder_l = 1
@@ -115,7 +115,7 @@ if False:
     flags.dev_index = 5
     flags.best_hp = False
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
-    flags.dataset = "ag_news"
+    flags.dataset = "imdb"
     # flags.emb_batch_norm = True
     # flags.beta1 = 0.999
     # flags.beta2 = 0.99
@@ -359,7 +359,7 @@ def main():
                     print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
                     mean_loss = 0
 
-                if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1 or True:
+                if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1:
                     model.eval()
                     try:
                         val_batch = limited_next(val_iterator)
