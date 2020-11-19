@@ -60,6 +60,8 @@ parser.add_argument('--markovian', dest='markovian', action='store_true')
 parser.add_argument('--no-markovian', dest='markovian', action='store_false')
 parser.set_defaults(markovian=True)
 parser.add_argument("--losses", default='SSVAE', choices=["S", "VAE", "SSVAE", "SSPIWO", "SSiPIWO", "SSIWAE"], type=str)
+parser.add_argument("--warm_start_loss", default='None', choices=["None", "VAE", "SSVAE", "SSPIWO", "SSiPIWO", "SSIWAE"], type=str)
+parser.add_argument("--warm_steps", default=3000, type=int)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=2, type=int)
@@ -94,8 +96,7 @@ if FORCE_EVAL:
     flags.result_csv = "imdbeval.csv"
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.wait_epochs = 4
-    flags.losses = 'SSPIWO'
+    # flags.losses = 'SSPIWO'
     flags.batch_size = 16
     flags.grad_accu = 4
     # flags.max_len = 64
@@ -208,6 +209,7 @@ assert flags.dev_index in (1, 2, 3, 4, 5)
 Data = {'imdb': HuggingIMDB2, 'ag_news': HuggingAGNews, 'yelp': HuggingYelp, 'ud': UDPoSDaTA}[flags.dataset]
 this_graph = {'imdb': get_sentiment_graph, 'ag_news': get_sentiment_graph, 'yelp': get_sentiment_graph,
               'ud': get_postag_graph}[flags.dataset]
+WARMED = False
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -374,6 +376,11 @@ def main():
                     model.train()
 
                 current_time = time()
+                if model.step > flags.warm_steps and flags.warm_start_loss != 'None' and not WARMED:
+                    break
+
+            if model.step > flags.warm_steps and flags.warm_start_loss != 'None' and not WARMED:
+                break
             data.reinit_iterator('valid')
             if model.step >= h_params.anneal_kl[0]:
                 model.eval()
@@ -405,56 +412,62 @@ def main():
 
         model.eval()
         max_acc = model.get_overall_accuracy(data.val_iter).item()
-    # Reloading best parameters
-    model.load()
-    # Getting final test numbers
-
-    model.eval()
-    test_accuracy = model.get_overall_accuracy(data.test_iter).item()
-    train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True).item()
-
-    beauty_acc = model.get_overall_accuracy(data.other_domains['amazon_beauty']['test'],
-                                            external='amazon_beauty').item() if 'amazon_beauty' \
-                                                                                in data.other_domains else -1
-    softwar_acc = model.get_overall_accuracy(data.other_domains['amazon_software']['test'],
-                                             external='amazon_software').item() if 'amazon_software' \
-                                                                                   in data.other_domains else -1
-    indus_acc = model.get_overall_accuracy(data.other_domains['amazon_industrial']['test'],
-                                           external='amazon_industrial').item() if 'amazon_industrial' \
-                                                                                   in data.other_domains else -1
-    if 'SS' in flags.losses:
-        pp_ub = model.get_perplexity(data.test_iter).item()
+    if flags.warm_start_loss != 'None' and not WARMED:
+        # Ended warming
+        print("Finished warming up at step ", model.step)
+        WARMED = True
     else:
-        pp_ub = -1
-    print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(test_accuracy, pp_ub))
-    if flags.rm_save:
-        os.remove(h_params.save_path)
+        # Ended Training
+        # Reloading best parameters
+        model.load()
+        # Getting final test numbers
 
-    if not os.path.exists(flags.result_csv):
-        with open(flags.result_csv, 'w') as f:
-            f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight',
-                               'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'train_accuracy',
-                               'amazon_beauty', 'amazon_software', 'amazon_industrial',
-                               'pp_ub', 'best_epoch',
-                               'embedding_dim', 'pos_embedding_dim', 'z_size',
-                               'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
-                               'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained',
-                               'opt_alg', 'beta1', 'beta2', 'lr', 'batch_size', 'dropout', 'emb_batch_norm', 'epsilon'
-                               ]) + '\n')
+        model.eval()
+        test_accuracy = model.get_overall_accuracy(data.test_iter).item()
+        train_accuracy = model.get_overall_accuracy(data.sup_iter, train_split=True).item()
 
-    with open(flags.result_csv, 'a') as f:
-        f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
-                           str(flags.generation_weight),
-                           str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc),
-                           str(train_accuracy), str(beauty_acc), str(softwar_acc), str(indus_acc),
-                           str(pp_ub), str(best_epoch),
-                           str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
-                           str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
-                           str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
-                           str(flags.training_iw_samples), str(flags.tied_embeddings), str(flags.pretrained_embeddings),
-                           flags.opt_alg, str(flags.beta1), str(flags.beta2), str(flags.lr), str(flags.batch_size),
-                           str(flags.dropout), str(flags.emb_batch_norm), str(flags.epsilon)
-                           ])+'\n')
+        beauty_acc = model.get_overall_accuracy(data.other_domains['amazon_beauty']['test'],
+                                                external='amazon_beauty').item() if 'amazon_beauty' \
+                                                                                    in data.other_domains else -1
+        softwar_acc = model.get_overall_accuracy(data.other_domains['amazon_software']['test'],
+                                                 external='amazon_software').item() if 'amazon_software' \
+                                                                                       in data.other_domains else -1
+        indus_acc = model.get_overall_accuracy(data.other_domains['amazon_industrial']['test'],
+                                               external='amazon_industrial').item() if 'amazon_industrial' \
+                                                                                       in data.other_domains else -1
+        if 'SS' in flags.losses:
+            pp_ub = model.get_perplexity(data.test_iter).item()
+        else:
+            pp_ub = -1
+        print("Final Test Accuracy is: {}, Final test perplexity is: {}".format(test_accuracy, pp_ub))
+        if flags.rm_save:
+            os.remove(h_params.save_path)
+
+        if not os.path.exists(flags.result_csv):
+            with open(flags.result_csv, 'w') as f:
+                f.write(', '.join(['test_name', 'dev_index', 'loss_type', 'supervision_proportion', 'generation_weight',
+                                   'unsupervision_proportion', 'test_accuracy', 'dev_accuracy', 'train_accuracy',
+                                   'amazon_beauty', 'amazon_software', 'amazon_industrial',
+                                   'pp_ub', 'best_epoch',
+                                   'embedding_dim', 'pos_embedding_dim', 'z_size',
+                                   'text_rep_l', 'text_rep_h', 'encoder_h', 'encoder_l',
+                                   'pos_h', 'pos_l', 'decoder_h', 'decoder_l', 'training_iw_samples', 'is_tied', 'pretrained',
+                                   'opt_alg', 'beta1', 'beta2', 'lr', 'batch_size', 'dropout', 'emb_batch_norm', 'epsilon', 'warming'
+                                   ]) + '\n')
+
+        with open(flags.result_csv, 'a') as f:
+            f.write(', '.join([flags.test_name, str(flags.dev_index), flags.losses, str(flags.supervision_proportion),
+                               str(flags.generation_weight),
+                               str(flags.unsupervision_proportion), str(test_accuracy), str(max_acc),
+                               str(train_accuracy), str(beauty_acc), str(softwar_acc), str(indus_acc),
+                               str(pp_ub), str(best_epoch),
+                               str(flags.embedding_dim), str(flags.pos_embedding_dim), str(flags.z_size),
+                               str(flags.text_rep_l), str(flags.text_rep_h), str(flags.encoder_h), str(flags.encoder_l),
+                               str(flags.pos_h), str(flags.pos_l), str(flags.decoder_h), str(flags.decoder_l),
+                               str(flags.training_iw_samples), str(flags.tied_embeddings), str(flags.pretrained_embeddings),
+                               flags.opt_alg, str(flags.beta1), str(flags.beta2), str(flags.lr), str(flags.batch_size),
+                               str(flags.dropout), str(flags.emb_batch_norm), str(flags.epsilon), flags.warm_start_loss
+                               ])+'\n')
 
 
 def limited_next(iterator):
@@ -466,14 +479,24 @@ def limited_next(iterator):
 
 
 if __name__ == '__main__':
-    if flags.mode == "grid_search":
-        name = flags.test_name
-        for i in range(5):
-            flags.test_name = name + str(uuid4())
-            flags.dev_index = i+1
-            DEV_INDEX = i+1
+    if flags.warm_start_loss == 'None':
+        if flags.mode == "grid_search":
+            name = flags.test_name
+            for i in range(5):
+                flags.test_name = name + str(uuid4())
+                flags.dev_index = i+1
+                DEV_INDEX = i+1
+                main()
+        else:
             main()
     else:
+        # Grid search is not handled for warm-start mode
+        assert flags.losses != flags.warm_start_loss
+        delayed_loss = flags.losses
+        flags.losses = flags.warm_start_loss
         main()
+        flags.losses = delayed_loss
+        main()
+
 
 
