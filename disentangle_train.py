@@ -17,8 +17,8 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 4, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--max_len", default=20, type=int)
-parser.add_argument("--batch_size", default=512, type=int)
+parser.add_argument("--max_len", default=17, type=int)
+parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=10000, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
@@ -29,7 +29,7 @@ parser.add_argument("--embedding_dim", default=128, type=int)#################"
 parser.add_argument("--pretrained_embeddings", default=False, type=bool)#################"
 parser.add_argument("--z_size", default=192*kz, type=int)#################"
 parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
-parser.add_argument("--n_latents", default=[16, 16, 16], type=list)#################"
+parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)#################"
 parser.add_argument("--text_rep_l", default=2, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
 parser.add_argument("--encoder_h", default=192*k, type=int)#################"
@@ -58,7 +58,7 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.losses = 'VAE'
     flags.batch_size = 128
     flags.grad_accu = 1
@@ -108,7 +108,7 @@ def main():
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=3,
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=6,
                        z_emb_dim=flags.z_emb_dim)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
