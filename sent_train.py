@@ -95,7 +95,7 @@ if FORCE_EVAL:
     flags.mode = "eval"
     flags.result_csv = "imdbeval.csv"
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     # flags.losses = 'SSPIWO'
     flags.batch_size = 16
     flags.grad_accu = 4
