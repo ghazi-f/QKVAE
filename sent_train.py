@@ -95,7 +95,7 @@ if FORCE_EVAL:
     flags.mode = "eval"
     flags.result_csv = "imdbeval.csv"
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     # flags.losses = 'SSPIWO'
     flags.batch_size = 16
     flags.grad_accu = 4
@@ -112,7 +112,7 @@ if False:
     # flags.lr_decay = 0.05
     flags.test_name = "SSVAE/IMDB/test7"
     flags.unsupervision_proportion = 1.
-    flags.supervision_proportion = 0.01
+    flags.supervision_proportion = 0.003
     flags.dev_index = 5
     flags.best_hp = False
     #flags.pretrained_embeddings = True[38. 42. 49. 54. 72.]
@@ -246,6 +246,7 @@ IPIWO = flags.losses == 'SSiPIWO'
 
 
 def main():
+    global WARMED
     data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, UNSUP_PROPORTION, SUP_PROPORTION, DEV_INDEX,
                 flags.pretrained_embeddings)
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,

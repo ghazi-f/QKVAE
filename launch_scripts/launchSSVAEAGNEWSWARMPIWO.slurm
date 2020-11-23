@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=VAE
+#SBATCH --job-name=VAEWARMPIWO
 #SBATCH --gres=gpu:1
-#SBATCH --output=./agnewsvaef.txt
-#SBATCH --error=./agnewsvaef.err
+#SBATCH --output=./agnewsvaefwupiwo.txt
+#SBATCH --error=./agnewsvaefwupiwo.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 # Unweighted experiments
