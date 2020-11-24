@@ -408,7 +408,6 @@ def main():
             data.reinit_iterator('valid')
             data.reinit_iterator('unsup_valid')
             data.reinit_iterator('train')
-        print("Finished training, starting final evaluation :")
     else:
 
         model.eval()
@@ -418,6 +417,7 @@ def main():
         print("Finished warming up at step ", model.step)
         WARMED = True
     else:
+        print("Finished training, starting final evaluation :")
         # Ended Training
         # Reloading best parameters
         model.load()
