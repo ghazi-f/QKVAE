@@ -426,6 +426,8 @@ class TransformerLink(BaseLink):
 
 
 class CoattentiveTransformerLink(NamedLink):
+    get_att = False
+
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_targets=20, nheads=2,
                  sequence=None, memory=None, n_mems=None):
@@ -439,6 +441,7 @@ class CoattentiveTransformerLink(NamedLink):
         self.n_mems = n_mems
         self.memory = memory
         self.sequence = sequence
+        self.att_vals = None
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size*n_targets,
@@ -501,6 +504,13 @@ class CoattentiveTransformerLink(NamedLink):
         # This conditioned is not checked by the transformer module architecture
         assert all([ms == ts for ms, ts in zip(x.shape[1:], target.shape[1:])])
         outputs = self.transformer_dec(memory=x, tgt=target).transpose(-2, 0)
+        if self.get_att:
+            self.att_vals = []
+            out = target
+            for mod in self.transformer_dec.layers:
+                self.att_vals.append(
+                mod.multihead_attn(out, x, x)[1])
+                out = mod(out, x)
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
                     self.params.items()}
@@ -534,18 +544,23 @@ class CoattentiveTransformerLink(NamedLink):
 
 
 class ConditionalCoattentiveTransformerLink(NamedLink):
+    get_att = False
+
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, memory=None, targets=None,
-                 nheads=2):
+                 nheads=2, minimal_enc=False):
         super(ConditionalCoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
         output_size = int(output_size/n_mems)
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
-        self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size*n_mems,
-                                                                      dropout=dropout, activation='gelu', n_mems=n_mems)
-                                                  , depth)
+        if minimal_enc:
+            self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
+        else:
+            self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size*n_mems,
+                                                                                dropout=dropout, activation='gelu',
+                                                                                n_mems=n_mems), depth)
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
         self.memory, self.targets = memory, targets
@@ -553,6 +568,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         self.bn = nn.BatchNorm1d(z_size)
         self.n_mems, self.output_size = n_mems, output_size
         self.bidirectional = bidirectional
+        self.att_vals = None
 
         if embedding is not None:
             self.sbn = sbn
@@ -588,8 +604,120 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
         outputs = self.transformer_dec(memory=memory, tgt=targets, tgt_mask=target_mask).transpose(-2, 0)
 
+        if self.get_att:
+            self.att_vals = []
+            out = targets
+            for mod in self.transformer_dec.layers:
+                self.att_vals.append(
+                mod.multihead_attn(out, memory, memory)[1])
+                out = mod(out, x)
+
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
                     self.params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        return z_params
+
+    def _generate_square_subsequent_mask(self, sz):
+        device = next(self.parameters()).device
+        mask = (torch.triu(torch.ones(sz, sz, device=device)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+
+class ConditionalCoattentiveTransformerLink2(NamedLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, sn_mems=20, tn_mems=20, memory=None,
+                 targets=None, nheads=2, minimal_enc=False):
+        super(ConditionalCoattentiveTransformerLink2, self).__init__(input_size, output_size, z_size, depth,
+                                                                    params, embedding, highway, dropout=dropout,
+                                                                    batchnorm=batchnorm, residual=residual)
+        output_size = int(output_size/tn_mems)
+
+        if memory is not None:
+            if minimal_enc:
+                self.transformer_enc = MinimalTransformerEncoder(output_size, sn_mems)
+            else:
+                self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads,
+                                                                                    dim_feedforward=output_size*sn_mems,
+                                                                                    dropout=dropout, activation='gelu',
+                                                                                    n_mems=sn_mems), depth)
+            self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads,
+                                                                              dim_feedforward=output_size,
+                                                                              dropout=dropout, activation='gelu'), depth)
+        else:
+            self.transformer_dec = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads,
+                                                                                dim_feedforward=output_size,
+                                                                                dropout=dropout, activation='gelu',
+                                                                                n_mems=tn_mems), depth)
+
+        self.memory, self.targets = memory, targets
+        self.pe = MinimalTransformerEncoder(output_size, tn_mems)
+        self.bn = nn.BatchNorm1d(z_size)
+        self.sn_mems, self.tn_mems, self.output_size = sn_mems, tn_mems, output_size
+        self.bidirectional = bidirectional
+
+        if embedding is not None:
+            self.sbn = sbn
+            if sbn is not None:
+                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
+            else:
+                z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, int(z_size/tn_mems))
+                                                     for param in params})
+        assert self.residual is None, "Named links still can't have residuals"
+
+    def forward(self, x, z_prev=None, lens=None):
+        targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
+        seq_len = targets.shape[-2]
+        targets = targets[..., 0, :]
+        targets = targets.view((*targets.shape[:-1], self.tn_mems, self.output_size))
+
+        if targets.ndim > 3:
+            batch_orig_shape = targets.shape[:-2]
+            targets = targets.view(-1, *targets.shape[-2:])
+        else:
+            batch_orig_shape = None
+
+        targets = self.pe(targets.transpose(-2, 0))
+        target_mask = self._generate_square_subsequent_mask(targets.shape[0]) if not self.bidirectional else None
+        if self.memory is not None:
+            memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
+            memory = memory.view((*memory.shape[:-1], self.sn_mems, self.output_size))
+            if batch_orig_shape is not None:
+                memory = memory.view(-1, *memory.shape[-2:])
+                targets = targets.view(-1, *targets.shape[-2:])
+
+            memory = memory.transpose(-2, 0)
+            memory = self.transformer_enc(memory)
+
+            # This conditioned is not checked by the transformer module architecture
+            assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
+            outputs = self.transformer_dec(memory=memory, tgt=targets, tgt_mask=target_mask).transpose(-2, 0)
+        else:
+            outputs = self.transformer_dec(targets, mask=target_mask).transpose(-2, 0)
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+                    self.params.items()}
+        z_params = {k: v.reshape(*v.shape[:-2], 1, v.shape[-2] * v.shape[-1]).expand(*v.shape[:-2], seq_len,
+                                                                                     v.shape[-2] * v.shape[-1])
+                    for k, v in z_params.items()}
+
         if batch_orig_shape is not None:
             z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
 
@@ -665,3 +793,13 @@ class SpecialTransformerEncoder(TransformerEncoderLayer):
         src = src + self.dropout2(src2)
         src = self.norm2(src)
         return src
+
+
+class MinimalTransformerEncoder(nn.Module):
+    def __init__(self, d_model, n_mems=20):
+        super(MinimalTransformerEncoder, self).__init__()
+        self.embs = nn.Embedding(n_mems, d_model).weight
+
+    def forward(self, src):
+        embs = self.embs.unsqueeze(1).expand(self.embs.shape[0], src.shape[1], self.embs.shape[1])
+        return src+embs

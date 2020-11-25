@@ -72,7 +72,16 @@ class ZGeni(Gaussian):
     def __init__(self, h_params, repnet, index, allow_prior=False):
         size = int(h_params.z_size * h_params.n_latents[index] / max(h_params.n_latents))
         super(ZGeni, self).__init__(size, 'z{}'.format(index+1), h_params.device,
-                                   markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet, sequence_lv=True)
+                                    markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet,
+                                    sequence_lv=True)
+
+
+class ZGenBari(Gaussian):
+    def __init__(self, h_params, repnet, index, allow_prior=False):
+        size = int(h_params.z_size * h_params.n_latents[index] / max(h_params.n_latents))
+        super(ZGenBari, self).__init__(size, 'z_bar{}'.format(index+1), h_params.device,
+                                       markovian=h_params.markovian, allow_prior=allow_prior, repnet=repnet,
+                                       sequence_lv=True, is_placeholder=True)
 
 
 class ZGen1(Gaussian):

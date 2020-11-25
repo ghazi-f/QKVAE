@@ -92,9 +92,14 @@ class BayesNet(nn.Module):
 
         # Checking that all the inputs have been given
         for lv in self.input_variables:
-            assert lv in self.variables_star, "You didn't provide a value for {} ".format(lv.name)
-            if lv.allow_prior:
+            assert lv in self.variables_star or lv.allow_prior, "You didn't provide a value for {} ".format(lv.name)
+            if lv not in self.variables_star:
+                self.variables_hat[lv], self.log_proba[lv] = lv.prior_sample(list(inputs.values())[0].shape[:-1])
+            elif lv.allow_prior:
+                self.variables_hat[lv], _ = lv.prior_sample(list(inputs.values())[0].shape[:-1])
                 self.log_proba[lv] = lv.prior_log_prob(self.variables_star[lv])
+            lv.post_reps, lv.post_samples = lv.post_reps or lv.prior_reps,  lv.post_samples or lv.prior_samples
+            lv.post_log_probas, lv.post_params = lv.post_log_probas or lv.prior_log_probas, lv.post_params or lv.prior_params
         if target is not None:
             # Collecting requirements to estimate the target
             lvs_to_fill = [target]

@@ -38,14 +38,18 @@ parser.add_argument("--decoder_h", default=192*k, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
+parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
+parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false')
+parser.set_defaults(minimal_enc=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
-parser.add_argument("--graph", default='NormalConGen', choices=["Discrete", "Normal", "NormalConGen", "Normal2", "NormalLSTM"], type=str)
+parser.add_argument("--graph", default='Normal', choices=["Discrete", "Normal", "NormalConGen", "NormalSimplePrior",
+                                                          "Normal2",  "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
-parser.add_argument("--grad_clip", default=10., type=float)
+parser.add_argument("--grad_clip", default=100., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.0, type=float)
@@ -70,7 +74,8 @@ GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
          "Normal": get_structured_auto_regressive_graph,
          "NormalConGen": get_structured_auto_regressive_graphConGen,
          "Normal2": get_structured_auto_regressive_graph2,
-         "NormalLSTM": get_lstm_graph}[flags.graph]
+         "NormalLSTM": get_lstm_graph,
+         "NormalSimplePrior": get_structured_auto_regressive_simple_prior}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 MAX_LEN = flags.max_len
@@ -108,8 +113,8 @@ def main():
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=6,
-                       z_emb_dim=flags.z_emb_dim)
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=6, #*0.9*0.9*0.9*0.9*0.9*0.9,
+                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
@@ -191,7 +196,7 @@ def main():
                     h_params.max_elbo *= 0.9
                 #model.reduce_lr(flags.lr_reduction)
                 #print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
-                if h_params.max_elbo < 3 *(3/len(h_params.n_latents)):
+                if h_params.max_elbo < 2.5 *(3/len(h_params.n_latents)):
                     break
 
             # if wait_count == flags.wait_epochs*2:

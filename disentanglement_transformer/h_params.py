@@ -53,7 +53,8 @@ class DefaultHParams:
                  markovian=True,
                  word_dropout=0.0,
                  contiguous_lm=False,
-                 n_latents=1):
+                 n_latents=1,
+                 minimal_enc=False):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -79,6 +80,7 @@ class DefaultHParams:
         self.z_emb_dim = z_emb_dim
         self.text_rep_l = text_rep_l
         self.text_rep_h = text_rep_h
+        self.minimal_enc = minimal_enc
 
         self.z_size = z_size
 
