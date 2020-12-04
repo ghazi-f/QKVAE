@@ -199,7 +199,7 @@ if flags.divide_by != 1:
     flags.decoder_h = int(flags.decoder_h/flags.divide_by)
 
 if flags.pretrained_embeddings:
-    flags.embedding_dim = 100
+    flags.embedding_dim = 300
     #flags.tied_embeddings = True
     flags.decoder_h = flags.embedding_dim
 

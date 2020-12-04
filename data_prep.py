@@ -99,7 +99,8 @@ class HuggingIMDB2:
         self.n_epochs = 0
         self.max_epochs = max_epochs
         if pretrained:
-            ftxt = GloVe('6B', dim=100)#FastText()
+            # ftxt = GloVe('6B', dim=100)
+            ftxt = FastText()
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
@@ -213,7 +214,8 @@ class HuggingAGNews:
         self.n_epochs = 0
         self.max_epochs = max_epochs
         if pretrained:
-            ftxt = GloVe('6B', dim=100)#FastText()
+            # ftxt = GloVe('6B', dim=100)
+            ftxt = FastText()
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
