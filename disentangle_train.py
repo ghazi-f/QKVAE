@@ -47,8 +47,8 @@ parser.add_argument("--graph", default='Normal', choices=["Discrete", "Normal", 
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=3000, type=int)
-parser.add_argument("--anneal_kl1", default=6000, type=int)
+parser.add_argument("--anneal_kl0", default=2000, type=int)
+parser.add_argument("--anneal_kl1", default=4000, type=int)
 parser.add_argument("--grad_clip", default=100., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--dropout", default=0.0, type=float)
@@ -113,8 +113,10 @@ def main():
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, max_elbo=6, #*0.9*0.9*0.9*0.9*0.9*0.9,
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
+                       max_elbo=6,  # max_elbo is paper's beta
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc)
+    print(h_params.max_elbo)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
@@ -138,6 +140,7 @@ def main():
     wait_count = 0
     loss = torch.tensor(1e20)
     mean_loss = 0
+    stabilize_epochs = 0
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
@@ -170,7 +173,8 @@ def main():
                 model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
-
+            if model.step == 7000 or model.step ==7001:
+                h_params.max_elbo = 3.5
             current_time = time()
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0] and ((data.n_epochs % 3) == 0):
@@ -191,13 +195,18 @@ def main():
             if flags.save_all:
                 model.save()
 
-            if wait_count == flags.wait_epochs:
-                if h_params.max_elbo:
-                    h_params.max_elbo *= 0.9
-                #model.reduce_lr(flags.lr_reduction)
-                #print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
-                if h_params.max_elbo < 2.5 *(3/len(h_params.n_latents)):
-                    break
+            # if wait_count >= flags.wait_epochs:
+            #     if h_params.max_elbo and stabilize_epochs == 0:
+            #         h_params.max_elbo *= 0.9
+            #         print("Lower max elbo to ", h_params.max_elbo)
+            #     #model.reduce_lr(flags.lr_reduction)
+            #     #print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
+            #     if h_params.max_elbo < 3.2 *(3/len(h_params.n_latents)):
+            #         stabilize_epochs += 1
+            #         print("Finished stabilization epoch ", stabilize_epochs)
+            #     if stabilize_epochs == 3:
+            #         break
+
 
             # if wait_count == flags.wait_epochs*2:
             #     break
