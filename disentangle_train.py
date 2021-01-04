@@ -7,7 +7,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import NLIGenData2 as Data
+from data_prep import NLIGenData2, OntoGenData
 from disentanglement_transformer.models import DisentanglementTransformerVAE as Model
 from disentanglement_transformer.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer.graphs import *
@@ -17,6 +17,7 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 4, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes"], type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -51,6 +52,8 @@ parser.add_argument("--anneal_kl0", default=2000, type=int)
 parser.add_argument("--anneal_kl1", default=4000, type=int)
 parser.add_argument("--grad_clip", default=100., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
+parser.add_argument("--max_elbo1", default=6.0, type=float)
+parser.add_argument("--max_elbo2", default=3.0, type=float)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.0, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -78,9 +81,9 @@ GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
          "NormalSimplePrior": get_structured_auto_regressive_simple_prior}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
-MAS_ELBO = 5
 GRAD_ACCU = flags.grad_accu
 N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
@@ -114,9 +117,8 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
-                       max_elbo=6,  # max_elbo is paper's beta
+                       max_elbo=flags.max_elbo1,  # max_elbo is paper's beta
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc)
-    print(h_params.max_elbo)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
@@ -173,8 +175,8 @@ def main():
                 model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
-            if model.step == 7000 or model.step ==7001:
-                h_params.max_elbo = 3.5
+            if model.step >= 7000:
+                h_params.max_elbo = flags.max_elbo2
             current_time = time()
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0] and ((data.n_epochs % 3) == 0):
