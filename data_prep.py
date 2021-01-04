@@ -696,6 +696,63 @@ class NLIGenData:
             self.test_iter.init_epoch()
         else:
             raise NameError('Misspelled split name : {}'.format(split))
+
+
+class OntoGenData:
+    def __init__(self, max_len, batch_size, max_epochs, device, pretrained):
+        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<go>', eos_token='<eos>',
+                                unk_token='<unk>', pad_token='<pad>')
+        label_field = data.Field(fix_length=max_len-1, batch_first=True)
+
+        # make splits for data
+        unsup_train, unsup_val, unsup_test = OntoGen.splits([('text', text_field)])
+
+        # build the vocabulary
+        text_field.build_vocab(unsup_train, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
+        label_field.build_vocab(unsup_train)
+
+        # make iterator for splits
+        self.train_iter, _,  _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        _, self.unsup_val_iter,  _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/10), device=device, shuffle=True, sort=False)
+        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+
+        self.vocab = text_field.vocab
+        self.tags = label_field.vocab
+        self.text_field = text_field
+        self.label_field = label_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
 # ======================================================================================================================
 # ========================================== OTHER UTILITIES ===========================================================
 
@@ -1038,6 +1095,54 @@ class UDPOS1_2(Dataset):
 
         return super(UDPOS1_2, cls).splits(
             fields=fields, root=root, train=train, validation=validation,
+            test=test, **kwargs)
+
+
+class OntoGen(Dataset):
+    urls = []
+    dirname = 'ontonotes'
+    name = 'ontonotes'
+
+    @staticmethod
+    def sort_key(example):
+        for attr in dir(example):
+            if not callable(getattr(example, attr)) and \
+                    not attr.startswith("__"):
+                return len(getattr(example, attr))
+        return 0
+
+    def __init__(self, path, fields, encoding="utf-8", separator="\t", **kwargs):
+        examples = []
+        columns = []
+
+        with open(path, encoding=encoding) as input_file:
+            for line in input_file:
+                line = line.strip()
+                if line == "":
+                    if columns and 0 < len(columns[0]) <= 16:
+                        examples.append(data.Example.fromlist(columns, fields))
+                    columns = []
+                else:
+                    elements = list(line.split(separator))
+                    for i, column in enumerate([elements[0]]):
+                        if len(columns) < i + 1:
+                            columns.append([])
+                        columns[i].append(column)
+
+            if columns:
+                examples.append(data.Example.fromlist(columns, fields))
+        print("Collected {} examples from {}".format(len(examples), path))
+        super(OntoGen, self).__init__(examples, fields, **kwargs)
+    @classmethod
+    def splits(cls, fields, root=".data", train="onto.train.ner",
+               validation="onto.development.ner",
+               test="onto.test.ner", **kwargs):
+        """Loads the Universal Dependencies Version 1 POS Tagged
+        data.
+        """
+        print("Loading Ontonotes data ...")
+        return super(OntoGen, cls).splits(
+            path=os.path.join(".data", "ontonotes"), fields=fields, root=root, train=train, validation=validation,
             test=test, **kwargs)
 
 
