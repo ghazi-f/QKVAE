@@ -172,8 +172,10 @@ class ELBo(BaseCriterion):
                     loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl/loss_threshold)
                                        , dim=(0, 1)) / self.valid_n_samples
                 if loss_choice == 1:
-                    max_kl = torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
-                              for lv_n in self.infer_lvs.keys()]).exp().sum(0).log()
+                    kl_stack = torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
+                              for lv_n in self.infer_lvs.keys()])
+                    max_max_kl = kl_stack.max(0)[0]
+                    max_kl = (kl_stack-max_max_kl.unsqueeze(0)).exp().sum(0).log()+max_max_kl*kl_stack.shape[0]
                     loss = torch.sum((-self.log_p_xIz.exp()+(coeff * max_kl/loss_threshold).exp()).log(),
                                      dim=(0, 1)) / self.valid_n_samples
                 elif loss_choice == 2:
