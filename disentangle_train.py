@@ -54,6 +54,7 @@ parser.add_argument("--grad_clip", default=100., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=3.0, type=float)
+parser.add_argument("--max_elbo_choice", default=0, type=int)
 parser.add_argument("--dropout", default=0.0, type=float)
 parser.add_argument("--word_dropout", default=.0, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -117,7 +118,7 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
-                       max_elbo=flags.max_elbo1,  # max_elbo is paper's beta
+                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
@@ -176,7 +177,7 @@ def main():
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
             if model.step >= 7000:
-                h_params.max_elbo = flags.max_elbo2
+                h_params.max_elbo = [flags.max_elbo_choice, flags.max_elbo2]
             current_time = time()
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0] and ((data.n_epochs % 3) == 0):
@@ -196,19 +197,6 @@ def main():
                 wait_count += 1
             if flags.save_all:
                 model.save()
-
-            # if wait_count >= flags.wait_epochs:
-            #     if h_params.max_elbo and stabilize_epochs == 0:
-            #         h_params.max_elbo *= 0.9
-            #         print("Lower max elbo to ", h_params.max_elbo)
-            #     #model.reduce_lr(flags.lr_reduction)
-            #     #print('Learning rate reduced to ', [gr['lr'] for gr in model.optimizer.param_groups])
-            #     if h_params.max_elbo < 3.2 *(3/len(h_params.n_latents)):
-            #         stabilize_epochs += 1
-            #         print("Finished stabilization epoch ", stabilize_epochs)
-            #     if stabilize_epochs == 3:
-            #         break
-
 
             # if wait_count == flags.wait_epochs*2:
             #     break

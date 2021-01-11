@@ -164,13 +164,19 @@ class ELBo(BaseCriterion):
             kl = 0
         if self.h_params.max_elbo:
             # Didn't implement observed here
+            loss_choice, loss_threshold = self.h_params.max_elbo
             if not actual and type(kl) != int:
-                loss_choice = 0
                 if loss_choice == 0:
                     max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
                               for lv_n in self.infer_lvs.keys()]), dim=0)[0]
-                    loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl/self.h_params.max_elbo), dim=(0, 1)) / self.valid_n_samples
-                elif loss_choice == 1:
+                    loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl/loss_threshold)
+                                       , dim=(0, 1)) / self.valid_n_samples
+                if loss_choice == 1:
+                    max_kl = torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
+                              for lv_n in self.infer_lvs.keys()]).exp().sum(0).log()
+                    loss = torch.sum((-self.log_p_xIz.exp()+(coeff * max_kl/loss_threshold).exp()).log(),
+                                     dim=(0, 1)) / self.valid_n_samples
+                elif loss_choice == 2:
                     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
                     zi_coeffs = {'z'+str(len(self.h_params.n_latents)+1-i): 0 if self.model.step < anl0 else (
                                         (self.model.step - anl0) / ((anl1 - anl0)*i))
@@ -181,9 +187,9 @@ class ELBo(BaseCriterion):
                                    for lv_n in self.infer_lvs.keys()
                                    if observed is None or (lv_n not in observed)])
                     this_kl *= self.sequence_mask
-                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/loss_threshold),
                                        dim=(0, 1)) / self.valid_n_samples
-                elif loss_choice == 2:
+                elif loss_choice == 3:
                     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
                     n_lat = self.h_params.n_latents
                     zi_coeffs = {'z'+str(len(n_lat)+1-i): (0 if self.model.step < anl0 else (
@@ -195,9 +201,9 @@ class ELBo(BaseCriterion):
                                                      * zi_coeffs[lv_n]
                                                      for lv_n in self.infer_lvs.keys()]), dim=0)[0]
                     this_kl *= self.sequence_mask
-                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/loss_threshold),
                                        dim=(0, 1)) / self.valid_n_samples
-                elif loss_choice == 3:
+                elif loss_choice == 4:
 
                     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
                     anl_gap = anl1-anl0
@@ -210,10 +216,10 @@ class ELBo(BaseCriterion):
                                    for lv_n in self.infer_lvs.keys()
                                    if observed is None or (lv_n not in observed)])
                     this_kl *= self.sequence_mask
-                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/self.h_params.max_elbo),
+                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/loss_threshold),
                                        dim=(0, 1)) / self.valid_n_samples
 
-                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/self.h_params.max_elbo),
+                # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/loss_threshold),
                 #                    dim=(0, 1)) / self.valid_n_samples
             else:
                 loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
