@@ -595,8 +595,11 @@ def batch_sent_relations(sents):
             sent_dict.append({})
             for v_i in el['description'].split('[')[1:]:
                 in_bracket = v_i.split(']')[0]
-                arg_l, arg_str = in_bracket.split(':')
-                sent_dict[-1][arg_l] = arg_str
+                try:
+                    arg_l, arg_str = in_bracket.split(':')
+                    sent_dict[-1][arg_l] = arg_str
+                except ValueError as e:
+                    print('this raised an anomaly:', el)
         sent_dicts.append(sent_dict)
     return sent_dicts
 
