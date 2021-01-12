@@ -411,7 +411,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # MIG-sup analogous quantity
         sup_dis_diffs1 = 0
         for i in range(sum(self.h_params.n_latents)):
-            largest2 = np.array(grouped.mean()[d_rel_types].transpose().nlargest(2, i)[i].array)
+            try:
+                largest2 = np.array(grouped.mean()[d_rel_types].transpose().nlargest(2, i)[i].array)
+            except BaseException as e:
+                print(d_rel_types, grouped)
+                raise e
             sup_dis_diffs1 += largest2[0] - largest2[1]
         sup_dis_diffs2 = 0
         for i in range(sum(self.h_params.n_latents)):
