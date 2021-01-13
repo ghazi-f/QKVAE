@@ -381,7 +381,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         super(DisentanglementTransformerVAE, self).train(mode=mode)
 
     def get_disentanglement_summaries(self):
-        df = self._get_stat_data_frame(n_samples=40, n_alterations=10, batch_size=20)
+        df = self._get_stat_data_frame(n_samples=80, n_alterations=10, batch_size=20)
         df.to_csv(os.path.join(self.h_params.viz_path, 'statdf_{}.csv'.format(self.step)))
         # df = pd.read_csv('Autoreg5stats2.csv')
         df['new_rels'] = df['new_rels'].map(revert_to_l1)

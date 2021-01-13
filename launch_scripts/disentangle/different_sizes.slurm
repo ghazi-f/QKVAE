@@ -48,9 +48,19 @@
 #srun python disentangle_train.py --test_name "Disentanglement/softloss3" --max_elbo_choice 1 --n_epochs 40
 #srun python disentangle_train.py --test_name "Disentanglement/softloss4" --max_elbo_choice 1 --n_epochs 40
 #srun python disentangle_train.py --test_name "Disentanglement/softloss5" --max_elbo_choice 1 --n_epochs 40
-srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig1" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
-srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig2" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
-srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig3" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
-srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig4" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
-srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig5" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
+#srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig1" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
+#srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig2" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
+#srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig3" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
+#srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig4" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
+#srun python disentangle_train.py --test_name "Disentanglement/ontonotesbig5" --n_latents 8 8 8 --data ontonotes --n_epochs 40 --graph NormalConGen --max_elbo2 3.0 --encoder_l 3
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeep1" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeep2" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeep3" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeep4" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeep5" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper1" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper2" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper3" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper4" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
+srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper5" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
 
