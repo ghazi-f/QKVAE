@@ -2,6 +2,7 @@
 import io
 import os
 import json
+import re
 
 import torchtext.data as data
 from torchtext.data import Dataset, Example
@@ -456,7 +457,7 @@ class PTBDaTA:
 class UDPoSDaTAFull:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
                  pretrained=False):
-        text_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<go>'
+        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<go>'
                                 , is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
         label_field = data.Field(fix_length=max_len-1, batch_first=True)
 
@@ -471,27 +472,6 @@ class UDPoSDaTAFull:
         # build the vocabulary
         text_field.build_vocab(unsup_train)#, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
         label_field.build_vocab(train)
-        # self.train_iter, _,  _ = data.BPTTIterator.splits((unsup_train, unsup_val, unsup_test),
-        #                                                                     batch_size=batch_size, bptt_len=max_len,
-        #                                                                     device=device, repeat=False, shuffle=False,
-        #                                                                     sort=False)
-        # _, self.unsup_val_iter,  _ = data.BPTTIterator.splits((unsup_train, unsup_val, unsup_test),
-        #                                                                     batch_size=int(batch_size/10), bptt_len=max_len,
-        #                                                                     device=device, repeat=False, shuffle=False,
-        #                                                                     sort=False)
-        # Remaking splits according to supervision proportions
-        exlist = [ex for ex in train+val]
-        train =Dataset(exlist, {'text': text_field, 'label': label_field})
-        dev_start, dev_end = int(len(train) / 5 * (dev_index - 1)), \
-                             int(len(train) / 5 * (dev_index))
-        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start * sup_proportion), \
-                                                             int(dev_end + (len(train) - dev_end) * sup_proportion)
-        unsup_start, unsup_end = 0, int(len(unsup_train) * unsup_proportion)
-        val = Dataset(train[dev_start:dev_end], {'text': text_field, 'label': label_field})
-        train = Dataset(train[train_start1:train_end1] + train[train_start2:train_end2],
-                        {'text': text_field, 'label': label_field})
-        unsup_train = Dataset(unsup_train[unsup_start:unsup_end], {'text': text_field})
-        self.other_domains = {}
 
         # make iterator for splits
 
@@ -805,6 +785,77 @@ class OntoGenData:
             raise NameError('Misspelled split name : {}'.format(split))
 
 
+class LexNorm2015Data:
+    def __init__(self, max_len, max_c_len, batch_size, max_epochs, device, sup_proportion, dev_index=1):
+        noise_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>',
+                                 init_token='<go>', is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        clean_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>',
+                                 init_token='<go>', is_target=True)
+        c_noise_field = data.Field(lower=False, batch_first=True,  fix_length=max_c_len*max_len, pad_token='<pad>',
+                                 init_token=None, is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        c_clean_field = data.Field(lower=False, batch_first=True,  fix_length=max_c_len*max_len, pad_token='<pad>',
+                                 init_token=None, is_target=True)
+
+        # make splits for data
+        train, val, test = LexNorm2015.splits((('noise', noise_field), ('clean', clean_field),
+                                               ('c_noise', c_noise_field), ('c_clean', c_clean_field)),
+                                              max_c_len=max_c_len)
+
+        # build the vocabulary
+        noise_field.build_vocab(train)#, max_size=VOCAB_LIMIT)
+        clean_field.build_vocab(train)#, max_size=VOCAB_LIMIT)
+        c_noise_field.build_vocab(train)
+        c_clean_field.build_vocab(train)
+        # Remaking splits according to supervision proportions
+        exlist = [ex for ex in train+val]
+        dataset_fields = {'noise': noise_field, 'clean': clean_field, 'c_noise': c_noise_field, 'c_clean': c_clean_field}
+        train = Dataset(exlist, dataset_fields)
+        dev_start, dev_end = int(len(train) / 5 * (dev_index - 1)), \
+                             int(len(train) / 5 * (dev_index))
+        train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start * sup_proportion), \
+                                                             int(dev_end + (len(train) - dev_end) * sup_proportion)
+        val = Dataset(train[dev_start:dev_end], dataset_fields)
+        train = Dataset(train[train_start1:train_end1] + train[train_start2:train_end2], dataset_fields)
+
+        # make iterator for splits
+        self.train_iter, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+
+        self.noise_vocab = noise_field.vocab
+        self.clean_vocab = clean_field.vocab
+        self.c_noise_vocab = c_noise_field.vocab
+        self.c_clean_vocab = c_clean_field.vocab
+        self.noise_field = noise_field
+        self.clean_field = clean_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+
+        print("Number of words: noisy {}, clean {}".format(len(self.noise_vocab.stoi), len(self.clean_vocab.stoi)))
+        print("Number of characters: noisy {}, clean {}".format(len(self.c_noise_vocab.stoi),
+                                                            len(self.c_clean_vocab.stoi)))
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
 # ======================================================================================================================
 # ========================================== OTHER UTILITIES ===========================================================
 
@@ -914,6 +965,7 @@ class MyPennTreebank(LanguageModelingDataset):
         return data.BPTTIterator.splits(
             (train, val, test), batch_size=batch_size, bptt_len=bptt_len,
             device=device)
+
 
 class YahooLM(LanguageModelingDataset):
     """The Penn Treebank dataset.
@@ -1262,3 +1314,77 @@ class AmazonSoftware(AmazonBase):
 class AmazonIndus(AmazonBase):
     name = "amazon_industrial"
     data_path = os.path.join(".data", "amazon", "Industrial_and_Scientific_5.json")
+
+
+class LexNorm2015(Dataset):
+    # Universal Dependencies English Web Treebank.
+    # Download original at http://universaldependencies.org/
+    # License: http://creativecommons.org/licenses/by-sa/4.0/
+    urls = []
+    dirname = ''
+    name = ''
+
+    @staticmethod
+    def sort_key(example):
+        for attr in dir(example):
+            if not callable(getattr(example, attr)) and \
+                    not attr.startswith("__"):
+                return len(getattr(example, attr))
+        return 0
+
+    def preproc(self, text_array):
+        link_regex = re.compile('https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+', re.DOTALL)
+        output = []
+        for w in text_array:
+            for w_i in w.split():
+                is_url = len(re.findall(link_regex, w_i))
+                w_i = '<hash>' if w_i.startswith('#') else '<at>' if w_i.startswith('@') else '<url>' if is_url else w_i
+                output.append(w_i.lower())
+        return output
+
+    def to_char(self, text_array, max_c_len):
+        output = []
+        for w in text_array:
+            char_version = ['<go>']+list(w)
+            if len(char_version) < max_c_len:
+                char_version += ['<pad>']*(max_c_len-len(char_version))
+            else:
+                char_version = char_version[: max_c_len]
+            output.extend(char_version)
+        return output
+
+    def __init__(self, path, fields, encoding="utf-8", separator="\t", **kwargs):
+        max_c_len = kwargs.pop('max_c_len', None)
+        examples = []
+        columns = []
+        n_examples, n_words, n_chars = 0, [], []
+        with open(path, encoding=encoding) as input_file:
+            json_file = json.load(input_file)
+            for line in json_file:
+                input_i, output_i = self.preproc(line['input']), self.preproc(line['output'])
+                c_input_i, c_output_i = self.to_char(input_i, max_c_len), self.to_char(output_i, max_c_len)
+                examples.append(data.Example.fromlist([input_i, output_i, c_input_i, c_output_i],
+                                                      fields))
+                n_examples += 1
+                n_words.append(len(input_i))
+                n_chars.extend([len(input_ij) for input_ij in input_i])
+
+            if columns:
+                examples.append(data.Example.fromlist(columns, fields))
+        print("Dataset has {}  examples. statistics:\n -words: {}+-{}(quantiles(0.5, 0.7, 0.9, 0.95, 0.99:{},{},{},{},{})\n"
+              " -characters: {}+-{} characters(quantiles(0.5, 0.7, 0.9, 0.95, 0.99:{},{},{},{},{})".format(
+            n_examples, np.mean(n_words), np.std(n_words), *np.quantile(n_words,[0.5, 0.7, 0.9, 0.95, 0.99]),
+            np.mean(n_chars), np.std(n_chars), *np.quantile(n_chars,[0.5, 0.7, 0.9, 0.95, 0.99])))
+        super(LexNorm2015, self).__init__(examples, fields, **kwargs)
+
+    @classmethod
+    def splits(cls, fields, root=".data", train="train_data.json",
+               validation="train_data.json",
+               test="test_truth.json", **kwargs):
+        """Loads the Universal Dependencies Version 1 POS Tagged
+        data.
+        """
+
+        return super(LexNorm2015, cls).splits(
+            path=os.path.join(".data", "lexnorm2015"), fields=fields, root=root, train=train, validation=validation,
+            test=test, **kwargs)

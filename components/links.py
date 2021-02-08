@@ -27,6 +27,8 @@ class BaseLink(nn.Module):
         self.dropout = dropout
         self.batchnorm = batchnorm
         self.residual = residual
+        self.prev_state = None
+        self.next_state = None
 
 
 class SequentialLink(BaseLink):
@@ -270,6 +272,92 @@ class LSTMLink(BaseLink):
             device = next(self.parameters()).device
             lens = torch.ones(x.shape[1], device=device) * x.shape[0]
         packed_x = nn.utils.rnn.pack_padded_sequence(x, lens, enforce_sorted=False)
+        packed_outputs, (hidden, cell) = self.rnn(packed_x, self.prev_state)
+        self.next_state = (hidden, cell)
+        if self.last_state:
+            outputs = torch.cat([hidden[-1, :, :], hidden[-2, :, :]] if self.bidirectional else
+                                [hidden[-1, :, :]], dim=1)
+            outputs = outputs.unsqueeze(1).repeat(1, x.shape[0], 1)
+        else:
+            outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs, batch_first=True, total_length=x.shape[0])
+        if batch_shape is not None:
+            outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+                    self.params.items()}
+
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        if self.residual is not None:
+            z_params['loc'] = z_params_res['loc'] + z_params['loc']
+
+        #z_params = {'logits': self.hidden_to_logits(self.hidden_to_z_params['logits'](self.mlp[0](self.drp_layer(x))))}
+        #z_params = {'logits': self.hidden_to_logits((self.drp_layer(x)))}
+        return z_params
+
+
+class SublevelLSTMLink(NamedLink):
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, last_state=False, bidirectional=False, sub_lvl_vars=None,
+                 sub_lvl_size=None):
+        assert sub_lvl_size is not None and sub_lvl_vars is not None
+        super(SublevelLSTMLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
+                                      dropout=dropout, batchnorm=batchnorm, residual=residual)
+        self.sub_lvl_size, self.sub_lvl_vars = sub_lvl_size, sub_lvl_vars
+        output_size = int(output_size/self.sub_lvl_size)
+        self.rnn = nn.LSTM(input_size, output_size, depth, batch_first=False, bidirectional=bidirectional,
+                           dropout=dropout)
+        self.last_state = last_state
+        self.bidirectional = bidirectional
+
+        self.drp_layer = torch.nn.Dropout(p=dropout)
+        self.bn = nn.BatchNorm1d(z_size)
+
+        if bidirectional:
+            output_size *= 2
+        if embedding is not None:
+            assert output_size == embedding.weight.shape[1], 'output size {} is different from ' \
+                                                             'embedding size {}'.format(output_size,
+                                                                                        embedding.weight.shape[1])
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size)
+                                                     for param in params})
+            self.hidden_to_z_params['logits'].weight = embedding.weight
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
+
+    def forward(self, x, z_prev=None, lens=None):
+        if self.residual is not None:
+            x_res, x = x
+            x_res = self.drp_layer(x_res)
+            z_params_res = self.residual['link'](x_res, z_prev)
+
+        sub_lvl_x = []
+        for k, v in x.values():
+            if k in self.sub_lvl_vars:
+                sub_lvl_x.append(x[k].reshape(*x.shape[:-1], self.sub_lvl_size,
+                                              int(x.shape[-1]/self.sub_lvl_size)))
+            else:
+                expand_arg = (x[k].shape[:-1], self.sub_lvl_size, x[k].shape[-1])
+                sub_lvl_x.append(x[k].unsqueeze(-2).expand(expand_arg))
+
+        x = torch.cat(sub_lvl_x, -1)
+        if x.ndim>3:
+            batch_shape = x.shape[:-2]
+            x = x.view(-1, *x.shape[-2:])
+        else:
+            batch_shape = None
+        x = self.drp_layer(x)
+
+        x = x.transpose(0, 1)
+        if lens is None:
+            device = next(self.parameters()).device
+            lens = torch.ones(x.shape[1], device=device) * x.shape[0]
+        packed_x = nn.utils.rnn.pack_padded_sequence(x, lens, enforce_sorted=False)
 
         packed_outputs, (hidden, cell) = self.rnn(packed_x)
 
@@ -284,6 +372,7 @@ class LSTMLink(BaseLink):
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
                     self.params.items()}
+        z_params = {k: v.view(*v.shape[:-2], v.shape[-1]*v.shape[-2]) for k, v in z_params.items()}
 
         if 'loc' in z_params and self.batchnorm:
             out_shape = z_params['loc'].shape
