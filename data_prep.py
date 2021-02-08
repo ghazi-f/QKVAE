@@ -402,7 +402,58 @@ class IMDBData:
             raise NameError('Misspelled split name : {}'.format(split))
 
 
-class UDPoSDaTA:
+class PTBDaTA:
+    def __init__(self, max_len, batch_size, max_epochs, device, pretrained=False):
+        text_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>'
+                                , is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+
+        # make splits for data
+        # train, val, test = MyPennTreebank.splits(text_field)
+        train, val, test = datasets.PennTreebank.splits(text_field)
+        # build the vocabulary
+        text_field.build_vocab(train)#, max_size=VOCAB_LIMIT)
+        # make iterator for splits
+        self.train_iter, _,  _ = data.BPTTIterator.splits((train, val, test),
+                                                          batch_size=batch_size, bptt_len=max_len,
+                                                          device=device, repeat=False, shuffle=False,
+                                                          sort=False)
+        _, self.val_iter,  self.test_iter = data.BPTTIterator.splits((train, val, test),
+                                                              batch_size=int(batch_size/10), bptt_len=max_len,
+                                                              device=device, repeat=False, shuffle=False,
+                                                              sort=False)
+        self.vocab = text_field.vocab
+        self.text_field = text_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        if pretrained:
+            ftxt = GloVe('6B', dim=100)
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
+class UDPoSDaTAFull:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
                  pretrained=False):
         text_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>', init_token='<go>'
@@ -462,7 +513,7 @@ class UDPoSDaTA:
         self.n_epochs = 0
         self.max_epochs = max_epochs
         if pretrained:
-            ftxt = GloVe('6B', dim=100)
+            ftxt = FastText()
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
@@ -485,6 +536,7 @@ class UDPoSDaTA:
             self.unsup_val_iter.init_epoch()
         else:
             raise NameError('Misspelled split name : {}'.format(split))
+
 
 class UDPoSDaTAFull:
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,

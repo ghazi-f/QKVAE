@@ -10,6 +10,7 @@ from components.links import BaseLink
 
 from time import time
 
+
 class BayesNet(nn.Module):
     def __init__(self, vertices):
         super(BayesNet, self).__init__()
@@ -153,8 +154,12 @@ class BayesNet(nn.Module):
                             this_len = lens
                     else:
                         this_len = lens
+                    self.approximator[lv].prev_state = prev_states[lv]
                     lv(self.approximator[lv], lv_conditions, gt_samples=gt_lv, complete=(lv in self.child) or complete,
                        lens=this_len)
+                    if lv.rep_net is None:
+                        lv.prev_state = self.approximator[lv].next_state
+                    self.approximator[lv].next_state, self.approximator[lv].prev_state = None, None
                     if eval:
                         if isinstance(lv, Categorical):
                             self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],
@@ -174,6 +179,7 @@ class BayesNet(nn.Module):
                         for lv in self.variables])
         new_prev_state = {v: tuple(v_i.detach() for v_i in v.prev_state) if v.prev_state is not None else None
                           for v in self.variables}
+        for v in self.variables: v.prev_state = None
         return new_prev_state
 
     def _ready_condition(self, lv, n_iw, max_lvl, prev_states, dp_lvl, force_iw, eval):
