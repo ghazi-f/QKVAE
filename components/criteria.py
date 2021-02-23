@@ -135,6 +135,9 @@ class ELBo(BaseCriterion):
         self.log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
                                      self.gen_net.variables_star[self.generated_v].reshape(-1)
                                      ).view(self.gen_net.variables_star[self.generated_v].shape) * self.sequence_mask
+        if self.generated_v.sub_lvl_size is not None:
+            self.sequence_mask = self.sequence_mask.sum(-1)
+            self.log_p_xIz = self.log_p_xIz.sum(-1)
 
         self.valid_n_samples = torch.sum(self.sequence_mask)
         # Applying KL Thresholding (Free Bits)
@@ -233,9 +236,12 @@ class ELBo(BaseCriterion):
                 if actual and thr is None:
                     unweighted_loss = loss
                 else:
-                    un_log_p_xIz = - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
-                                                              self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                                              ).view(self.gen_net.variables_star[self.generated_v].shape)
+                    un_log_p_xIz = \
+                        - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
+                                                     self.gen_net.variables_star[self.generated_v].reshape(-1)
+                                                     ).view(self.gen_net.variables_star[self.generated_v].shape)
+                    if self.generated_v.sub_lvl_size is not None:
+                        un_log_p_xIz = un_log_p_xIz.sum(-1)
                     un_log_p_xIz *= self.sequence_mask
                     kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=None)
                               for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
@@ -345,21 +351,28 @@ class IWLBo(ELBo):
         vocab_size = self.generated_v.size
         criterion = self._unweighted_criterion if actual else self.criterion
         self.sequence_mask = (self.gen_net.variables_star[self.generated_v] != self.generated_v.ignore).float()
+        if self.generated_v.sub_lvl_size is not None:
+            self.sequence_mask = self.sequence_mask.sum(-1)
         self.valid_n_samples = torch.sum(self.sequence_mask)
         loss_shape = self.generated_v.post_params['logits'].shape[:-1]
         if len(loss_shape) > 2:
             logits, gt = self.generated_v.post_params['logits'], self.gen_net.variables_star[self.generated_v]
-            batchxseq_size = gt.shape[-2]*gt.shape[-1]
+            if self.generated_v.sub_lvl_size is not None:
+                batchxseq_size = gt.shape[-3]*gt.shape[-2]*gt.shape[-1]
+            else:
+                batchxseq_size = gt.shape[-2]*gt.shape[-1]
             logits, gt = logits.reshape(-1, batchxseq_size, vocab_size), torch.unbind(gt.reshape(-1, batchxseq_size))[0]
             log_p_xIz = []
             for logits_i in torch.unbind(logits):
                 log_p_xIz.append(- criterion(logits_i, gt))
-            log_p_xIz = torch.cat(log_p_xIz, dim=0).view(loss_shape)
+            if self.generated_v.sub_lvl_size:
+                log_p_xIz = torch.cat(log_p_xIz, dim=0).view((*loss_shape, self.generated_v.sub_lvl_size)).sum(-1)
+            else:
+                log_p_xIz = torch.cat(log_p_xIz, dim=0).view(loss_shape)
         else:
             log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
                                     self.gen_net.variables_star[self.generated_v].reshape(-1)
                                     ).view(self.generated_v.post_params['logits'].shape[:-1])
-
 
         # Applying KL Annealing (or it's equivalent for IWAEs)
         if self.h_params.anneal_kl and not actual:
@@ -454,6 +467,8 @@ class IWLBo(ELBo):
 def kullback_liebler(lv0, lv1, thr=None, slice=None):
     # Accounting for the case when it's not estimated do to pure reconstruction phase
     params0, params1 = lv0.post_params, lv1.post_params
+    assert lv0.sub_lvl_size is None and lv1.sub_lvl_size is None \
+        , "Kullback leibler for sublvl variables is still not implemented"
     if params1 is None:
         return 0
     if isinstance(lv0, Gaussian) and isinstance(lv1, Gaussian):

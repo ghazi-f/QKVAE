@@ -6,13 +6,13 @@ from components.latent_variables import Categorical, Gaussian
 class CInfer(Categorical):
     def __init__(self, h_params, embeddings):
         super(CInfer, self).__init__(embeddings.weight.shape[0], 'c', h_params.device, embeddings,
-                                     h_params.c_ignore_index)
+                                     h_params.c_ignore_index, sub_lvl_size=h_params.c_max_len)
 
 
 class CGen(Categorical):
     def __init__(self, h_params, embeddings):
         super(CGen, self).__init__(embeddings.weight.shape[0], 'c', h_params.device, embeddings,
-                                   h_params.c_ignore_index)
+                                   h_params.c_ignore_index, sub_lvl_size=h_params.c_max_len)
 
 
 class CPrevGen(Categorical):
@@ -25,13 +25,13 @@ class CPrevGen(Categorical):
 class WidInfer(Categorical):
     def __init__(self, h_params, embeddings):
         super(WidInfer, self).__init__(embeddings.weight.shape[0], 'wid', h_params.device, embeddings,
-                                       h_params.w_ignore_index)
+                                       h_params.w_ignore_index, is_placeholder=True)
 
 
 class WidGen(Categorical):
     def __init__(self, h_params, embeddings):
         super(WidGen, self).__init__(embeddings.weight.shape[0], 'wid', h_params.device, embeddings,
-                                     h_params.w_ignore_index)
+                                     h_params.w_ignore_index, is_placeholder=True)
 
 
 class YorigInfer(Categorical):
@@ -48,20 +48,19 @@ class YorigGen(Categorical):
 
 class WInfer(Gaussian):
     def __init__(self, h_params):
-        super(WInfer, self).__init__(h_params.w_embed_size, 'w', h_params.device,
+        super(WInfer, self).__init__(h_params.w_embedding_dim, 'w', h_params.device,
                                         stl=True)
 
 
 class WGen(Gaussian):
     def __init__(self, h_params):
-        super(WGen, self).__init__(h_params.w_embed_size, 'w', h_params.device,
+        super(WGen, self).__init__(h_params.w_embedding_dim, 'w', h_params.device,
                                       stl=True)
 
 
 class WPrevGen(Gaussian):
-    def __init__(self, h_params, embeddings):
-        super(WPrevGen, self).__init__(embeddings.weight.shape[0], 'w_prev', h_params.device, embeddings,
-                                       h_params.c_ignore_index, is_placeholder=True)
+    def __init__(self, h_params):
+        super(WPrevGen, self).__init__(h_params.w_embedding_dim, 'w_prev', h_params.device, is_placeholder=True)
 
 
 class ZcomInfer(Gaussian):

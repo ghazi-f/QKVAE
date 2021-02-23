@@ -786,26 +786,34 @@ class OntoGenData:
 
 
 class LexNorm2015Data:
-    def __init__(self, max_len, max_c_len, batch_size, max_epochs, device, sup_proportion, dev_index=1):
-        noise_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>',
-                                 init_token='<go>', is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
-        clean_field = data.Field(lower=False, batch_first=True,  fix_length=max_len, pad_token='<pad>',
+    def __init__(self, w_max_len, c_max_len, batch_size, max_epochs, device, sup_proportion, mode,
+                 max_w_vocab, dev_index=1):
+        w_max_len, c_max_len = w_max_len+1, c_max_len+1
+        noise_field = data.Field(lower=False, batch_first=True,  fix_length=w_max_len, pad_token='<pad>',
                                  init_token='<go>', is_target=True)
-        c_noise_field = data.Field(lower=False, batch_first=True,  fix_length=max_c_len*max_len, pad_token='<pad>',
-                                 init_token=None, is_target=True)#init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
-        c_clean_field = data.Field(lower=False, batch_first=True,  fix_length=max_c_len*max_len, pad_token='<pad>',
-                                 init_token=None, is_target=True)
+        clean_field = data.Field(lower=False, batch_first=True,  fix_length=w_max_len, pad_token='<pad>',
+                                 init_token='<go>', is_target=True)
+        c_noise_field = data.Field(lower=False, batch_first=True,  fix_length=c_max_len*w_max_len, pad_token='<pad>',
+                                   init_token=None, is_target=True)
+        c_clean_field = data.Field(lower=False, batch_first=True,  fix_length=c_max_len*w_max_len, pad_token='<pad>',
+                                   init_token=None, is_target=True)
 
         # make splits for data
         train, val, test = LexNorm2015.splits((('noise', noise_field), ('clean', clean_field),
                                                ('c_noise', c_noise_field), ('c_clean', c_clean_field)),
-                                              max_c_len=max_c_len)
+                                              max_c_len=c_max_len)
 
         # build the vocabulary
-        noise_field.build_vocab(train)#, max_size=VOCAB_LIMIT)
-        clean_field.build_vocab(train)#, max_size=VOCAB_LIMIT)
-        c_noise_field.build_vocab(train)
-        c_clean_field.build_vocab(train)
+        if mode == "unsupervised":
+            noise_field.build_vocab(train, max_size=max_w_vocab)
+            c_noise_field.build_vocab(train)
+            clean_field.build_vocab(train, max_size=max_w_vocab)
+            c_clean_field.build_vocab(train)
+        else:
+            clean_field.build_vocab(train, max_size=max_w_vocab)
+            c_clean_field.build_vocab(train)
+            noise_field.vocab = clean_field.vocab
+            c_noise_field.vocab = c_clean_field.vocab
         # Remaking splits according to supervision proportions
         exlist = [ex for ex in train+val]
         dataset_fields = {'noise': noise_field, 'clean': clean_field, 'c_noise': c_noise_field, 'c_clean': c_clean_field}
@@ -819,12 +827,12 @@ class LexNorm2015Data:
 
         # make iterator for splits
         self.train_iter, self.val_iter, self.test_iter = data.BucketIterator.splits(
-            (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
+        _, self.iw_val_iter, self.iw_test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=10, device=device, shuffle=False, sort=False)
 
-        self.noise_vocab = noise_field.vocab
-        self.clean_vocab = clean_field.vocab
-        self.c_noise_vocab = c_noise_field.vocab
-        self.c_clean_vocab = c_clean_field.vocab
+        self.w_vocab = noise_field.vocab
+        self.c_vocab = c_noise_field.vocab
         self.noise_field = noise_field
         self.clean_field = clean_field
         self.device = device
@@ -832,9 +840,6 @@ class LexNorm2015Data:
         self.n_epochs = 0
         self.max_epochs = max_epochs
 
-        print("Number of words: noisy {}, clean {}".format(len(self.noise_vocab.stoi), len(self.clean_vocab.stoi)))
-        print("Number of characters: noisy {}, clean {}".format(len(self.c_noise_vocab.stoi),
-                                                            len(self.c_clean_vocab.stoi)))
 
     def reinit_iterator(self, split):
         if split == 'train':
@@ -850,8 +855,10 @@ class LexNorm2015Data:
             self.val_iter.init_epoch()
         elif split == 'test':
             self.test_iter.init_epoch()
-        elif split == 'unsup_valid':
-            self.unsup_val_iter.init_epoch()
+        elif split == 'iw_valid':
+            self.iw_val_iter.init_epoch()
+        elif split == 'iw_test':
+            self.iw_test_iter.init_epoch()
         else:
             raise NameError('Misspelled split name : {}'.format(split))
 
@@ -1345,15 +1352,19 @@ class LexNorm2015(Dataset):
     def to_char(self, text_array, max_c_len):
         output = []
         for w in text_array:
-            char_version = ['<go>']+list(w)
-            if len(char_version) < max_c_len:
-                char_version += ['<pad>']*(max_c_len-len(char_version))
+            if w in ('<hash>', '<at>', '<url>'):
+                output.extend(['<go>', w, '<eow>'] + ['<pad>'] * (max_c_len - 3))
             else:
-                char_version = char_version[: max_c_len]
-            output.extend(char_version)
+                char_version = ['<go>']+list(w)+['<eow>']
+                if len(char_version) < max_c_len:
+                    char_version += ['<pad>']*(max_c_len-len(char_version))
+                else:
+                    char_version = char_version[: max_c_len]
+                output.extend(char_version)
+        output.extend(['<go>', '<eos>', '<eow>']+['<pad>']*(max_c_len-3))
         return output
 
-    def __init__(self, path, fields, encoding="utf-8", separator="\t", **kwargs):
+    def __init__(self, path, fields, encoding="utf-8", separator="\t", verbose=0, **kwargs):
         max_c_len = kwargs.pop('max_c_len', None)
         examples = []
         columns = []
@@ -1371,10 +1382,11 @@ class LexNorm2015(Dataset):
 
             if columns:
                 examples.append(data.Example.fromlist(columns, fields))
-        print("Dataset has {}  examples. statistics:\n -words: {}+-{}(quantiles(0.5, 0.7, 0.9, 0.95, 0.99:{},{},{},{},{})\n"
-              " -characters: {}+-{} characters(quantiles(0.5, 0.7, 0.9, 0.95, 0.99:{},{},{},{},{})".format(
-            n_examples, np.mean(n_words), np.std(n_words), *np.quantile(n_words,[0.5, 0.7, 0.9, 0.95, 0.99]),
-            np.mean(n_chars), np.std(n_chars), *np.quantile(n_chars,[0.5, 0.7, 0.9, 0.95, 0.99])))
+        if verbose:
+            print("Dataset has {}  examples. statistics:\n -words: {}+-{}(quantiles(0.5, 0.7, 0.9, 0.95, 0.99:{},{},{},{},{})\n"
+                  " -characters: {}+-{} characters(quantiles(0.5, 0.7, 0.9, 0.95, 0.99:{},{},{},{},{})".format(
+                n_examples, np.mean(n_words), np.std(n_words), *np.quantile(n_words,[0.5, 0.7, 0.9, 0.95, 0.99]),
+                np.mean(n_chars), np.std(n_chars), *np.quantile(n_chars,[0.5, 0.7, 0.9, 0.95, 0.99])))
         super(LexNorm2015, self).__init__(examples, fields, **kwargs)
 
     @classmethod

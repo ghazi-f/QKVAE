@@ -19,7 +19,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 
     def __init__(self, prior, size, prior_params, name, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False,
-                 sequence_lv=False):
+                 sequence_lv=False, sub_lvl_size=None):
         # IDEA: Lock latent variable behaviour according to it's role in the bayesian network
         super(BaseLatentVariable, self).__init__()
         assert len(self.parameter_activations) > 0
@@ -33,6 +33,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         self.stl = stl
         self.iw = iw
         self.sequence_lv = sequence_lv
+        self.sub_lvl_size = sub_lvl_size
 
         # If the representation is non Markovian an LSTM is added to represent the variable
         if markovian:
@@ -148,6 +149,16 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             self.post_params = {k: v.expand((*sample.shape[:-1], self.size)) for k, v in output_params.items()
                                 if k not in ('temperature', 'n_disc')}
             return prior_distrib.log_prob(sample)
+
+    def post_log_prob(self, sample):
+        if sample.dtype == torch.long and isinstance(self, Categorical):
+            assert self.sub_lvl_size is None, "Still to be implemented for sublvl latent variables"
+            if sample.shape[-1] != self.size:
+                sample = F.one_hot(sample, self.size).float()
+            return (self.post_params['logits'].softmax(-1)*sample).sum(-1).log()
+        else:
+            distrib = self.prior(**self.post_params)
+            return distrib.log_prob(sample)
 
     def forward(self, link_approximator, inputs, prior=None, gt_samples=None, complete=True, lens=None):
         if isinstance(link_approximator, SequentialLink) or (link_approximator.residual is not None and
@@ -270,6 +281,9 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
                     self.post_params = {**self.post_params, **{'temperature': self.prior_temperature}}
                     if gt_samples.dtype == torch.long:
                         gt_samples = F.one_hot(gt_samples, self.size).float()
+                        if self.sub_lvl_size is not None:
+                            gt_samples = gt_samples.view(*gt_samples.shape[:-2],
+                                                         gt_samples.shape[-2]*gt_samples.shape[-1])
                         self.post_gt_log_probas = torch.sum(torch.log_softmax(self.post_params['logits'],
                                                                               -1) * gt_samples, dim=-1)
                     else:
@@ -296,13 +310,13 @@ class Gaussian(BaseLatentVariable):
 
     def __init__(self, size, name, device, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False,
-                 sequence_lv=False):
+                 sequence_lv=False, sub_lvl_size=None):
         self.prior_loc = torch.zeros(size).to(device)
         self.prior_cov = torch.ones(size).to(device)
         super(Gaussian, self).__init__(diag_normal, size, {'loc': self.prior_loc,
                                                            'scale': self.prior_cov},
                                        name, prior_sequential_link, posterior, markovian, allow_prior, is_placeholder,
-                                       inv_seq, stl, repnet, iw, sequence_lv)
+                                       inv_seq, stl, repnet, iw, sequence_lv, sub_lvl_size=sub_lvl_size)
 
     def infer(self, x_params):
         return x_params['loc']
@@ -343,7 +357,7 @@ class Categorical(BaseLatentVariable):
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False, sbn_experts=1,
-                 word_dropout=None, sequence_lv=False, emb_batch_norm=False):
+                 word_dropout=None, sequence_lv=False, emb_batch_norm=False, sub_lvl_size=None):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         self.prior_logits = torch.ones(size).to(device)
@@ -352,7 +366,8 @@ class Categorical(BaseLatentVariable):
         super(Categorical, self).__init__(RelaxedOneHotCategorical, size, {'logits': self.prior_logits,
                                                                            'temperature': self.prior_temperature},
                                           name, prior_sequential_link, posterior, markovian, allow_prior,
-                                          is_placeholder, inv_seq, stl, repnet, iw, sequence_lv)
+                                          is_placeholder, inv_seq, stl, repnet, iw, sequence_lv,
+                                          sub_lvl_size=sub_lvl_size)
         self.embedding = embedding
         self.w_drp = nn.Dropout(word_dropout) if word_dropout is not None else None
         embedding_size = embedding.weight.shape[1]
@@ -371,9 +386,19 @@ class Categorical(BaseLatentVariable):
         if 'temperature' not in x_params:
             x_params = {**x_params, **{'temperature': self.prior_temperature}}
         #return torch.log(torch.softmax(x_params['logits'], dim=-1)), super(Categorical, self).posterior_sample(x_params)[1]
-        return super(Categorical, self).posterior_sample(x_params)
+        if self.sub_lvl_size is not None:
+            logit_shape = x_params['logits'].shape
+            x_params['logits'] = x_params['logits'].view(*logit_shape[:-1], self.sub_lvl_size,
+                                                         int(logit_shape[-1]/self.sub_lvl_size))
+            sample, log_prob = super(Categorical, self).posterior_sample(x_params)
+            return sample.view((*sample.shape[:-2], sample.shape[-2]*sample.shape[-1])), log_prob.sum(-1)
+        else:
+            return super(Categorical, self).posterior_sample(x_params)
 
     def rep(self, samples, step_wise=True, prev_rep=None):
+        if self.sub_lvl_size is not None and samples.dtype != torch.long:
+            sample_shape = samples.shape
+            samples = samples.view(*sample_shape[:-1], self.sub_lvl_size, int(sample_shape[-1]/self.sub_lvl_size))
         if samples.shape[-1] == self.size and samples.dtype != torch.long:
             embedded = torch.matmul(samples, self.embedding.weight)
         else:
@@ -411,6 +436,8 @@ class Categorical(BaseLatentVariable):
                     reps = torch.flip(reps, dims=[-2])
             if flatten:
                 reps = reps.view(*orig_shape[:-1], reps.shape[-1])
+        if self.sub_lvl_size is not None:
+            reps = reps.view((*reps.shape[:-2], reps.shape[-2]*reps.shape[-1]))
         return reps
 
     def switch_to_relaxed(self):
@@ -425,7 +452,7 @@ class MultiCategorical(BaseLatentVariable):
 
     def __init__(self, size, name, device, embedding, ignore, prior_sequential_link=None, posterior=None, markovian=True,
                  allow_prior=False, is_placeholder=False, inv_seq=False, stl=False, repnet=None, iw=False,
-                 word_dropout=None, sequence_lv=False, n_disc=1):
+                 word_dropout=None, sequence_lv=False, n_disc=1, sub_lvl_size=None):
         # IDEA: Try to implement "Direct Optimization through argmax"
         self.ignore = ignore
         assert size % n_disc == 0
@@ -437,7 +464,8 @@ class MultiCategorical(BaseLatentVariable):
                                                {'logits': self.prior_logits, 'temperature': self.prior_temperature,
                                                 'n_disc': self.n_disc},
                                                name, prior_sequential_link, posterior, markovian, allow_prior,
-                                               is_placeholder, inv_seq, stl, repnet, iw, sequence_lv)
+                                               is_placeholder, inv_seq, stl, repnet, iw, sequence_lv,
+                                               sub_lvl_size=sub_lvl_size)
         assert isinstance(embedding, MultiEmbedding)
         self.embedding = embedding
         self.w_drp = nn.Dropout(word_dropout) if word_dropout is not None else None

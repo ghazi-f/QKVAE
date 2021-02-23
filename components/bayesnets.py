@@ -70,7 +70,7 @@ class BayesNet(nn.Module):
             var.clear_values()
 
     def forward(self, inputs, n_iw=None, target=None, eval=False, prev_states=None, force_iw=None, complete=False,
-                lens=None):
+                lens=None, plant_posteriors=None):
         # The forward pass propagates the root variable values yielding
         if prev_states is None:
             prev_states = {v: None for v in self.variables}
@@ -87,6 +87,9 @@ class BayesNet(nn.Module):
             dp_lvl = self.dp_lvl
         # Loading the inputs into the network
         self.clear_values()
+        if plant_posteriors is not None:
+            for k, v in plant_posteriors.items():
+                self.name_to_v[k].post_params = v
         for lv in self.variables:
             if lv.name in inputs:
                 self.variables_star[lv] = inputs[lv.name]
@@ -101,6 +104,9 @@ class BayesNet(nn.Module):
                 self.log_proba[lv] = lv.prior_log_prob(self.variables_star[lv])
             lv.post_reps, lv.post_samples = lv.post_reps or lv.prior_reps,  lv.post_samples or lv.prior_samples
             lv.post_log_probas, lv.post_params = lv.post_log_probas or lv.prior_log_probas, lv.post_params or lv.prior_params
+            if plant_posteriors is not None and lv.name in plant_posteriors and lv.post_log_probas is None:
+                lv.post_log_probas = lv.post_log_prob(self.variables_star[lv])
+                self.log_proba[lv] = lv.post_log_probas
         if target is not None:
             # Collecting requirements to estimate the target
             lvs_to_fill = [target]

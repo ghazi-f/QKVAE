@@ -305,7 +305,7 @@ class SublevelLSTMLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, last_state=False, bidirectional=False, sub_lvl_vars=None,
                  sub_lvl_size=None):
-        assert sub_lvl_size is not None and sub_lvl_vars is not None
+        assert (sub_lvl_size is not None) and (sub_lvl_vars is not None)
         super(SublevelLSTMLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
                                       dropout=dropout, batchnorm=batchnorm, residual=residual)
         self.sub_lvl_size, self.sub_lvl_vars = sub_lvl_size, sub_lvl_vars
@@ -337,13 +337,16 @@ class SublevelLSTMLink(NamedLink):
             z_params_res = self.residual['link'](x_res, z_prev)
 
         sub_lvl_x = []
-        for k, v in x.values():
+        for k, v in x.items():
             if k in self.sub_lvl_vars:
-                sub_lvl_x.append(x[k].reshape(*x.shape[:-1], self.sub_lvl_size,
-                                              int(x.shape[-1]/self.sub_lvl_size)))
+                assert v.shape[-1] % self.sub_lvl_size==0, "Please make the dimension of your sublevel input {}:{} " \
+                                                           "divisible by the sequence length " \
+                                                           "{}".format(k, v.shape[-1], self.sub_lvl_size)
+                sub_lvl_x.append(v.reshape(*v.shape[:-1], self.sub_lvl_size,
+                                              int(v.shape[-1]/self.sub_lvl_size)))
             else:
-                expand_arg = (x[k].shape[:-1], self.sub_lvl_size, x[k].shape[-1])
-                sub_lvl_x.append(x[k].unsqueeze(-2).expand(expand_arg))
+                expand_arg = (*v.shape[:-1], self.sub_lvl_size, v.shape[-1])
+                sub_lvl_x.append(v.unsqueeze(-2).expand(expand_arg))
 
         x = torch.cat(sub_lvl_x, -1)
         if x.ndim>3:
@@ -364,15 +367,19 @@ class SublevelLSTMLink(NamedLink):
         if self.last_state:
             outputs = torch.cat([hidden[-1, :, :], hidden[-2, :, :]] if self.bidirectional else
                                 [hidden[-1, :, :]], dim=1)
-            outputs = outputs.unsqueeze(1).repeat(1, x.shape[0], 1)
         else:
             outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs, batch_first=True, total_length=x.shape[0])
         if batch_shape is not None:
-            outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
+            if self.last_state:
+                outputs = outputs.view(*batch_shape, outputs.shape[-1])
+            else:
+                outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
                     self.params.items()}
-        z_params = {k: v.view(*v.shape[:-2], v.shape[-1]*v.shape[-2]) for k, v in z_params.items()}
+
+        if not self.last_state:
+            z_params = {k: v.view(*v.shape[:-2], v.shape[-1]*v.shape[-2]) for k, v in z_params.items()}
 
         if 'loc' in z_params and self.batchnorm:
             out_shape = z_params['loc'].shape
@@ -384,8 +391,6 @@ class SublevelLSTMLink(NamedLink):
         if self.residual is not None:
             z_params['loc'] = z_params_res['loc'] + z_params['loc']
 
-        #z_params = {'logits': self.hidden_to_logits(self.hidden_to_z_params['logits'](self.mlp[0](self.drp_layer(x))))}
-        #z_params = {'logits': self.hidden_to_logits((self.drp_layer(x)))}
         return z_params
 
 
