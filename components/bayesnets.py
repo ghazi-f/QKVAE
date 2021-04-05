@@ -101,12 +101,13 @@ class BayesNet(nn.Module):
                 self.variables_hat[lv], self.log_proba[lv] = lv.prior_sample(list(inputs.values())[0].shape[:-1])
             elif lv.allow_prior:
                 self.variables_hat[lv], _ = lv.prior_sample(list(inputs.values())[0].shape[:-1])
-                self.log_proba[lv] = lv.prior_log_prob(self.variables_star[lv])
+                if plant_posteriors is None or lv.name not in plant_posteriors:
+                    self.log_proba[lv] = lv.prior_log_prob(self.variables_star[lv])
             lv.post_reps, lv.post_samples = lv.post_reps or lv.prior_reps,  lv.post_samples or lv.prior_samples
             lv.post_log_probas, lv.post_params = lv.post_log_probas or lv.prior_log_probas, lv.post_params or lv.prior_params
             if plant_posteriors is not None and lv.name in plant_posteriors and lv.post_log_probas is None:
                 lv.post_log_probas = lv.post_log_prob(self.variables_star[lv])
-                self.log_proba[lv] = lv.post_log_probas
+            self.log_proba[lv] = lv.post_log_probas
         if target is not None:
             # Collecting requirements to estimate the target
             lvs_to_fill = [target]
@@ -168,8 +169,16 @@ class BayesNet(nn.Module):
                     self.approximator[lv].next_state, self.approximator[lv].prev_state = None, None
                     if eval:
                         if isinstance(lv, Categorical):
-                            self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],
-                                                                                              dim=-1), lv.size)
+                            if lv.sub_lvl_size is not None:
+                                logits_shape = lv.post_params['logits'].shape
+                                logits = lv.post_params['logits'].view(*logits_shape[:-1],
+                                                                       int(logits_shape[-1]/lv.size), lv.size)
+                                self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(logits, dim=-1),
+                                                                                     lv.size).float()
+                            else:
+                                self.variables_hat[lv] = torch.nn.functional.one_hot(torch.argmax(lv.post_params['logits'],
+                                                                                              dim=-1), lv.size).float()
+                                lv.post_reps = self.variables_hat[lv]
                         elif isinstance(lv, Gaussian):
                             self.variables_hat[lv] = lv.post_params['loc']
                         else:
