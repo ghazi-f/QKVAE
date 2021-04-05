@@ -789,9 +789,9 @@ class LexNorm2015Data:
     def __init__(self, w_max_len, c_max_len, batch_size, max_epochs, device, sup_proportion, mode,
                  max_w_vocab, dev_index=1):
         w_max_len, c_max_len = w_max_len+1, c_max_len+1
-        noise_field = data.Field(lower=False, batch_first=True,  fix_length=w_max_len, pad_token='<pad>',
+        noise_field = data.Field(lower=False, batch_first=True,  fix_length=w_max_len+1, pad_token='<pad>',
                                  init_token='<go>', is_target=True)
-        clean_field = data.Field(lower=False, batch_first=True,  fix_length=w_max_len, pad_token='<pad>',
+        clean_field = data.Field(lower=False, batch_first=True,  fix_length=w_max_len+1, pad_token='<pad>',
                                  init_token='<go>', is_target=True)
         c_noise_field = data.Field(lower=False, batch_first=True,  fix_length=c_max_len*w_max_len, pad_token='<pad>',
                                    init_token=None, is_target=True)
@@ -1347,12 +1347,13 @@ class LexNorm2015(Dataset):
                 is_url = len(re.findall(link_regex, w_i))
                 w_i = '<hash>' if w_i.startswith('#') else '<at>' if w_i.startswith('@') else '<url>' if is_url else w_i
                 output.append(w_i.lower())
+        output.append('<eos>')
         return output
 
     def to_char(self, text_array, max_c_len):
         output = []
         for w in text_array:
-            if w in ('<hash>', '<at>', '<url>'):
+            if w in ('<hash>', '<at>', '<url>', '<eos>'):
                 output.extend(['<go>', w, '<eow>'] + ['<pad>'] * (max_c_len - 3))
             else:
                 char_version = ['<go>']+list(w)+['<eow>']
@@ -1361,7 +1362,7 @@ class LexNorm2015(Dataset):
                 else:
                     char_version = char_version[: max_c_len]
                 output.extend(char_version)
-        output.extend(['<go>', '<eos>', '<eow>']+['<pad>']*(max_c_len-3))
+        #output.extend(['<go>', '<eos>', '<eow>']+['<pad>']*(max_c_len-3))
         return output
 
     def __init__(self, path, fields, encoding="utf-8", separator="\t", verbose=0, **kwargs):

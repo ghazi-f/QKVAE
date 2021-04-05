@@ -19,7 +19,7 @@ class CPrevGen(Categorical):
     def __init__(self, h_params, embeddings):
         super(CPrevGen, self).__init__(embeddings.weight.shape[0], 'c_prev', h_params.device, embeddings,
                                        h_params.c_ignore_index, is_placeholder=True,
-                                       word_dropout=h_params.char_dropout)
+                                       word_dropout=h_params.char_dropout, sub_lvl_size=h_params.c_max_len)
 
 
 class WidInfer(Categorical):

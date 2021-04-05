@@ -25,8 +25,6 @@ class DefaultHParams:
                  y_embedding_dim=30,
                  zcom_size=500,
                  zdiff_size=500,
-                 c_encoder_h=128,
-                 c_encoder_l=2,
                  w_encoder_h=128,
                  w_encoder_l=2,
                  y_encoder_l=2,
@@ -35,6 +33,12 @@ class DefaultHParams:
                  c_decoder_l=2,
                  w_decoder_h=32,
                  w_decoder_l=2,
+                 zc_encoder_h=500,
+                 zc_encoder_l=1,
+                 zd_encoder_h=100,
+                 zd_encoder_l=1,
+                 zd_decoder_h=50,
+                 zd_decoder_l=1,
                  optimizer=optim.AdamW,
                  optimizer_kwargs=None,
                  grad_accumulation_steps=1,
@@ -42,6 +46,7 @@ class DefaultHParams:
                  is_weighted=None,
                  graph_generator=None,
                  anneal_kl=None,
+                 anneal_kl_type='linear',
                  grad_clip=None,
                  kl_th=None,
                  dropout=0.,
@@ -79,8 +84,12 @@ class DefaultHParams:
         self.zdiff_size = zdiff_size
         self.zcom_size = zcom_size
 
-        self.c_encoder_h = c_encoder_h
-        self.c_encoder_l = c_encoder_l
+        self.zc_encoder_h = zc_encoder_h
+        self.zc_encoder_l = zc_encoder_l
+        self.zd_encoder_h = zd_encoder_h
+        self.zd_encoder_l = zd_encoder_l
+        self.zd_decoder_h = zd_decoder_h
+        self.zd_decoder_l = zd_decoder_l
         self.w_encoder_h = w_encoder_h
         self.w_encoder_l = w_encoder_l
         self.y_encoder_h = y_encoder_h
@@ -105,6 +114,7 @@ class DefaultHParams:
         self.optimizer_kwargs = optimizer_kwargs or {'lr': 1e-3}
         self.grad_accumulation_steps = grad_accumulation_steps
         self.anneal_kl = anneal_kl
+        self.anneal_kl_type = anneal_kl_type
         self.max_elbo = max_elbo
         self.grad_clip = grad_clip
         self.kl_th = kl_th

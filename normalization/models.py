@@ -22,7 +22,7 @@ predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-
 # =============================================== NORMALIZATION MODEL CLASS ============================================
 
 class NormalizationModel(nn.Module):
-    def __init__(self, vocab_index, char_index, h_params, graph, generated_v, supervised_lv):
+    def __init__(self, vocab_index, char_index, h_params, graph, generated_v, supervised_lv, sup_gen_graph):
         super(NormalizationModel, self).__init__()
 
         self.h_params = h_params
@@ -31,6 +31,8 @@ class NormalizationModel(nn.Module):
         self.generated_v = generated_v
         self.supervised_v = supervised_lv
         # Instanciating inference and generation networks
+        self.sup_gen_bn = BayesNet(sup_gen_graph)
+        self.rec_gen_bn = BayesNet(graph['rec_gen'])
         self.infer_bn = BayesNet(graph['infer'])
         self.infer_last_states = None
         self.infer_last_states_test = None
@@ -40,7 +42,7 @@ class NormalizationModel(nn.Module):
         self.step = 0
 
     def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None,
-                plant_gen_posteriors=None, only_gen=False):
+                plant_gen_posteriors=None, only_gen=False, sup_forward=True, rec_forward=True):
         # Just propagating values through the bayesian networks to get summaries
         if prev_states:
             infer_prev, gen_prev = prev_states
@@ -56,20 +58,37 @@ class NormalizationModel(nn.Module):
         w_prev = [v[..., :-1, :] for k, v in self.infer_bn.variables_hat.items() if k.name == 'w'][0]
         go_emb = torch.ones([*w_prev.shape[:-2]], device=self.h_params.device).long() * self.index['w'].stoi['<go>']
         go_emb = self.infer_bn.name_to_v['wid'].embedding(go_emb.unsqueeze(-1))
+        # print(self.index['w'].stoi['<pad>'], self.index['w'].stoi['<eos>'], self.index['w'].stoi['<go>'], self.index['w'].stoi['<unk>'], '\n',
+        #       self.index['c'].stoi['<eos>'], self.index['c'].stoi['<eow>'], self.index['c'].stoi['<pad>'], self.index['c'].stoi['<unk>'])
         w_prev = torch.cat([go_emb, w_prev],
                            dim=-2)
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
-                      **{'c': samples['c'],  #'c_prev': samples['c_prev'],
+                      **{'c': samples['c'],  'c_prev': samples['c_prev'],
                          'w_prev': w_prev}, **(substitute_gen_vals or {})}
+        # gen_inputs['wid'] = samples['wid']
         gen_inputs.pop('wid', None)
         if force_iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
-        if self.step < self.h_params.anneal_kl[0]:
-            gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
-                                   complete=True, plant_posteriors=plant_gen_posteriors)
-        else:
-            gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True,
-                                   plant_posteriors=plant_gen_posteriors)
+        # if self.step < self.h_params.anneal_kl[0] and self.h_params.anneal_kl_type =='linear':
+        #     gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
+        #                            complete=True, plant_posteriors=plant_gen_posteriors)
+        # else:
+        gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True,
+                               plant_posteriors=plant_gen_posteriors)
+        if sup_forward:
+            self.sup_gen_bn({'wid': samples['wid'], 'w': self.gen_bn.name_to_v['w'].post_params['loc']},
+                            eval=eval, complete=True)
+
+        if rec_forward:
+            rec_w_prev = self.infer_bn.name_to_v['w'].post_params['loc'][..., :-1, :]
+            rec_w_prev = torch.cat([go_emb, rec_w_prev], dim=-2)
+            # print(eval, rec_w_prev == w_prev)
+            rec_gen_inputs = {'zcom':self.infer_bn.name_to_v['zcom'].post_params['loc'], 'w_prev': rec_w_prev,
+                              'c_prev': gen_inputs['c_prev'],
+                              'zdiff': self.infer_bn.name_to_v['zdiff'].post_params['loc'], 'c': gen_inputs['c'],
+                              'yorig': gen_inputs['yorig']}
+            self.rec_gen_bn(rec_gen_inputs, eval=True, prev_states=prev_states[1] if prev_states is not None else None,
+                            complete=True, plant_posteriors=plant_gen_posteriors)
 
         if self.h_params.contiguous_lm:
             return infer_prev, gen_prev
@@ -98,6 +117,7 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
         super(BaseTrainingHandler, self).__init__()
 
         self.h_params = h_params
+        self.supervise_words = True
         self.word_embeddings = nn.Embedding(h_params.w_vocab_size, h_params.w_embedding_dim)
         self.char_embeddings = nn.Embedding(h_params.c_vocab_size, h_params.c_embedding_dim)
         self.y_embeddings = nn.Embedding(2, h_params.y_embedding_dim)
@@ -108,21 +128,39 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
             # self.word_embeddings.weight.requires_grad = False
 
         # Getting vertices
-        vertices, gen_lv, sup_lv = h_params.graph_generator(h_params, self.char_embeddings, self.word_embeddings,
-                                                            self.y_embeddings)
+        vertices, gen_lv, sup_lv, sup_gen_bn = h_params.graph_generator(h_params, self.char_embeddings,
+                                                                        self.word_embeddings, self.y_embeddings)
 
         # Instanciating inference and generation networks
         self.clean_model = NormalizationModel(vocab_index, char_index, h_params, vertices['clean'], gen_lv['clean'],
-                                              sup_lv['clean'])
+                                              sup_lv['clean'], sup_gen_bn['clean'])
         self.noise_model = NormalizationModel(vocab_index, char_index, h_params, vertices['noise'], gen_lv['noise'],
-                                              sup_lv['noise'])
+                                              sup_lv['noise'], sup_gen_bn['noise'])
 
         # Setting up categorical variable indexes
         self.index = {'w': vocab_index, 'c': char_index}
 
         # The losses
-        self.losses = {'unsup_noise': IWLBo(self.noise_model, 1), 'unsup_clean': IWLBo(self.clean_model, 1),
-                       'sup_noise': Supervision(self.noise_model, 1), 'sup_clean': Supervision(self.clean_model, 1)}
+        self.losses = {'unsup_noise': ELBo(self.noise_model, 1), 'unsup_clean': ELBo(self.clean_model, 1),
+                       # 'snr_noise': SNRReg(self.noise_model, 1.), 'snr_clean': SNRReg(self.clean_model, 1.)
+                       }
+        if self.supervise_words:
+            # addin supervision on generation network ws
+            sup_gen_noise_l = Supervision(self.noise_model, 0.5)
+            sup_gen_noise_l.supervised_lv, sup_gen_noise_l.net = sup_gen_bn['noise'][0][2], self.noise_model.sup_gen_bn
+            sup_gen_clean_l = Supervision(self.clean_model, 0.5)
+            sup_gen_clean_l.supervised_lv, sup_gen_clean_l.net = sup_gen_bn['clean'][0][2], self.clean_model.sup_gen_bn
+            self.losses = {**self.losses, 'sup_gennoise': sup_gen_noise_l, 'sup_genclean': sup_gen_clean_l,
+                           'sup_noise': Supervision(self.noise_model, 0.5),
+                           'sup_clean': Supervision(self.clean_model, 0.5)}
+        # addin reconstruction on generation network cs
+        rec_gen_noise_l = Supervision(self.noise_model, 5)
+        rec_gen_noise_l.supervised_lv, rec_gen_noise_l.net = self.noise_model.rec_gen_bn.name_to_v['c'],\
+                                                             self.noise_model.rec_gen_bn
+        rec_gen_clean_l = Supervision(self.clean_model, 5)
+        rec_gen_clean_l.supervised_lv, rec_gen_clean_l.net = self.clean_model.rec_gen_bn.name_to_v['c'], \
+                                                             self.clean_model.rec_gen_bn
+        self.losses = {**self.losses, 'rec_gennoise': rec_gen_noise_l, 'rec_genclean': rec_gen_clean_l}
 
         # The Optimizer
         self.optimizer = h_params.optimizer(self.parameters(), **h_params.optimizer_kwargs)
@@ -140,7 +178,8 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def forward(self, samples, eval=False, prev_states=None, force_iw=None):
+    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None, n2c=True,
+                sup_forward=True, rec_forward=True):
         pass
 
     def _dump_train_viz(self):
@@ -181,6 +220,12 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
     def data_specific_metrics(self):
         # this is supposed to output a list of (summary type, summary name, summary data) triplets
         with torch.no_grad():
+            auto_reg_c = any([v.name == 'c_prev' for v in self.noise_model.gen_bn.variables])
+            nw_gen = self.noise_model.gen_bn.name_to_v['w']
+            cw_gen = self.clean_model.gen_bn.name_to_v['w']
+            if auto_reg_c:
+                ccprev, ncprev = self.clean_model.gen_bn.name_to_v['c_prev'], self.noise_model.gen_bn.name_to_v['c_prev']
+                cc, nc = self.clean_model.gen_bn.name_to_v['c'], self.noise_model.gen_bn.name_to_v['c']
             summary_triplets = [
                 ('text', '/noise_ground_truth',
                  self.decode_to_text(self.noise_model.gen_bn.variables_star[self.noise_model.generated_v])),
@@ -191,6 +236,102 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
                 ('text', '/clean_reconstructions',
                  self.decode_to_text(self.clean_model.generated_v.post_params['logits'])),
             ]
+            # Getting reconstructions that rely only on z_com and zdiff
+            clean_inputs = {'zcom': self.clean_model.infer_bn.name_to_v['zcom'].post_params['loc'][..., 0, :].unsqueeze(-2),
+                            'zdiff': self.clean_model.infer_bn.name_to_v['zdiff'].post_params['loc'][..., 0, :].unsqueeze(-2),
+                            'w_prev': [v for k, v in self.clean_model.gen_bn.variables_star.items()
+                                  if k.name=="w_prev"][0][..., 0, :].unsqueeze(-2)}
+            noise_inputs = {'zcom': self.noise_model.infer_bn.name_to_v['zcom'].post_params['loc'][..., 0, :].unsqueeze(-2),
+                            'zdiff': self.noise_model.infer_bn.name_to_v['zdiff'].post_params['loc'][..., 0, :].unsqueeze(-2),
+                            'w_prev': [v for k, v in self.noise_model.gen_bn.variables_star.items()
+                                  if k.name=="w_prev"][0][..., 0, :].unsqueeze(-2)}
+            if auto_reg_c:
+                # Filling c with whatever
+                clean_inputs['c_prev'] = self.clean_model.gen_bn.variables_star[ccprev].unsqueeze(-2)
+                noise_inputs['c_prev'] = self.noise_model.gen_bn.variables_star[ncprev].unsqueeze(-2)
+
+            for i in range(self.h_params.w_max_len-1):
+                self.clean_model.gen_bn(clean_inputs, complete=True)
+                self.noise_model.gen_bn(noise_inputs, complete=True)
+                if i != self.h_params.w_max_len-2:
+                    clean_inputs = {k.name: torch.cat([v, (v if k.name !='w_prev' else
+                                                           cw_gen.post_params['loc'])[..., -1, :].unsqueeze(-2)],
+                                                      -2) for k, v in self.clean_model.gen_bn.variables_star.items()}
+                    noise_inputs = {k.name: torch.cat([v, (v if k.name !='w_prev' else
+                                                           nw_gen.post_params['loc'])[..., -1, :].unsqueeze(-2)],
+                                                      -2)
+                                    for k, v in self.noise_model.gen_bn.variables_star.items()}
+            if auto_reg_c:
+                # autoregressively generating and replacing c
+                c_shape = nc.post_params['logits'].shape
+                for c_idx in range(self.h_params.c_max_len-1):
+                    newcc = cc.post_params['logits'].view(*c_shape[:-2], self.h_params.w_max_len-1,
+                                                          self.h_params.c_max_len,
+                                                          self.h_params.c_vocab_size)[..., c_idx, :].argmax(-1)
+                    newnc = nc.post_params['logits'].view(*c_shape[:-2], self.h_params.w_max_len-1,
+                                                          self.h_params.c_max_len,
+                                                          self.h_params.c_vocab_size)[..., c_idx, :].argmax(-1)
+                    clean_inputs['c_prev'][..., c_idx+1] = newcc
+                    noise_inputs['c_prev'][..., c_idx+1] = newnc
+                    clean_inputs['c_prev'][..., -1] = ccprev.post_params['logits']
+                    self.clean_model.gen_bn(clean_inputs, complete=True)
+                    self.noise_model.gen_bn(noise_inputs, complete=True)
+
+            summary_triplets.extend([
+                ('text', '/noise_no_w_reconstructions',
+                 self.decode_to_text(self.noise_model.generated_v.post_params['logits'])),
+                ('text', '/clean_no_w_reconstructions',
+                 self.decode_to_text(self.clean_model.generated_v.post_params['logits'])),
+            ])
+
+            # Getting reconstructions that rely only on z_com and yorig=1
+            yorig_norm = torch.tensor([[[0, 1]]]*self.h_params.batch_size, device=self.h_params.device)
+
+            clean_inputs = {'zcom': self.clean_model.infer_bn.name_to_v['zcom'].post_params['loc'][..., 0, :].unsqueeze(-2),
+                            'yorig': yorig_norm,
+                            'w_prev': [v for k, v in self.clean_model.gen_bn.variables_star.items()
+                                  if k.name=="w_prev"][0][..., 0, :].unsqueeze(-2)}
+            noise_inputs = {'zcom': self.noise_model.infer_bn.name_to_v['zcom'].post_params['loc'][..., 0, :].unsqueeze(-2),
+                            'yorig': yorig_norm,
+                            'w_prev': [v for k, v in self.noise_model.gen_bn.variables_star.items()
+                                  if k.name=="w_prev"][0][..., 0, :].unsqueeze(-2)}
+
+            if auto_reg_c:
+                # Filling c with whatever
+                clean_inputs['c_prev'] = self.clean_model.gen_bn.variables_star[ccprev].unsqueeze(-2)
+                noise_inputs['c_prev'] = self.noise_model.gen_bn.variables_star[ncprev].unsqueeze(-2)
+            for i in range(self.h_params.w_max_len - 1):
+                self.clean_model.gen_bn(clean_inputs, complete=True)
+                self.noise_model.gen_bn(noise_inputs, complete=True)
+                if i != self.h_params.w_max_len-2:
+                    clean_inputs = {k.name: torch.cat([v, (v if k.name != 'w_prev' else
+                                                           cw_gen.post_params['loc'])[..., -1, :].unsqueeze(-2)],
+                                                      -2) for k, v in self.clean_model.gen_bn.variables_star.items()}
+                    noise_inputs = {k.name: torch.cat([v, (v if k.name != 'w_prev' else
+                                                           nw_gen.post_params['loc'])[..., -1, :].unsqueeze(-2)],
+                                                      -2) for k, v in self.noise_model.gen_bn.variables_star.items()}
+
+            if auto_reg_c:
+                # autoregressively generating and replacing c
+                c_shape = nc.post_params['logits'].shape
+                for c_idx in range(self.h_params.c_max_len-1):
+                    newcc = cc.post_params['logits'].view(*c_shape[:-2], self.h_params.w_max_len-1,
+                                                          self.h_params.c_max_len,
+                                                          self.h_params.c_vocab_size)[..., c_idx, :].argmax(-1)
+                    newnc = nc.post_params['logits'].view(*c_shape[:-2], self.h_params.w_max_len-1,
+                                                          self.h_params.c_max_len,
+                                                          self.h_params.c_vocab_size)[..., c_idx, :].argmax(-1)
+                    clean_inputs['c_prev'][..., c_idx+1] = newcc
+                    noise_inputs['c_prev'][..., c_idx+1] = newnc
+                    clean_inputs['c_prev'][..., -1] = ccprev.post_params['logits']
+                    self.clean_model.gen_bn(clean_inputs, complete=True)
+                    self.noise_model.gen_bn(noise_inputs, complete=True)
+            summary_triplets.extend([
+                ('text', '/noise_normalizations',
+                 self.decode_to_text(self.noise_model.generated_v.post_params['logits'])),
+                ('text', '/clean_normalizations',
+                 self.decode_to_text(self.clean_model.generated_v.post_params['logits'])),
+            ])
         return summary_triplets
 
     def decode_to_text(self, c_hat_params, gen=False):
@@ -209,9 +350,26 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
                                                  c_hat_params.shape[-2]*c_hat_params.shape[-1]))
         assert c_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(c_hat_params.shape)
         text = ' |||| '.join([''.join([(' ' if (i % self.h_params.c_max_len == 0) else '')+self.index['c'].itos[char]
-                                        for i, char in enumerate(sen)])  # .split('<eos>')[0]
+                                        for i, char in enumerate(sen)]).split('<eos>')[0]+'\n'
                               for sen in c_hat_params]).replace('<pad>', ' ').replace('_unk', '<?>')
-        text = ' '.join([w.split('<eow>')[0] for w in text.split(' ')]).replace('<eos>', '\n')
+        text = ' '.join([w.split('<eow>')[0] for w in text.split(' ')])
+
+
+        return text
+
+    def decode_to_text_w(self, w_hat_params, gen=False):
+        # It is assumed that this function is used at test time for display purposes
+        # Getting the argmax from the one hot if it's not done
+        # /!\ Commented out importance weighting specific measures because I don't plan on using it here
+        # while c_hat_params.shape[-1] == self.h_params.c_vocab_size and c_hat_params.ndim > 3:
+        #     c_hat_params = c_hat_params.mean(0)
+        # while c_hat_params.ndim > 2 and c_hat_params.shape[-1] != self.h_params.vocab_size:
+        #     c_hat_params = c_hat_params[0]
+        if w_hat_params.shape[-1] == self.h_params.w_vocab_size:
+            w_hat_params = torch.argmax(w_hat_params, dim=-1)
+        assert w_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(w_hat_params.shape)
+        text = ' |||| '.join([' '.join([self.index['w'].itos[w] for w in sen]).split('<eos>')[0]
+                              for sen in w_hat_params]).replace('<pad>', ' <?>')
 
         return text
 
@@ -242,7 +400,8 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
 
             for i, batch in enumerate(tqdm(iterator, desc="Getting Noisy/Clean Perplexities")):
                 formatted_batch = format_func(batch)
-                prev_states = self(formatted_batch, prev_states=prev_states, force_iw=force_iw)
+                prev_states = self(formatted_batch, prev_states=prev_states, force_iw=force_iw, n2c=False,
+                                   sup_forward=False, rec_forward=False)
                 if not self.h_params.contiguous_lm:
                     prev_states = None
                 # Clean calculation
@@ -281,6 +440,8 @@ class BaseTrainingHandler(nn.Module, metaclass=abc.ABCMeta):
         if os.path.exists(self.h_params.save_path):
             checkpoint = torch.load(self.h_params.save_path)
             model_checkpoint, self.step = checkpoint['model_checkpoint'], checkpoint['step']
+            self.noise_model.step = self.step
+            self.clean_model.step = self.step
             self.load_state_dict(model_checkpoint)
             print("Loaded model at step", self.step)
         else:
@@ -351,29 +512,139 @@ class UnsupervisedTrainingHandler(BaseTrainingHandler):
 
         return total_loss
 
-    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None):
+    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None, n2c=True,
+                sup_forward=True, rec_forward=True):
+        sup_forward = sup_forward and self.supervise_words
         prev_states = prev_states or {'noise': None}
         #                          ----------- Forward pass ----------------
-
         noise_prev_states = self.noise_model(samples['noise'], eval=eval, prev_states=prev_states['noise'],
-                                             force_iw=force_iw, substitute_gen_vals=None,
+                                             force_iw=force_iw, sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={'yorig':
                                                                        {'logits':
                                                                             samples['noise']['yorig'].float().log()}})
 
         # Loss computation
-        [loss.get_loss() * loss.w for name, loss in self.losses.items() if name.endswith('noise')]
         return {'noise': noise_prev_states} if self.h_params.contiguous_lm else {'noise': None}
 
     def data_specific_metrics(self):
         # this is supposed to output a list of (summary type, summary name, summary data) triplets
         with torch.no_grad():
+            auto_reg_c = any([v.name == 'c_prev' for v in self.noise_model.gen_bn.variables])
+            nc_inf = self.noise_model.infer_bn.name_to_v['c']
+            nc = self.noise_model.gen_bn.name_to_v['c']
+            nw_gen = self.noise_model.gen_bn.name_to_v['w']
+            nw_inf = self.noise_model.gen_bn.name_to_v['w']
+            if auto_reg_c:
+                ncprev = self.noise_model.gen_bn.name_to_v['c_prev']
+            noise_wid = self.noise_model.sup_gen_bn.name_to_v['wid']
             summary_triplets = [
-                ('text', '/noise_ground_truth',
+                ('text', '_ground_truth/noise',
                  self.decode_to_text(self.noise_model.gen_bn.variables_star[self.noise_model.generated_v])),
-                ('text', '/noise_reconstructions',
-                 self.decode_to_text(self.noise_model.generated_v.post_params['logits']))
+                # ('text', '_ground_truth[w]/noise',
+                #  self.decode_to_text_w(self.noise_model.sup_gen_bn.variables_star[noise_wid])),
+                ('text', '_reconstructions/noise',
+                 self.decode_to_text(self.noise_model.generated_v.post_params['logits'])),
+                ('text', '_det_reconstructions/noise',
+                 self.decode_to_text(self.noise_model.rec_gen_bn.name_to_v['c'].post_params['logits'])),
+                # ('text', '_reconstructions[w]/noise',
+                #  self.decode_to_text_w(noise_wid.post_params['logits']))
             ]
+            # print(self.decode_to_text(self.noise_model.rec_gen_bn.name_to_v['c'].post_params['logits']))
+            # ==== Assembling inputs ===
+            # Getting reconstructions that rely only on z_com and zdiff
+            noise_inputs1 = {'zcom': self.noise_model.infer_bn.name_to_v['zcom'].post_params['loc'][..., :1, :],
+                            'zdiff': self.noise_model.infer_bn.name_to_v['zdiff'].post_params['loc'][..., :1, :],
+                            'w_prev': [v for k, v in self.noise_model.gen_bn.variables_star.items()
+                                       if k.name == "w_prev"][0][..., :1, :]}
+
+            # Getting reconstructions that rely only on z_com and yorig=1
+            yorig_norm = torch.tensor([[[0., 1.]]]*list(noise_inputs1.values())[0].shape[0], device=self.h_params.device)
+            noise_inputs2 = {'zcom': self.noise_model.infer_bn.name_to_v['zcom'].post_params['loc'][..., :1, :],
+                            'yorig': yorig_norm,
+                            'w_prev': [v for k, v in self.noise_model.gen_bn.variables_star.items()
+                                  if k.name=="w_prev"][0][..., :1, :]}
+            if auto_reg_c:
+                # Filling c with whatever
+                noise_inputs1['c_prev'] = self.noise_model.gen_bn.variables_star[ncprev][..., :1, :]
+                noise_inputs2['c_prev'] = self.noise_model.gen_bn.variables_star[ncprev][..., :1, :]
+
+            # ==== Getting outputs ===
+            for i in range(self.h_params.w_max_len-1):
+                self.noise_model.gen_bn(noise_inputs1, complete=True, eval=True)
+                if i != self.h_params.w_max_len - 2:
+                    c_shape = nc.post_params['logits'].shape
+                    self.noise_model.infer_bn({'c': nc.post_params['logits'].view((*c_shape[:2], self.h_params.c_max_len
+                                                                                   , self.h_params.c_vocab_size
+                                                                                   )).argmax(-1)}, complete=True,
+                                              eval=True)
+                    # noise_inputs1 = {k.name: torch.cat([v, (v if k.name != 'w_prev' else
+                    #                                        # nw_gen.post_params['loc'])[..., -1, :].unsqueeze(-2)
+                    #                                        nw_inf.post_params['loc'])[..., i, :].unsqueeze(-2)
+                    #                                    ], -2)
+                    #                 for k, v in self.noise_model.gen_bn.variables_star.items()}
+                    noise_inputs1 = {k.name: torch.cat([v, v[..., i, :].unsqueeze(-2)], -2) if k.name != 'w_prev' else
+                                                            torch.cat([v[..., :1, :], nw_inf.post_params['loc']], -2)
+                                    for k, v in self.noise_model.gen_bn.variables_star.items()}
+                # for k, v in noise_inputs1.items():
+                #     rec_var = self.noise_model.rec_gen_bn.name_to_v[k]
+                #     rec_val = self.noise_model.rec_gen_bn.variables_star[rec_var]
+                #     print(k, ":", rec_val[..., :v.shape[-2], :] == v)
+
+            if auto_reg_c:
+                # autoregressively generating and replacing c
+                c_shape = nc.post_params['logits'].shape
+                for c_idx in range(self.h_params.c_max_len-1):
+                    newnc = nc.post_params['logits'].view(*c_shape[:-2], self.h_params.w_max_len-1,
+                                                          self.h_params.c_max_len,
+                                                          self.h_params.c_vocab_size)[..., c_idx, :].argmax(-1)
+                    noise_inputs1['c_prev'][..., c_idx+1] = newnc
+                    self.noise_model.gen_bn(noise_inputs1, complete=True)
+            summary_triplets.extend([
+                ('text', '_no_w_reconstructions/noise',
+                 self.decode_to_text(self.noise_model.generated_v.post_params['logits']))
+            ])
+            # print(self.decode_to_text(self.noise_model.generated_v.post_params['logits']))
+            # self.noise_model.sup_gen_bn({'w': self.noise_model.gen_bn.name_to_v['w'].post_samples}, complete=True)
+            # summary_triplets.extend([
+            #     ('text', '_no_w_reconstructions[w]/noise',
+            #      self.decode_to_text_w(noise_wid.post_params['logits']))
+            # ])
+
+            for i in range(self.h_params.w_max_len - 1):
+                self.noise_model.gen_bn(noise_inputs2, complete=True, eval=True)
+                if i != self.h_params.w_max_len - 2:
+                    # noise_inputs2 = {k.name: torch.cat([v, (v if k.name != 'w_prev' else
+                    #                                        nw_gen.post_params['loc'])[..., -1, :].unsqueeze(-2)], -2)
+                    #                 for k, v in self.noise_model.gen_bn.variables_star.items()}
+
+                    c_shape = nc.post_params['logits'].shape
+                    self.noise_model.infer_bn({'c': nc.post_params['logits'].view((*c_shape[:2], self.h_params.c_max_len
+                                                                                   , self.h_params.c_vocab_size
+                                                                                   )).argmax(-1)}, complete=True,
+                                              eval=True)
+                    noise_inputs2 = {k.name: torch.cat([v, v[..., i, :].unsqueeze(-2)], -2) if k.name != 'w_prev' else
+                                                            torch.cat([v[..., :1, :], nw_inf.post_params['loc']], -2)
+                                    for k, v in self.noise_model.gen_bn.variables_star.items()}
+
+            if auto_reg_c:
+                # autoregressively generating and replacing c
+                c_shape = nc.post_params['logits'].shape
+                for c_idx in range(self.h_params.c_max_len-1):
+                    newnc = nc.post_params['logits'].view(*c_shape[:-2], self.h_params.w_max_len-1,
+                                                          self.h_params.c_max_len,
+                                                          self.h_params.c_vocab_size)[..., c_idx, :].argmax(-1)
+                    noise_inputs2['c_prev'][..., c_idx+1] = newnc
+                    self.noise_model.gen_bn(noise_inputs2, complete=True)
+
+            summary_triplets.extend([
+                ('text', '_normalizations/noise',
+                 self.decode_to_text(self.noise_model.generated_v.post_params['logits']))
+            ])
+            # self.noise_model.sup_gen_bn({'w': self.noise_model.gen_bn.name_to_v['w'].post_samples}, complete=True)
+            # summary_triplets.extend([
+            #     ('text', '_normalizations[wid]/noise',
+            #      self.decode_to_text_w(noise_wid.post_params['logits']))
+            # ])
         return summary_triplets
 
     def get_perplexity(self, iterator, format_func):
@@ -381,20 +652,22 @@ class UnsupervisedTrainingHandler(BaseTrainingHandler):
             nneg_log_perplexity_lb = 0
             ntotal_samples = 0
             prev_states = None
-            force_iw = ['w']
-            niwlbo = IWLBo(self.noise_model, 1)
+            # force_iw = ['w']
+            niwlbo = ELBo(self.noise_model, 1)
             niwlbo.gen_lvs.pop('zcom', None)
             niwlbo.infer_lvs.pop('zcom', None)
 
             for i, batch in enumerate(tqdm(iterator, desc="Getting Noisy Perplexity")):
                 formatted_batch = format_func(batch)
-                prev_states = self(formatted_batch, prev_states=prev_states, force_iw=force_iw)
+                prev_states = self(formatted_batch, prev_states=prev_states,  # force_iw=force_iw,
+                                   sup_forward=False,  rec_forward=False)
                 if not self.h_params.contiguous_lm:
                     prev_states = None
 
                 # Noise calculation
                 nelbo = - niwlbo.get_loss(actual=True)
-                ntotal_samples_i = torch.sum(formatted_batch['noise']['c']!= self.h_params.c_ignore_index)
+                # print("======= nelbo ========", nelbo.to('cpu').detach())
+                ntotal_samples_i = torch.sum(formatted_batch['noise']['c'] != self.h_params.c_ignore_index)
                 nneg_log_perplexity_lb += nelbo * ntotal_samples_i
 
                 ntotal_samples += ntotal_samples_i
@@ -450,11 +723,13 @@ class DistantlySupervisedTrainingHandler(BaseTrainingHandler):
 
         return total_loss
 
-    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None):
+    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None, n2c=True,
+                sup_forward=True, rec_forward=True):
+        sup_forward = sup_forward and self.supervise_words
         prev_states = prev_states or {'noise': None, 'clean': None}
 
         #                          ----------- Forward pass ----------------
-        clean_prev_states = self.clean_model(samples['clean'],
+        clean_prev_states = self.clean_model(samples['clean'], sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={
                                                  'yorig': {'logits': samples['clean']['yorig'].float().log()}},
                                              eval=eval, prev_states=prev_states['clean'], force_iw=force_iw)
@@ -462,7 +737,7 @@ class DistantlySupervisedTrainingHandler(BaseTrainingHandler):
         self.noise_model.gen_bn.name_to_v['zcom'].posterior_params = {
             'loc': self.clean_model.infer_bn.name_to_v['zcom'].post_samples.mean(-3).unsqueeze(-3),
             'scale': self.clean_model.infer_bn.name_to_v['zcom'].post_samples.std(-3).unsqueeze(-3)}
-        noise_prev_states = self.noise_model(samples['noise'],
+        noise_prev_states = self.noise_model(samples['noise'], sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={
                                                  'yorig': {'logits': samples['noise']['yorig'].float().log()},
                                                  'zcom': {
@@ -533,16 +808,18 @@ class SupervisedTrainingHandler(BaseTrainingHandler):
 
         return total_loss
 
-    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None):
+    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None, n2c=True,
+                sup_forward=True, rec_forward=True):
+        sup_forward = sup_forward and self.supervise_words
         prev_states = prev_states or {'noise': None, 'clean': None}
 
         #                          ----------- Forward pass ----------------
-        clean_prev_states = self.clean_model(samples['clean'],
+        clean_prev_states = self.clean_model(samples['clean'], sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={
                                                  'yorig': {'logits': samples['clean']['yorig'].float().log()}},
                                              eval=eval, prev_states=prev_states['clean'], force_iw=force_iw)
         # Putting the prior on noisy zcom to the right value for its KL calculation
-        noise_prev_states = self.noise_model(samples['noise'],
+        noise_prev_states = self.noise_model(samples['noise'], sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={'yorig':
                                                                        {'logits':
                                                                             samples['noise']['yorig'].float().log()},
@@ -553,25 +830,29 @@ class SupervisedTrainingHandler(BaseTrainingHandler):
 
         # Loss computation
         [loss.get_loss() * loss.w for name, loss in self.losses.items() if name.endswith('noise')]
-        # Noise to clean forward pass
-        substitute_zcom_val = self.noise_model.infer_bn.variables_hat[self.noise_model.infer_bn.name_to_v['zcom']]
-        self.clean_model(samples['clean'], plant_gen_posteriors={
-                                                 'yorig': {'logits': samples['clean']['yorig'].float().log()}},
-                         only_gen=True, eval=eval, prev_states=prev_states['clean'], force_iw=force_iw,
-                         substitute_gen_vals={'zcom': substitute_zcom_val})
-        self.n_to_c_loss.get_loss()
+        if n2c:
+            # Noise to clean forward pass
+            substitute_zcom_val = self.noise_model.infer_bn.variables_hat[self.noise_model.infer_bn.name_to_v['zcom']]
+            self.clean_model(samples['clean'], plant_gen_posteriors={
+                                                     'yorig': {'logits': samples['clean']['yorig'].float().log()}},
+                             only_gen=True, eval=eval, prev_states=prev_states['clean'], force_iw=force_iw,
+                             substitute_gen_vals={'zcom': substitute_zcom_val}, sup_forward=sup_forward,
+                             rec_forward=rec_forward)
+            self.n_to_c_loss.get_loss()
         return {'noise': noise_prev_states, 'clean': clean_prev_states} if self.h_params.contiguous_lm else\
                {'noise': None, 'clean': None}
 
-    def _dump_train_viz(self):
+    def _dump_train_viz(self, n2c=True):
         super(SupervisedTrainingHandler, self)._dump_train_viz()
-        for name, metric in self.n_to_c_loss.metrics().items():
-            self.writer.add_scalar('train' + name + '[n2c]', metric, self.step)
+        if n2c:
+            for name, metric in self.n_to_c_loss.metrics().items():
+                self.writer.add_scalar('train' + name + '[n2c]', metric, self.step)
 
-    def dump_test_viz(self, complete=False):
+    def dump_test_viz(self, complete=False, n2c=True):
         super(SupervisedTrainingHandler, self).dump_test_viz(complete=complete)
-        for name, metric in self.n_to_c_loss.metrics().items():
-            self.writer.add_scalar('train' + name + '[n2c]', metric, self.step)
+        if n2c:
+            for name, metric in self.n_to_c_loss.metrics().items():
+                self.writer.add_scalar('train' + name + '[n2c]', metric, self.step)
 
 
 class SemiSupervisedTrainingHandler(BaseTrainingHandler):
@@ -636,16 +917,18 @@ class SemiSupervisedTrainingHandler(BaseTrainingHandler):
 
         return total_loss
 
-    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None):
+    def forward(self, samples, eval=False, prev_states=None, force_iw=None, substitute_gen_vals=None, n2c=True,
+                sup_forward=True, rec_forward=True):
+        sup_forward = sup_forward and self.supervise_words
         prev_states = prev_states or {'noise': None, 'clean': None}
 
         #                          ----------- Forward pass ----------------
-        clean_prev_states = self.clean_model(samples['clean'],
+        clean_prev_states = self.clean_model(samples['clean'], sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={
                                                  'yorig': {'logits': samples['clean']['yorig'].float().log()}},
                                              eval=eval, prev_states=prev_states['clean'], force_iw=force_iw)
         # Putting the prior on noisy zcom to the right value for its KL calculation
-        noise_prev_states = self.noise_model(samples['noise'],
+        noise_prev_states = self.noise_model(samples['noise'], sup_forward=sup_forward, rec_forward=rec_forward,
                                              plant_gen_posteriors={'yorig':{'logits': samples['noise']['yorig'].float().log()},
                                                                    'zcom':{
             'loc': self.clean_model.infer_bn.name_to_v['zcom'].post_samples.mean(-3).unsqueeze(-3),
@@ -654,25 +937,27 @@ class SemiSupervisedTrainingHandler(BaseTrainingHandler):
 
         # Loss computation
         [loss.get_loss() * loss.w for name, loss in self.losses.items() if name.endswith('noise')]
-        # Noise to clean forward pass
-        substitute_zcom_val = self.noise_model.infer_bn.variables_hat[self.noise_model.infer_bn.name_to_v['zcom']]
-        self.clean_model(samples['clean'], plant_gen_posteriors={
-                                                 'yorig': {'logits': samples['clean']['yorig'].float().log()}},
-                         only_gen=True, eval=eval, prev_states=prev_states['clean'], force_iw=force_iw,
-                         substitute_gen_vals={'zcom': substitute_zcom_val})
-        self.n_to_c_loss.get_loss()
+        if n2c:
+            # Noise to clean forward pass
+            substitute_zcom_val = self.noise_model.infer_bn.variables_hat[self.noise_model.infer_bn.name_to_v['zcom']]
+            self.clean_model(samples['clean'], plant_gen_posteriors={
+                                                     'yorig': {'logits': samples['clean']['yorig'].float().log()}},
+                             only_gen=True, eval=eval, prev_states=prev_states['clean'], force_iw=force_iw,
+                             substitute_gen_vals={'zcom': substitute_zcom_val}, sup_forward=sup_forward,
+                             rec_forward=rec_forward)
+            self.n_to_c_loss.get_loss()
         return {'noise': noise_prev_states, 'clean': clean_prev_states} if self.h_params.contiguous_lm else\
                {'noise': None, 'clean': None}
 
-    def _dump_train_viz(self):
+    def _dump_train_viz(self, n2c=True):
         super(SemiSupervisedTrainingHandler, self)._dump_train_viz()
-        if not self.is_distant:
+        if not self.is_distant and n2c:
             for name, metric in self.n_to_c_loss.metrics().items():
                 self.writer.add_scalar('train' + name + '[n2c]', metric, self.step)
 
-    def dump_test_viz(self, complete=False):
+    def dump_test_viz(self, complete=False, n2c=True):
         super(SemiSupervisedTrainingHandler, self).dump_test_viz(complete=complete)
-        if not self.is_distant:
+        if not self.is_distant and n2c:
             for name, metric in self.n_to_c_loss.metrics().items():
                 self.writer.add_scalar('train' + name + '[n2c]', metric, self.step)
 
