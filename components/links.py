@@ -78,7 +78,6 @@ class MLPLink(BaseLink):
             x_res, x = x
             x_res = self.drp_layer(x_res)
             z_params_res = self.residual['link'](x_res, z_prev)
-
         x = self.drp_layer(x)
         outputs = []
         input = x
@@ -304,14 +303,17 @@ class LSTMLink(BaseLink):
 class SublevelLSTMLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, last_state=False, bidirectional=False, sub_lvl_vars=None,
-                 sub_lvl_size=None):
+                 sub_lvl_size=None, up_lvl=False):
         assert (sub_lvl_size is not None) and (sub_lvl_vars is not None)
         super(SublevelLSTMLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, highway,
                                       dropout=dropout, batchnorm=batchnorm, residual=residual)
         self.sub_lvl_size, self.sub_lvl_vars = sub_lvl_size, sub_lvl_vars
-        output_size = int(output_size/self.sub_lvl_size)
+        output_size = int(output_size/self.sub_lvl_size) if not (last_state or up_lvl) else output_size
         self.rnn = nn.LSTM(input_size, output_size, depth, batch_first=False, bidirectional=bidirectional,
                            dropout=dropout)
+
+        self.up_rnn = nn.LSTM(output_size*2 if bidirectional else output_size, output_size, 1, batch_first=False,
+                              bidirectional=bidirectional, dropout=dropout) if up_lvl else None
         self.last_state = last_state
         self.bidirectional = bidirectional
 
@@ -335,7 +337,6 @@ class SublevelLSTMLink(NamedLink):
             x_res, x = x
             x_res = self.drp_layer(x_res)
             z_params_res = self.residual['link'](x_res, z_prev)
-
         sub_lvl_x = []
         for k, v in x.items():
             if k in self.sub_lvl_vars:
@@ -364,21 +365,48 @@ class SublevelLSTMLink(NamedLink):
 
         packed_outputs, (hidden, cell) = self.rnn(packed_x)
 
-        if self.last_state:
+        if self.last_state or self.up_rnn is not None:
             outputs = torch.cat([hidden[-1, :, :], hidden[-2, :, :]] if self.bidirectional else
                                 [hidden[-1, :, :]], dim=1)
         else:
             outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs, batch_first=True, total_length=x.shape[0])
+
         if batch_shape is not None:
-            if self.last_state:
+            if self.last_state or self.up_rnn is not None:
                 outputs = outputs.view(*batch_shape, outputs.shape[-1])
             else:
                 outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
 
+        if self.up_rnn is not None:
+            up_inputs = outputs
+            if up_inputs.ndim > 3:
+                batch_shape = up_inputs.shape[:-2]
+                up_inputs = up_inputs.view(-1, *up_inputs.shape[-2:])
+            else:
+                batch_shape = None
+            up_inputs = up_inputs.transpose(0, 1)
+            device = next(self.parameters()).device
+            lens = torch.ones(up_inputs.shape[1], device=device) * up_inputs.shape[0]
+            packed_x = nn.utils.rnn.pack_padded_sequence(up_inputs, lens, enforce_sorted=False)
+            packed_outputs, (hidden, cell) = self.up_rnn(packed_x)
+            if self.last_state:
+                outputs = torch.cat([hidden[-1, :, :], hidden[-2, :, :]] if self.bidirectional else
+                                    [hidden[-1, :, :]], dim=1)
+                outputs = outputs.unsqueeze(-2).repeat(1, up_inputs.shape[0], 1)
+            else:
+                outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_outputs, batch_first=True,
+                                                              total_length=up_inputs.shape[0])
+
+            if batch_shape is not None:
+                if self.last_state:
+                    outputs = outputs.view(*batch_shape, outputs.shape[-1])
+                else:
+                    outputs = outputs.view(*batch_shape, *outputs.shape[-2:])
+
         z_params = {param: activation(self.hidden_to_z_params[param](outputs)) for param, activation in
                     self.params.items()}
 
-        if not self.last_state:
+        if not (self.last_state or (self.up_rnn is not None)):
             z_params = {k: v.view(*v.shape[:-2], v.shape[-1]*v.shape[-2]) for k, v in z_params.items()}
 
         if 'loc' in z_params and self.batchnorm:
