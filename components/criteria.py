@@ -33,6 +33,36 @@ class BaseCriterion(metaclass=abc.ABCMeta):
 
 # ============================================== CRITERIA CLASSES ======================================================
 
+class SNRReg(BaseCriterion):
+    def __init__(self, model, w):
+        # Warning: This is still only implemented for categorical supervised variables
+        super(SNRReg, self).__init__(model, w)
+        self.infer_vars = [var for var in model.infer_bn.parent.keys()
+                           if (not var.is_placeholder) and isinstance(var, Gaussian)]
+        self.gen_vars = [var for var in model.gen_bn.parent.keys() if (not var.is_placeholder) and isinstance(var, Gaussian)]
+        self.log_snr = None
+
+    def get_loss(self):
+        var_means = {**{'/snr_inf_'+v.name: v.post_params['loc'] for v in self.infer_vars},
+                     **{'/snr_gen_' + v.name: v.post_params['loc'] for v in self.gen_vars}}
+        var_stds = {**{'/snr_inf_'+v.name: v.post_params['scale'] for v in self.infer_vars},
+                    **{'/snr_gen_' + v.name: v.post_params['scale'] for v in self.gen_vars}}
+        aggreg_dims = list(range(list(var_means.values())[0].ndim-1))
+        self.log_snr = {k: (var_means[k].std(aggreg_dims)/(var_stds[k].mean(aggreg_dims)+1e-8)+1e-8).log2().mean()
+                        for k in var_means.keys()}
+        loss = - sum([torch.min(torch.cat([log_snr_i.unsqueeze(0),
+                                           torch.zeros((1, *log_snr_i.shape), device=self.h_params.device)+4.0],
+                                          0), 0)[0]
+                      for log_snr_i in self.log_snr.values()])/len(list(self.log_snr.values()))
+
+        self._prepare_metrics(loss)
+
+        return loss
+
+    def _prepare_metrics(self, loss):
+        self._prepared_metrics = self.log_snr
+
+
 class Supervision(BaseCriterion):
     def __init__(self, model, w):
         # Warning: This is still only implemented for categorical supervised variables
@@ -155,11 +185,13 @@ class ELBo(BaseCriterion):
         # Applying KL Annealing
         if self.h_params.anneal_kl and not actual:
             anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
-            is_sigmoid = anl0==-1
-            if is_sigmoid:
-                pass
+            if self.h_params.anneal_kl_type == 'sigmoid':
+                coeff = torch.sigmoid(torch.tensor((self.model.step-anl0)/anl1, device=self.h_params.device))
+            elif self.h_params.anneal_kl_type == 'linear':
+                coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if \
+                    anl1 > self.model.step >= anl0 else 1
             else:
-                coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
+                raise NotImplementedError('Unrecognized KL annealing scheme {}.'.format(self.h_params.anneal_kl_type))
             coeff = torch.tensor(coeff)
         else:
             coeff = torch.tensor(1)
@@ -236,23 +268,30 @@ class ELBo(BaseCriterion):
                 if actual and thr is None:
                     unweighted_loss = loss
                 else:
+                    sequence_mask = (
+                                self.gen_net.variables_star[self.generated_v] != self.generated_v.ignore).float()
                     un_log_p_xIz = \
                         - self._unweighted_criterion(self.generated_v.post_params['logits'].view(-1, vocab_size)/temp,
                                                      self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                                     ).view(self.gen_net.variables_star[self.generated_v].shape)
+                                                     ).view(self.gen_net.variables_star[self.generated_v].shape)*sequence_mask
                     if self.generated_v.sub_lvl_size is not None:
                         un_log_p_xIz = un_log_p_xIz.sum(-1)
-                    un_log_p_xIz *= self.sequence_mask
                     kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=None)
                               for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
                     unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
                 self._prepare_metrics(unweighted_loss)
+        # print("pxz", - torch.sum(self.log_p_xIz, dim=(0, 1))/self.valid_n_samples)
+        # for lv_n in self.infer_lvs.keys() :
+        #     if observed is None or (lv_n not in observed):
+        #         print("kl,", lv_n, ": ", - torch.sum(kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr),
+        #                           dim=(0, 1))/self.valid_n_samples)
 
         return loss
 
     def _prepare_metrics(self, loss):
         current_elbo = - loss
-        LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join([lv for lv in sorted(self.infer_lvs.keys())]))
+        LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join(sorted(p.name for p in
+                                                                             self.gen_net.parent[self.generated_v])))
         LL_value = torch.sum(self.log_p_xIz)/self.valid_n_samples
         KL_dict = {}
         for lv in self.gen_lvs.keys():
@@ -285,7 +324,11 @@ class ELBo(BaseCriterion):
                         KLs.append(torch.sum(kl_i) / self.valid_n_samples)
                     KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
 
-        self._prepared_metrics = {'/ELBo': current_elbo, LL_name: LL_value, **KL_dict}
+        if self.h_params.anneal_kl_type == 'linear' and \
+                self.h_params.anneal_kl and self.model.step <= self.h_params.anneal_kl[0]:
+            self._prepared_metrics = {LL_name: LL_value}
+        else:
+            self._prepared_metrics = {'/ELBo': current_elbo, LL_name: LL_value, **KL_dict}
 
 
 class Reconstruction(BaseCriterion):
@@ -370,14 +413,26 @@ class IWLBo(ELBo):
             else:
                 log_p_xIz = torch.cat(log_p_xIz, dim=0).view(loss_shape)
         else:
+            loss_shape = self.generated_v.post_params['logits'].shape[:-1]
             log_p_xIz = - criterion(self.generated_v.post_params['logits'].view(-1, vocab_size),
                                     self.gen_net.variables_star[self.generated_v].reshape(-1)
-                                    ).view(self.generated_v.post_params['logits'].shape[:-1])
+                                    )
+            if self.generated_v.sub_lvl_size:
+                sub_seq_mask = (self.gen_net.variables_star[self.generated_v] != self.generated_v.ignore).float()
+                log_p_xIz = (log_p_xIz.view((*loss_shape, self.generated_v.sub_lvl_size))*sub_seq_mask).sum(-1)
+            else:
+                log_p_xIz = log_p_xIz.view(loss_shape)*self.sequence_mask
 
         # Applying KL Annealing (or it's equivalent for IWAEs)
         if self.h_params.anneal_kl and not actual:
             anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
-            coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if anl1 > self.model.step >= anl0 else 1
+            if self.h_params.anneal_kl_type == 'sigmoid':
+                coeff = torch.sigmoid((self.model.step-anl0)/anl1)
+            elif self.h_params.anneal_kl_type == 'linear':
+                coeff = 0 if self.model.step < anl0 else ((self.model.step-anl0)/(anl1 - anl0)) if \
+                    anl1 > self.model.step >= anl0 else 1
+            else:
+                raise NotImplementedError('Unrecognized KL annealing scheme {}.'.format(self.h_params.anneal_kl_type))
             coeff = torch.tensor(coeff)
         else:
             coeff = torch.tensor(1)
@@ -403,7 +458,7 @@ class IWLBo(ELBo):
             log_q_zIx = sum(log_q_zIx) * self.sequence_mask
         log_p_xIz_obs = sum([self.gen_net.log_proba[lv] for lv in self.gen_lvs.values()
                          if (lv.name in observed)]) if observed is not None else 0
-        log_p_xIz = (log_p_xIz + log_p_xIz_obs) * self.sequence_mask
+        log_p_xIz = log_p_xIz + log_p_xIz_obs * self.sequence_mask
 
         # Calculating IWLBo Gradient estimate
         log_wi = coeff * (log_p_z - log_q_zIx) + log_p_xIz
@@ -418,6 +473,15 @@ class IWLBo(ELBo):
                 detached_exp_log_wi = torch.mean(detached_exp_log_wi, dim=0)
             loss = - torch.sum(torch.log(detached_exp_log_wi+1e-8) +
                                max_log_wi)/(self.valid_n_samples/n_samples_correction)
+            # print('detached_exp_log_wi', detached_exp_log_wi.min(), detached_log_wi.min(), max_log_wi)
+            # print("loss", loss)
+            # print("px|z", log_p_xIz.sum()/(self.valid_n_samples/n_samples_correction))
+            # print("kl", (log_p_z - log_q_zIx).sum()/(self.valid_n_samples/n_samples_correction))
+            # for genlv, inflv in zip(self.gen_lvs.values(), self.infer_lvs.values()):
+            #     inflv = self.infer_net.name_to_v[genlv.name]
+            #     print(genlv.name, inflv.name,
+            #           ((self.gen_net.log_proba[genlv] -
+            #            self.infer_net.log_proba[inflv])*self.sequence_mask).sum()/(self.valid_n_samples/n_samples_correction))
         else:
             DReG_weights = (detached_exp_log_wi / (1e-8 + torch.sum(detached_exp_log_wi, dim=0).unsqueeze(0)))**2
             loss = - torch.sum(DReG_weights * log_wi)/self.valid_n_samples
@@ -428,6 +492,10 @@ class IWLBo(ELBo):
                     unweighted_loss = loss
                 else:
                     log_wi = (log_p_z - log_q_zIx) + log_p_xIz
+                    # print("logp_z", log_p_z-log_q_zIx)
+                    # print("logq_zIx", )
+                    # print("logp_x|z", log_p_xIz)
+
                     max_log_wi = torch.max(log_wi)
                     exp_log_wi = torch.exp(log_wi - max_log_wi)
                     n_samples_correction = 1
@@ -435,6 +503,8 @@ class IWLBo(ELBo):
                         n_samples_correction *= exp_log_wi.shape[0]
                         exp_log_wi = torch.mean(exp_log_wi, dim=0)
                     summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
+                    # print((torch.log(exp_log_wi+1e-8) + max_log_wi).sum()/self.valid_n_samples,
+                    #       (torch.log(exp_log_wi) + max_log_wi).sum()/self.valid_n_samples)
                     unweighted_loss = - torch.sum(summed_log_wi)/(self.valid_n_samples/n_samples_correction)
                 self.ll_value = torch.sum(log_p_xIz) / self.valid_n_samples
                 self._prepare_metrics(unweighted_loss)
@@ -447,7 +517,9 @@ class IWLBo(ELBo):
         LL_value = self.ll_value
         KL_dict = {}
         kl_sum = 0
-        if self.model.step >= self.h_params.anneal_kl[0]:
+        if self.model.step <= self.h_params.anneal_kl[0] and self.h_params.anneal_kl_type == 'linear':
+            self._prepared_metrics = {LL_name: LL_value}
+        else:
             for lv in self.gen_lvs.keys():
                 if lv not in self.infer_lvs: continue
                 gen_lv, inf_lv = self.gen_lvs[lv], self.infer_lvs[lv]
@@ -460,8 +532,7 @@ class IWLBo(ELBo):
                 KL_value = torch.sum(kl_i)/self.valid_n_samples
                 kl_sum += KL_value
                 KL_dict[KL_name] = KL_value
-
-        self._prepared_metrics = {'/IWLBo': current_iwlbo, '/ELBo': LL_value-kl_sum, LL_name: LL_value, **KL_dict}
+            self._prepared_metrics = {'/IWLBo': current_iwlbo, '/ELBo': LL_value-kl_sum, LL_name: LL_value, **KL_dict}
 
 
 def kullback_liebler(lv0, lv1, thr=None, slice=None):
