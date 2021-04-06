@@ -9,6 +9,8 @@ from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
 import spacy
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
 from allennlp.predictors.predictor import Predictor
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,7 +24,8 @@ predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-
 # ==================================================== SSPOSTAG MODEL CLASS ============================================
 
 class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
-    def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None):
+    def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
+        self.dataset = dataset
         super(DisentanglementTransformerVAE, self).__init__()
 
         self.h_params = h_params
@@ -278,6 +281,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             samples = [' '.join([self.index[self.generated_v].itos[w]
                                  for w in sen]).split('<eos>')[0].replace('<go>', '').replace('</go>', '')
                        for sen in x_hat_params]
+            if self.dataset == 'yelp':
+                samples = [sen.split('<eos>')[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
                       [('orig' if i == 0 else str(i-1) if sample == first_sample[0] else '**'+str(i-1)+'**') + ': ' +
@@ -380,6 +385,47 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 v.switch_to_relaxed()
         super(DisentanglementTransformerVAE, self).train(mode=mode)
 
+    def get_sentiment_summaries(self, iterator):
+        with torch.no_grad():
+            infer_prev, gen_prev = None, None
+            z_vals = [[] for _ in range(sum(self.h_params.n_latents))]
+            y_vals = []
+            for i, batch in enumerate(tqdm(iterator, desc="Getting Model Sentiment stats")):
+                if batch.text.shape[1] < 2: continue
+                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
+                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev),
+                                            )
+                y_vals.extend(batch.label[:, 0].cpu().numpy())
+                # Getting z values
+                z_vals_i = []
+                for j, size in enumerate(self.h_params.n_latents):
+                    zj_val = self.infer_bn.name_to_v['z{}'.format(j+1)].post_samples
+                    for k in range(size):
+                        emb_size = int(zj_val.shape[-1]/size)
+                        z_vals_i.append(zj_val[..., 0, k*emb_size:(k+1)*emb_size].cpu().numpy())
+                for l in range(len(z_vals_i)):
+                    z_vals[l].extend(z_vals_i[l])
+
+                if not self.h_params.contiguous_lm:
+                    infer_prev, gen_prev = None, None
+            print("Collected {} z samples for each of the zs, and {} labels".format([len(v) for v in z_vals], len(y_vals)))
+            classifier = LogisticRegression()
+            auc = []
+            for i in tqdm(range(len(z_vals)), desc="Getting latent vector performance"):
+                classifier.fit(z_vals[i], y_vals)
+                preds = classifier.predict(z_vals[i])
+                auc.append(roc_auc_score(y_vals, preds))
+            print("The produced AUCs were", auc)
+            max_auc = max(auc)
+            sort_auc_index = np.argsort(auc)
+            auc_margin = auc[sort_auc_index[-1]] - auc[sort_auc_index[-2]]
+            max_auc_index = sort_auc_index[-1]
+            self.writer.add_scalar('test/max_auc', max_auc, self.step)
+            self.writer.add_scalar('test/auc_margin', auc_margin, self.step)
+            self.writer.add_scalar('test/max_auc_index', max_auc_index, self.step)
+
+            return max_auc, auc_margin, max_auc_index
+
     def get_disentanglement_summaries(self):
         df = self._get_stat_data_frame(n_samples=80, n_alterations=10, batch_size=20)
         df.to_csv(os.path.join(self.h_params.viz_path, 'statdf_{}.csv'.format(self.step)))
@@ -415,7 +461,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 largest2 = np.array(grouped.mean()[d_rel_types].transpose().nlargest(2, i)[i].array)
             except BaseException as e:
                 print(d_rel_types, grouped)
-                raise e
+                print("/_!_\\ Could not influence any type of relations /_!_\\ ")
+                return  0, 0, None, None
             sup_dis_diffs1 += largest2[0] - largest2[1]
         sup_dis_diffs2 = 0
         for i in range(sum(self.h_params.n_latents)):

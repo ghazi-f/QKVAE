@@ -243,7 +243,7 @@ class HuggingAGNews:
 
 class HuggingYelp:
 
-    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion, sup_proportion, dev_index=1,
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
                  pretrained=False):
         self.data_path = os.path.join(".data", "yelp_all")
         text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
@@ -254,13 +254,15 @@ class HuggingYelp:
 
         start = time()
         try:
-            yelp_data = hdatasets.Dataset.load_from_disk(self.data_path)
-        except FileNotFoundError:
+            train_data = hdatasets.Dataset.load_from_disk(os.path.join(self.data_path, 'train'))
+            test_data = hdatasets.Dataset.load_from_disk(os.path.join(self.data_path, 'test'))
+        except FileNotFoundError as e:
+            print("Proceeding to read datasets for the first time because of error:\n", e)
             yelp_data = load_dataset('csv', data_files={'train': os.path.join('.data', 'yelp', 'train.csv'),
                                                                     'test': os.path.join('.data', 'yelp', 'test.csv')},
                                                  column_names=['label', 'text'], version='0.0.2')
             yelp_data.save_to_disk(self.data_path)
-        train_data, test_data = yelp_data['train'], yelp_data['test']
+            train_data, test_data = yelp_data['train'], yelp_data['test']
 
         def expand_labels(datum):
             datum['label'] = [str(datum['label'])]*(max_len-1)
@@ -279,12 +281,13 @@ class HuggingYelp:
         train_start1, train_start2, train_end1, train_end2 = 0, dev_end, int(dev_start*sup_proportion),\
                                                              int(dev_end+(len_train-dev_end)*sup_proportion)
         unsup_start, unsup_end = len_train, int(len_train+len_train*2*unsup_proportion)
+        unsup_start, unsup_end = 0, 100000
         # Since the datasets are originally sorted with the label as key, we shuffle them before reducing the supervised
         # or the unsupervised data to the first few examples. We use a fixed see to keep the same data for all
         # experiments
         np.random.seed(42)
-        train_examples = [Example.fromdict(ex, fields2) for ex in train_data]
-        unsup_examples = [Example.fromdict(ex, fields4) for ex in train_data]
+        train_examples = [Example.fromdict(ex, fields2) for i, ex in enumerate(train_data) if i<unsup_end]
+        unsup_examples = [Example.fromdict(ex, fields4) for i, ex in enumerate(train_data) if i<unsup_end]
         np.random.shuffle(train_examples)
         np.random.shuffle(unsup_examples)
         train = Dataset(train_examples[train_start1:train_end1]+train_examples[train_start2:train_end2], fields1)
@@ -300,7 +303,8 @@ class HuggingYelp:
 
         # build the vocabulary
         text_field.build_vocab(vocab_dataset, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
-        label_field.build_vocab(train)
+        label_field.build_vocab(vocab_dataset)
+
         # make iterator for splits
         self.train_iter, _, _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
@@ -311,6 +315,70 @@ class HuggingYelp:
             (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
             (train, val, test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
+
+        self.vocab = text_field.vocab
+        self.tags = label_field.vocab
+        self.text_field = text_field
+        self.label_field = label_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
+class HuggingYelp2:
+
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
+                 pretrained=False):
+        text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
+                                init_token='<go>' ,is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
+
+        start = time()
+
+        train, val, test = BinaryYelp.splits((('text', text_field), ('label', label_field)))
+
+        # np.random.shuffle(train_examples)
+        fields1 = {'text': text_field, 'label': label_field}
+        train = Dataset(train, fields1)
+        val = Dataset(val, fields1)
+        test = Dataset(test, fields1)
+        print('data loading took', time() - start)
+
+        # build the vocabulary
+        text_field.build_vocab(train, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
+        label_field.build_vocab(train)
+
+        # make iterator for splits
+        self.train_iter, _, _ = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+
+        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab
         self.tags = label_field.vocab
@@ -1400,4 +1468,49 @@ class LexNorm2015(Dataset):
 
         return super(LexNorm2015, cls).splits(
             path=os.path.join(".data", "lexnorm2015"), fields=fields, root=root, train=train, validation=validation,
+            test=test, **kwargs)
+class BinaryYelp(Dataset):
+    # Universal Dependencies English Web Treebank.
+    # Download original at http://universaldependencies.org/
+    # License: http://creativecommons.org/licenses/by-sa/4.0/
+    urls = []
+    dirname = ''
+    name = ''
+
+    @staticmethod
+    def sort_key(example):
+        for attr in dir(example):
+            if not callable(getattr(example, attr)) and \
+                    not attr.startswith("__"):
+                return len(getattr(example, attr))
+        return 0
+
+    def __init__(self, path, fields, encoding="utf-8", separator="\t", verbose=1, shuffle_seed=42, **kwargs):
+        examples = []
+        n_examples, n_words, n_chars = 0, [], []
+        with open(path, encoding=encoding) as input_file:
+            for line in input_file:
+                sen, lab = line.split('\t')
+                sen, lab = sen.split(), [int(lab)] * len(list(sen.split()))
+                examples.append(data.Example.fromlist([sen, lab], fields))
+                n_examples += 1
+                n_words.append(len(sen))
+        if verbose:
+            print("Dataset has {}  examples. statistics:\n -words: {}+-{}(quantiles(0.5, 0.7, 0.9, 0.95, "
+                  "0.99:{},{},{},{},{})".format(n_examples, np.mean(n_words), np.std(n_words),
+                                                *np.quantile(n_words, [0.5, 0.7, 0.9, 0.95, 0.99])))
+        np.random.seed(42)
+        np.random.shuffle(examples)
+        super(BinaryYelp, self).__init__(examples, fields, **kwargs)
+
+    @classmethod
+    def splits(cls, fields, root=".data", train="yelp.train.tsv",
+               validation="yelp.dev.tsv",
+               test="yelp.test.tsv", **kwargs):
+        """Loads the Universal Dependencies Version 1 POS Tagged
+        data.
+        """
+
+        return super(BinaryYelp, cls).splits(
+            path=os.path.join(".data", "binary_yelp"), fields=fields, root=root, train=train, validation=validation,
             test=test, **kwargs)

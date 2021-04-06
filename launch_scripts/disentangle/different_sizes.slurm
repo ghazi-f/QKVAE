@@ -63,11 +63,11 @@
 # srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper3" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
 # srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper4" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
 # srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeper5" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0 --encoder_l 4 --decoder_l 4
-srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax1" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
-srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax2" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
-srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax3" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
-srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax4" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
-srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax5" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
+# srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax1" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
+# srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax2" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
+# srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax3" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
+# srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax4" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
+# srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax5" --n_latents 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 2.0
 # srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeplv1" --n_latents 8 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0
 # srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeplv2" --n_latents 8 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0
 # srun python disentangle_train.py --test_name "Disentanglement/ontonotesdeeplv3" --n_latents 8 8 8 8 --data ontonotes --n_epochs 60 --graph NormalConGen --max_elbo2 3.0
@@ -78,4 +78,28 @@ srun python disentangle_train.py --test_name "Disentanglement/ontonoteslowmax5" 
 # srun python disentangle_train.py --test_name "Disentanglement/ontonoteslongtrain3" --n_latents 8 8 8 --data ontonotes --n_epochs 80 --graph NormalConGen --max_elbo2 3.0
 # srun python disentangle_train.py --test_name "Disentanglement/ontonoteslongtrain4" --n_latents 8 8 8 --data ontonotes --n_epochs 80 --graph NormalConGen --max_elbo2 3.0
 # srun python disentangle_train.py --test_name "Disentanglement/ontonoteslongtrain5" --n_latents 8 8 8 --data ontonotes --n_epochs 80 --graph NormalConGen --max_elbo2 3.0
-
+srun python disentangle_train.py --test_name "Disentanglement/yelp1" --n_latents 4 --data yelp --n_epochs 60
+srun python disentangle_train.py --test_name "Disentanglement/yelp2" --n_latents 4 --data yelp --n_epochs 60
+srun python disentangle_train.py --test_name "Disentanglement/yelp3" --n_latents 4 --data yelp --n_epochs 60
+srun python disentangle_train.py --test_name "Disentanglement/yelp4" --n_latents 4 --data yelp --n_epochs 60
+srun python disentangle_train.py --test_name "Disentanglement/yelp5" --n_latents 4 --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHigh1" --n_latents 8  --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHigh2" --n_latents 8  --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHigh3" --n_latents 8  --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHigh4" --n_latents 8  --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHigh5" --n_latents 8  --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpDeep1" --n_latents 4 4 --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpDeep2" --n_latents 4 4 --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpDeep3" --n_latents 4 4 --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpDeep4" --n_latents 4 4 --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpDeep5" --n_latents 4 4 --data yelp --n_epochs 60
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHighMaxElbo1" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 6.0 --max_elbo2 6.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHighMaxElbo2" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 6.0 --max_elbo2 6.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHighMaxElbo3" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 6.0 --max_elbo2 6.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHighMaxElbo4" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 6.0 --max_elbo2 6.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpHighMaxElbo5" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 6.0 --max_elbo2 6.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpLowMaxElbo1" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 4.0 --max_elbo2 4.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpLowMaxElbo2" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 4.0 --max_elbo2 4.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpLowMaxElbo3" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 4.0 --max_elbo2 4.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpLowMaxElbo4" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 4.0 --max_elbo2 4.0
+# srun python disentangle_train.py --test_name "Disentanglement/yelpLowMaxElbo5" --n_latents 4 --data yelp --n_epochs 60 --max_elbo1 4.0 --max_elbo2 4.0

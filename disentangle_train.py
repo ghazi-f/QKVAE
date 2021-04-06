@@ -7,7 +7,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import NLIGenData2, OntoGenData
+from data_prep import NLIGenData2, OntoGenData, HuggingYelp2
 from disentanglement_transformer.models import DisentanglementTransformerVAE as Model
 from disentanglement_transformer.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer.graphs import *
@@ -17,7 +17,7 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 4, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes"], type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -31,10 +31,10 @@ parser.add_argument("--pretrained_embeddings", default=False, type=bool)########
 parser.add_argument("--z_size", default=192*kz, type=int)#################"
 parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
 parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)#################"
-parser.add_argument("--text_rep_l", default=2, type=int)
+parser.add_argument("--text_rep_l", default=3, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
 parser.add_argument("--encoder_h", default=192*k, type=int)#################"
-parser.add_argument("--encoder_l", default=2, type=int)#################"
+parser.add_argument("--encoder_l", default=3, type=int)#################"
 parser.add_argument("--decoder_h", default=192*k, type=int)
 parser.add_argument("--decoder_l", default=3, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
@@ -46,17 +46,17 @@ parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str
 parser.add_argument("--graph", default='Normal', choices=["Discrete", "Normal", "NormalConGen", "NormalSimplePrior",
                                                           "Normal2",  "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
-parser.add_argument("--testing_iw_samples", default=20, type=int)
+parser.add_argument("--testing_iw_samples", default=4, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
-parser.add_argument("--anneal_kl0", default=2000, type=int)
-parser.add_argument("--anneal_kl1", default=4000, type=int)
+parser.add_argument("--anneal_kl0", default=3000, type=int)
+parser.add_argument("--anneal_kl1", default=25000, type=int)
 parser.add_argument("--grad_clip", default=100., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
-parser.add_argument("--max_elbo1", default=6.0, type=float)
-parser.add_argument("--max_elbo2", default=3.0, type=float)
+parser.add_argument("--max_elbo1", default=5.0, type=float)
+parser.add_argument("--max_elbo2", default=5.0, type=float)
 parser.add_argument("--max_elbo_choice", default=0, type=int)
-parser.add_argument("--dropout", default=0.0, type=float)
-parser.add_argument("--word_dropout", default=.0, type=float)
+parser.add_argument("--dropout", default=0.5, type=float)
+parser.add_argument("--word_dropout", default=0.3, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
@@ -67,11 +67,12 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.losses = 'VAE'
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/NonProgLV3ConGen"
+    flags.test_name = "nliLM/Yelp"
+    flags.data = "yelp"
+    flags.n_latents = [4]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
@@ -82,7 +83,7 @@ GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
          "NormalSimplePrior": get_structured_auto_regressive_simple_prior}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData}[flags.data]
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -103,7 +104,7 @@ if flags.grad_accu > 1:
 
 
 def main():
-    data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, flags.pretrained_embeddings)
+    data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, pretrained=flags.pretrained_embeddings)
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,
                        device=DEVICE, vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
@@ -123,12 +124,14 @@ def main():
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
-    model = Model(data.vocab, data.tags, h_params, wvs=data.wvs)
+    model = Model(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
+    total_unsupervised_val_samples = len(data.val_iter)*BATCH_SIZE
     print("Unsupervised training examples: ", total_unsupervised_train_samples)
+    print("Unsupervised val examples: ", total_unsupervised_val_samples)
     current_time = time()
     #print(model)
     number_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -167,6 +170,7 @@ def main():
                 model.eval()
                 try:
                     test_batch = limited_next(val_iterator)
+
                 except StopIteration:
                     print("Reinitialized test data iterator")
                     val_iterator = iter(data.val_iter)
@@ -182,19 +186,24 @@ def main():
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0] and ((data.n_epochs % 3) == 0):
             model.eval()
-            pp_ub = model.get_perplexity(data.unsup_val_iter)
-            dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
-            print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
-            print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
+            # pp_ub = model.get_perplexity(data.val_iter)
+            if flags.data == "yelp":
+                max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
+                print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
+            else:
+                dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
+                print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
+
+            # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
 
-            if pp_ub < min_perp:
-                print('Saving The model ..')
-                min_perp = pp_ub
-                model.save()
-                wait_count = 0
-            else:
-                wait_count += 1
+            # if pp_ub < min_perp:
+            #     print('Saving The model ..')
+            #     min_perp = pp_ub
+            #     model.save()
+            #     wait_count = 0
+            # else:
+            #     wait_count += 1
             if flags.save_all:
                 model.save()
 
@@ -203,7 +212,6 @@ def main():
 
             model.train()
         data.reinit_iterator('valid')
-        data.reinit_iterator('unsup_valid')
         data.reinit_iterator('train')
     print("Finished training")
 
