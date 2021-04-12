@@ -552,7 +552,7 @@ class CoattentiveTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_targets=20, nheads=2,
-                 sequence=None, memory=None, n_mems=None):
+                 sequence=None, memory=None, n_mems=None, mem_size=None):
         super(CoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
                                                          highway, dropout=dropout, batchnorm=batchnorm,
                                                          residual=residual)
@@ -566,6 +566,7 @@ class CoattentiveTransformerLink(NamedLink):
         self.att_vals = None
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
+        self.mem_to_hidden = nn.Linear(mem_size, output_size) if mem_size else None
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size*n_targets,
                                                                       dropout=dropout, activation='gelu'), depth)
         self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,
@@ -590,6 +591,7 @@ class CoattentiveTransformerLink(NamedLink):
             if self.memory is not None:
                 memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
                 memory = memory.view((-1, self.n_mems, int(memory.shape[-1] / self.n_mems)))
+                memory = self.mem_to_hidden(memory) if self.mem_to_hidden else memory
             x = torch.cat([v for k, v in x.items() if k in self.sequence], dim=-1)
             if self.residual is not None:
                 x_res, x = x
@@ -615,6 +617,7 @@ class CoattentiveTransformerLink(NamedLink):
                     batch_orig_shape = None
                 memory = memory[..., 0, :]
                 memory = memory.view((-1, self.n_mems, int(memory.shape[-1] / self.n_mems)))
+                memory = self.mem_to_hidden(memory) if self.mem_to_hidden else memory
                 x = memory.transpose(0, -2)
             else:
                 raise LookupError('Memory and sequence are both None. You have to provide either of those.')
@@ -624,7 +627,9 @@ class CoattentiveTransformerLink(NamedLink):
             target = target.unsqueeze(1)
             target = target.expand((target.shape[0], x.shape[new_dimension], *target.shape[2:]))
         # This conditioned is not checked by the transformer module architecture
-        assert all([ms == ts for ms, ts in zip(x.shape[1:], target.shape[1:])])
+        assert all([ms == ts for ms, ts in zip(x.shape[1:], target.shape[1:])]), "Memory shape is {}, while  " \
+                                                                                 "Target Shape is {}".format(x.shape,
+                                                                                                             target.shape)
         outputs = self.transformer_dec(memory=x, tgt=target).transpose(-2, 0)
         if self.get_att:
             self.att_vals = []

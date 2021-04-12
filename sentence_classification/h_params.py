@@ -47,6 +47,7 @@ class DefaultHParams:
                  anneal_kl_type='linear',
                  grad_clip=None,
                  kl_th=None,
+                 kl_beta=1.0,
                  max_elbo=False,
                  highway=True,
                  dropout=0.,
@@ -113,6 +114,7 @@ class DefaultHParams:
         self.grad_accumulation_steps = grad_accumulation_steps
         self.anneal_kl = anneal_kl
         self.anneal_kl_type = anneal_kl_type
+        self.kl_beta = kl_beta
         self.grad_clip = grad_clip
         self.kl_th = kl_th
         self.max_elbo = max_elbo

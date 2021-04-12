@@ -47,6 +47,7 @@ class DefaultHParams:
                  graph_generator=None,
                  anneal_kl=None,
                  anneal_kl_type='linear',
+                 kl_beta=1.0,
                  grad_clip=None,
                  kl_th=None,
                  dropout=0.,
@@ -114,6 +115,7 @@ class DefaultHParams:
         self.optimizer_kwargs = optimizer_kwargs or {'lr': 1e-3}
         self.grad_accumulation_steps = grad_accumulation_steps
         self.anneal_kl = anneal_kl
+        self.kl_beta = kl_beta
         self.anneal_kl_type = anneal_kl_type
         self.max_elbo = max_elbo
         self.grad_clip = grad_clip

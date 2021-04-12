@@ -15,7 +15,7 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 4, 4, 2
+k, kz, klstm = 8, 16, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
 parser.add_argument("--max_len", default=17, type=int)
@@ -28,33 +28,34 @@ parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=128, type=int)#################"
 parser.add_argument("--pretrained_embeddings", default=False, type=bool)#################"
-parser.add_argument("--z_size", default=192*kz, type=int)#################"
+parser.add_argument("--z_size", default=96*kz, type=int)#################"
 parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
 parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)#################"
 parser.add_argument("--text_rep_l", default=3, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
 parser.add_argument("--encoder_h", default=192*k, type=int)#################"
-parser.add_argument("--encoder_l", default=3, type=int)#################"
+parser.add_argument("--encoder_l", default=1, type=int)#################"
 parser.add_argument("--decoder_h", default=192*k, type=int)
-parser.add_argument("--decoder_l", default=3, type=int)#################"
+parser.add_argument("--decoder_l", default=1, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
 parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false')
 parser.set_defaults(minimal_enc=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
-parser.add_argument("--graph", default='Normal', choices=["Discrete", "Normal", "NormalConGen", "NormalSimplePrior",
+parser.add_argument("--graph", default='Normal', choices=["Discrete", "IndepInfer", "Normal", "NormalConGen", "NormalSimplePrior",
                                                           "Normal2",  "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=5, type=int)
 parser.add_argument("--testing_iw_samples", default=4, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=25000, type=int)
-parser.add_argument("--grad_clip", default=100., type=float)
+parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
-parser.add_argument("--max_elbo1", default=5.0, type=float)
-parser.add_argument("--max_elbo2", default=5.0, type=float)
-parser.add_argument("--max_elbo_choice", default=0, type=int)
+parser.add_argument("--max_elbo1", default=6.0, type=float)
+parser.add_argument("--max_elbo2", default=4.0, type=float)
+parser.add_argument("--max_elbo_choice", default=5, type=int)
+parser.add_argument("--kl_beta", default=0.35, type=int)
 parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--word_dropout", default=0.3, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -66,16 +67,18 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/Yelp"
-    flags.data = "yelp"
+    flags.graph = "IndepInfer"
+    flags.test_name = "nliLM/nlitest"
+    flags.data = "nli"
     flags.n_latents = [4]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
+         "IndepInfer": get_structured_auto_regressive_indep_graph,
          "Normal": get_structured_auto_regressive_graph,
          "NormalConGen": get_structured_auto_regressive_graphConGen,
          "Normal2": get_structured_auto_regressive_graph2,
@@ -111,7 +114,7 @@ def main():
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
-                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.85)},
+                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
                        is_weighted=[], graph_generator=GRAPH,
                        z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
@@ -120,7 +123,7 @@ def main():
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
-                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc)
+                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
@@ -190,9 +193,9 @@ def main():
             if flags.data == "yelp":
                 max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
                 print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
-            else:
-                dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
-                print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
+            # else:
+            dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
+            print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
 
             # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
