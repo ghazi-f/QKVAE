@@ -351,6 +351,22 @@ class Gaussian(BaseLatentVariable):
                 reps = reps.view(*orig_shape[:-1], reps.shape[-1])
         return reps
 
+    def input_mi(self, prior_lv):
+        # MI upperbound as instructed in "LAGGING INFERENCE NETWORKS AND POSTERIOR
+        # COLLAPSE IN VARIATIONAL AUTOENCODERS", He et al. (2019) section 4.2 (originally from Dieng et.al (2018)
+        params0, params1 = self.post_params, prior_lv.post_params
+        sig0, sig1 = params0['scale'] ** 2, params1['scale'] ** 2
+
+        mu0, mu1 = params0['loc'], params1['loc']
+
+        mean_kl = (0.5 * (sig0 / sig1 + (mu1 - mu0) ** 2 / sig1 + torch.log(sig1) - torch.log(sig0) - 1)).sum(-1).mean()
+        log_qz = self.post_log_prob(torch.stack([self.post_samples.unsqueeze(-2)]*self.post_samples.shape(-2),dim=-2)).mean(-2)
+        log_pz = prior_lv.post_log_prob(self.post_samples)
+        marginal_kl = (log_qz - log_pz).mean()
+
+        return mean_kl - marginal_kl
+
+
 
 class Categorical(BaseLatentVariable):
     parameter_activations = {'logits': nn.Sequential()}
