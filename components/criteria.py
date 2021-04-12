@@ -170,6 +170,8 @@ class ELBo(BaseCriterion):
             self.log_p_xIz = self.log_p_xIz.sum(-1)
 
         self.valid_n_samples = torch.sum(self.sequence_mask)
+        sen_len_kl = self.sequence_mask.sum(-1).unsqueeze(-1)
+        sen_len_rec = 1 if any([lv.sequence_lv for lv in self.gen_lvs.values()]) else sen_len_kl
         # Applying KL Thresholding (Free Bits)
         if self.h_params.kl_th is None or actual:
             thr = None
@@ -192,27 +194,27 @@ class ELBo(BaseCriterion):
                     anl1 > self.model.step >= anl0 else 1
             else:
                 raise NotImplementedError('Unrecognized KL annealing scheme {}.'.format(self.h_params.anneal_kl_type))
-            coeff = torch.tensor(coeff)
+            coeff = torch.tensor(coeff).float()
         else:
-            coeff = torch.tensor(1)
+            coeff = torch.tensor(1.)
+
+        coeff *= self.h_params.kl_beta
         if coeff == 0:
             kl = 0
-        if self.h_params.max_elbo:
+        if self.h_params.max_elbo and self.h_params.max_elbo[0] < 5:
             # Didn't implement observed here
             loss_choice, loss_threshold = self.h_params.max_elbo
             if not actual and type(kl) != int:
                 if loss_choice == 0:
                     max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
                               for lv_n in self.infer_lvs.keys()]), dim=0)[0]
-                    loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * max_kl/loss_threshold)
-                                       , dim=(0, 1)) / self.valid_n_samples
+                    loss = - (torch.min(self.log_p_xIz/sen_len_rec, -coeff * max_kl/loss_threshold/sen_len_kl)).sum(1).mean(0)
                 if loss_choice == 1:
                     kl_stack = torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
                               for lv_n in self.infer_lvs.keys()])
                     max_max_kl = kl_stack.max(0)[0]
                     max_kl = (kl_stack-max_max_kl.unsqueeze(0)).exp().sum(0).log()+max_max_kl*kl_stack.shape[0]
-                    loss = torch.sum((-self.log_p_xIz.exp()+(coeff * max_kl/loss_threshold).exp()).log(),
-                                     dim=(0, 1)) / self.valid_n_samples
+                    loss = ((-self.log_p_xIz.exp()/sen_len_rec+(coeff * max_kl/loss_threshold).exp()).log()/sen_len_kl).sum(1).mean(0)
                 elif loss_choice == 2:
                     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
                     zi_coeffs = {'z'+str(len(self.h_params.n_latents)+1-i): 0 if self.model.step < anl0 else (
@@ -224,8 +226,7 @@ class ELBo(BaseCriterion):
                                    for lv_n in self.infer_lvs.keys()
                                    if observed is None or (lv_n not in observed)])
                     this_kl *= self.sequence_mask
-                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/loss_threshold),
-                                       dim=(0, 1)) / self.valid_n_samples
+                    loss = - (torch.min(self.log_p_xIz/sen_len_rec, - this_kl/loss_threshold/sen_len_kl)).sum(1).mean(0)
                 elif loss_choice == 3:
                     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
                     n_lat = self.h_params.n_latents
@@ -238,8 +239,7 @@ class ELBo(BaseCriterion):
                                                      * zi_coeffs[lv_n]
                                                      for lv_n in self.infer_lvs.keys()]), dim=0)[0]
                     this_kl *= self.sequence_mask
-                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/loss_threshold),
-                                       dim=(0, 1)) / self.valid_n_samples
+                    loss = - (torch.min(self.log_p_xIz/sen_len_rec, - this_kl/loss_threshold/sen_len_kl)).sum(1).mean(0)
                 elif loss_choice == 4:
 
                     anl0, anl1 = self.h_params.anneal_kl[0], self.h_params.anneal_kl[1]
@@ -253,15 +253,14 @@ class ELBo(BaseCriterion):
                                    for lv_n in self.infer_lvs.keys()
                                    if observed is None or (lv_n not in observed)])
                     this_kl *= self.sequence_mask
-                    loss = - torch.sum(torch.min(self.log_p_xIz, - this_kl/loss_threshold),
-                                       dim=(0, 1)) / self.valid_n_samples
+                    loss = - (torch.min(self.log_p_xIz/sen_len_rec, - this_kl/loss_threshold/sen_len_kl)).sum(1).mean(0)
 
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/loss_threshold),
                 #                    dim=(0, 1)) / self.valid_n_samples
             else:
-                loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
+                loss = - (self.log_p_xIz/sen_len_rec - coeff * kl/sen_len_kl).sum(1).mean(0)
         else:
-            loss = - torch.sum(self.log_p_xIz - coeff * kl, dim=(0, 1))/self.valid_n_samples
+            loss = - (self.log_p_xIz/sen_len_rec - coeff * kl/sen_len_kl).sum(1).mean(0)
 
         with torch.no_grad():
             if observed is None:
@@ -278,7 +277,7 @@ class ELBo(BaseCriterion):
                         un_log_p_xIz = un_log_p_xIz.sum(-1)
                     kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=None)
                               for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
-                    unweighted_loss = - torch.sum(un_log_p_xIz - kl, dim=(0, 1))/self.valid_n_samples
+                    unweighted_loss = - (un_log_p_xIz/sen_len_rec - kl/sen_len_kl).sum(1).mean(0)
                 self._prepare_metrics(unweighted_loss)
         # print("pxz", - torch.sum(self.log_p_xIz, dim=(0, 1))/self.valid_n_samples)
         # for lv_n in self.infer_lvs.keys() :
