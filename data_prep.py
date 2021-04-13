@@ -654,30 +654,23 @@ class NLIGenData2:
     def __init__(self, max_len, batch_size, max_epochs, device, pretrained):
         text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<go>', eos_token='<eos>',
                                 unk_token='<unk>', pad_token='<pad>')
-        label_field = data.Field(fix_length=max_len-1, batch_first=True)
 
         # make splits for data
         unsup_train, unsup_val, unsup_test = NLIGen.splits(text_field)
-        train, val, test = datasets.UDPOS.splits((('text', text_field), ('label', label_field)))
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train)  # , vectors="fasttext.simple.300d")
-        label_field.build_vocab(train)
+        text_field.build_vocab(unsup_train)
 
         # make iterator for splits
         self.train_iter, _,  _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
-        _, self.unsup_val_iter,  _ = data.BucketIterator.splits(
+        _, self.unsup_val_iter,  self.unsup_test_iter = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/10), device=device, shuffle=True, sort=False)
-        self.sup_iter, _, _ = data.BucketIterator.splits(
-            (train, val, test), batch_size=batch_size, device=device, shuffle=False, sort=False)
-        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
-            (train, unsup_val, unsup_test), batch_size=int(batch_size), device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab
-        self.tags = label_field.vocab
+        self.tags = None
         self.text_field = text_field
-        self.label_field = label_field
+        self.label_field = None
         self.device = device
         self.batch_size = batch_size
         self.n_epochs = 0
@@ -1174,7 +1167,7 @@ class NLIGen(LanguageModelingDataset):
 
     @classmethod
     def splits(cls, text_field, root='.data', train='train.txt',
-               validation='test.txt', test='test.txt',
+               validation='valid.txt', test='test.txt',
                **kwargs):
         """Create dataset objects for splits of the WikiText-2 dataset.
 
