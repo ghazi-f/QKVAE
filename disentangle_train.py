@@ -45,7 +45,7 @@ parser.set_defaults(minimal_enc=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Discrete", "IndepInfer", "Normal", "NormalConGen", "NormalSimplePrior",
                                                           "Normal2",  "NormalLSTM"], type=str)
-parser.add_argument("--training_iw_samples", default=5, type=int)
+parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=4, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
@@ -55,7 +55,7 @@ parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=5, type=int)
-parser.add_argument("--kl_beta", default=0.35, type=int)
+parser.add_argument("--kl_beta", default=1.0, type=int)
 parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--word_dropout", default=0.3, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -72,7 +72,7 @@ if False:
     flags.grad_accu = 1
     flags.max_len = 17
     flags.graph = "IndepInfer"
-    flags.test_name = "nliLM/nlitest"
+    flags.test_name = "nliLM/iwtest"
     flags.data = "nli"
     flags.n_latents = [4]
 
@@ -99,7 +99,7 @@ if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
 LOSSES = {'IWAE': [IWLBo],
           'VAE': [ELBo]}[flags.losses]
-#  LOSSES = [IWLBo]
+# LOSSES = [IWLBo]
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu]
 LOSS_PARAMS = [1]
 if flags.grad_accu > 1:
@@ -108,7 +108,7 @@ if flags.grad_accu > 1:
 
 def main():
     data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, pretrained=flags.pretrained_embeddings)
-    h_params = HParams(len(data.vocab.itos), len(data.tags.itos), MAX_LEN, BATCH_SIZE, N_EPOCHS,
+    h_params = HParams(len(data.vocab.itos), len(data.tags.itos) if flags.data == 'yelp' else None, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                        device=DEVICE, vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,

@@ -664,7 +664,7 @@ class NLIGenData2:
         # make iterator for splits
         self.train_iter, _,  _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
-        _, self.unsup_val_iter,  self.unsup_test_iter = data.BucketIterator.splits(
+        _, self.val_iter,  self.test_iter = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/10), device=device, shuffle=True, sort=False)
 
         self.vocab = text_field.vocab
