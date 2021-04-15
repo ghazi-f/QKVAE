@@ -341,8 +341,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 if not self.h_params.contiguous_lm:
                     infer_prev, gen_prev = None, None
                 elbo = - iwlbo.get_loss(actual=True)
+                batch_size = batch.text.shape[0]
                 total_samples_i = torch.sum(batch.text != self.h_params.vocab_ignore_index)
-                neg_log_perplexity_lb += elbo * total_samples_i
+                neg_log_perplexity_lb += elbo * batch_size
 
                 total_samples += total_samples_i
 
@@ -972,8 +973,9 @@ class LaggingDisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 if not self.h_params.contiguous_lm:
                     infer_prev, gen_prev = None, None
                 elbo = - iwlbo.get_loss(actual=True)
+                batch_size = batch.text.shape[0]
                 total_samples_i = torch.sum(batch.text != self.h_params.vocab_ignore_index)
-                neg_log_perplexity_lb += elbo * total_samples_i
+                neg_log_perplexity_lb += elbo * batch_size
 
                 total_samples += total_samples_i
 

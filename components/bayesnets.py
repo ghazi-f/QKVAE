@@ -107,7 +107,7 @@ class BayesNet(nn.Module):
             lv.post_log_probas, lv.post_params = lv.post_log_probas or lv.prior_log_probas, lv.post_params or lv.prior_params
             if plant_posteriors is not None and lv.name in plant_posteriors and lv.post_log_probas is None:
                 lv.post_log_probas = lv.post_log_prob(self.variables_star[lv])
-            self.log_proba[lv] = lv.post_log_probas
+                self.log_proba[lv] = lv.post_log_probas
         if target is not None:
             # Collecting requirements to estimate the target
             lvs_to_fill = [target]

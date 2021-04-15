@@ -254,6 +254,10 @@ class ELBo(BaseCriterion):
                                    if observed is None or (lv_n not in observed)])
                     this_kl *= self.sequence_mask
                     loss = - (torch.min(self.log_p_xIz/sen_len_rec, - this_kl/loss_threshold/sen_len_kl)).sum(1).mean(0)
+                elif loss_choice == 5:
+                    max_kl = torch.max(torch.stack([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr)
+                              for lv_n in self.infer_lvs.keys()]), dim=0)[0]
+                    loss = - (self.log_p_xIz/sen_len_rec - coeff * max_kl/sen_len_kl).sum(1).mean(0)
 
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/loss_threshold),
                 #                    dim=(0, 1)) / self.valid_n_samples
@@ -396,6 +400,8 @@ class IWLBo(ELBo):
         if self.generated_v.sub_lvl_size is not None:
             self.sequence_mask = self.sequence_mask.sum(-1)
         self.valid_n_samples = torch.sum(self.sequence_mask)
+        sen_len_kl = self.sequence_mask.sum(-1).unsqueeze(-1)
+        sen_len_rec = 1 if any([lv.sequence_lv for lv in self.gen_lvs.values()]) else sen_len_kl
         loss_shape = self.generated_v.post_params['logits'].shape[:-1]
         if len(loss_shape) > 2:
             logits, gt = self.generated_v.post_params['logits'], self.gen_net.variables_star[self.generated_v]
@@ -460,18 +466,16 @@ class IWLBo(ELBo):
         log_p_xIz = log_p_xIz + log_p_xIz_obs * self.sequence_mask
 
         # Calculating IWLBo Gradient estimate
-        log_wi = coeff * (log_p_z - log_q_zIx) + log_p_xIz
+        log_wi = (coeff * (log_p_z - log_q_zIx)/sen_len_kl + log_p_xIz/sen_len_rec).sum(-1)
         detached_log_wi = log_wi.detach()
         max_log_wi = torch.max(detached_log_wi)
         detached_exp_log_wi = torch.exp(detached_log_wi - max_log_wi)
 
         if actual:
-            n_samples_correction = 1
-            while detached_exp_log_wi.ndim > self.input_dimensions:
-                n_samples_correction *= detached_exp_log_wi.shape[0]
+            while detached_exp_log_wi.ndim > self.input_dimensions-1:
                 detached_exp_log_wi = torch.mean(detached_exp_log_wi, dim=0)
-            loss = - torch.sum(torch.log(detached_exp_log_wi+1e-8) +
-                               max_log_wi)/(self.valid_n_samples/n_samples_correction)
+            loss = - torch.mean(torch.log(detached_exp_log_wi) +
+                               max_log_wi)
             # print('detached_exp_log_wi', detached_exp_log_wi.min(), detached_log_wi.min(), max_log_wi)
             # print("loss", loss)
             # print("px|z", log_p_xIz.sum()/(self.valid_n_samples/n_samples_correction))
@@ -483,29 +487,27 @@ class IWLBo(ELBo):
             #            self.infer_net.log_proba[inflv])*self.sequence_mask).sum()/(self.valid_n_samples/n_samples_correction))
         else:
             DReG_weights = (detached_exp_log_wi / (1e-8 + torch.sum(detached_exp_log_wi, dim=0).unsqueeze(0)))**2
-            loss = - torch.sum(DReG_weights * log_wi)/self.valid_n_samples
+            loss = - torch.mean(DReG_weights * log_wi)
 
         with torch.no_grad():
             if observed is None:
                 if actual:
                     unweighted_loss = loss
                 else:
-                    log_wi = (log_p_z - log_q_zIx) + log_p_xIz
+                    log_wi = ((log_p_z - log_q_zIx)/sen_len_kl + log_p_xIz/sen_len_rec).sum(-1)
                     # print("logp_z", log_p_z-log_q_zIx)
                     # print("logq_zIx", )
                     # print("logp_x|z", log_p_xIz)
 
                     max_log_wi = torch.max(log_wi)
                     exp_log_wi = torch.exp(log_wi - max_log_wi)
-                    n_samples_correction = 1
-                    while exp_log_wi.ndim > self.input_dimensions:
-                        n_samples_correction *= exp_log_wi.shape[0]
+                    while exp_log_wi.ndim > self.input_dimensions-1:
                         exp_log_wi = torch.mean(exp_log_wi, dim=0)
-                    summed_log_wi = torch.log(exp_log_wi+1e-8) + max_log_wi
+                    summed_log_wi = torch.log(exp_log_wi) + max_log_wi
                     # print((torch.log(exp_log_wi+1e-8) + max_log_wi).sum()/self.valid_n_samples,
                     #       (torch.log(exp_log_wi) + max_log_wi).sum()/self.valid_n_samples)
-                    unweighted_loss = - torch.sum(summed_log_wi)/(self.valid_n_samples/n_samples_correction)
-                self.ll_value = torch.sum(log_p_xIz) / self.valid_n_samples
+                    unweighted_loss = - torch.mean(summed_log_wi)
+                self.ll_value = ((log_p_xIz/sen_len_rec).sum(-1)).mean()
                 self._prepare_metrics(unweighted_loss)
 
         return loss
@@ -516,6 +518,8 @@ class IWLBo(ELBo):
         LL_value = self.ll_value
         KL_dict = {}
         kl_sum = 0
+
+        sen_len_kl = self.sequence_mask.sum(-1).unsqueeze(-1)
         if self.model.step <= self.h_params.anneal_kl[0] and self.h_params.anneal_kl_type == 'linear':
             self._prepared_metrics = {LL_name: LL_value}
         else:
@@ -528,7 +532,7 @@ class IWLBo(ELBo):
                                             if gen_lv in self.gen_net.parent else '')
                 KL_name = '/KL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
                 kl_i = kullback_liebler(inf_lv, gen_lv)*self.sequence_mask
-                KL_value = torch.sum(kl_i)/self.valid_n_samples
+                KL_value = (kl_i/sen_len_kl).sum(-1).mean()
                 kl_sum += KL_value
                 KL_dict[KL_name] = KL_value
             self._prepared_metrics = {'/IWLBo': current_iwlbo, '/ELBo': LL_value-kl_sum, LL_name: LL_value, **KL_dict}
