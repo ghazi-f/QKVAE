@@ -15,7 +15,7 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 8, 16, 2
+k, kz, klstm = 4, 16, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
 parser.add_argument("--max_len", default=17, type=int)
@@ -34,9 +34,9 @@ parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)###
 parser.add_argument("--text_rep_l", default=3, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
 parser.add_argument("--encoder_h", default=192*k, type=int)#################"
-parser.add_argument("--encoder_l", default=1, type=int)#################"
+parser.add_argument("--encoder_l", default=2, type=int)#################"
 parser.add_argument("--decoder_h", default=192*k, type=int)
-parser.add_argument("--decoder_l", default=1, type=int)#################"
+parser.add_argument("--decoder_l", default=2, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
@@ -46,18 +46,18 @@ parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str
 parser.add_argument("--graph", default='Normal', choices=["Discrete", "IndepInfer", "Normal", "NormalConGen", "NormalSimplePrior",
                                                           "Normal2",  "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
-parser.add_argument("--testing_iw_samples", default=4, type=int)
+parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
-parser.add_argument("--anneal_kl1", default=25000, type=int)
+parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
-parser.add_argument("--max_elbo_choice", default=5, type=int)
-parser.add_argument("--kl_beta", default=1.0, type=int)
-parser.add_argument("--dropout", default=0.5, type=float)
-parser.add_argument("--word_dropout", default=0.3, type=float)
+parser.add_argument("--max_elbo_choice", default=10, type=int)
+parser.add_argument("--kl_beta", default=0.35, type=int)
+parser.add_argument("--dropout", default=0.3, type=float)
+parser.add_argument("--word_dropout", default=0.1, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
@@ -99,7 +99,7 @@ if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
 LOSSES = {'IWAE': [IWLBo],
           'VAE': [ELBo]}[flags.losses]
-# LOSSES = [IWLBo]
+
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu]
 LOSS_PARAMS = [1]
 if flags.grad_accu > 1:
@@ -187,9 +187,10 @@ def main():
                 h_params.max_elbo = [flags.max_elbo_choice, flags.max_elbo2]
             current_time = time()
         data.reinit_iterator('valid')
-        if model.step >= h_params.anneal_kl[0] and ((data.n_epochs % 3) == 0):
+        if model.step >= h_params.anneal_kl[0]:  # and ((data.n_epochs % 3) == 0):
             model.eval()
-            # pp_ub = model.get_perplexity(data.val_iter)
+            pp_ub = model.get_perplexity(data.val_iter)
+            print("perplexity is {} ".format(pp_ub))
             if flags.data == "yelp":
                 max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
                 print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
