@@ -118,5 +118,24 @@ srun python disentangle_train.py --test_name "Disentanglement/shallowIndep5" --n
 # srun python disentangle_train.py --test_name "Disentanglement/DeepMaxIndep3" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer --max_elbo_choice 5
 # srun python disentangle_train.py --test_name "Disentanglement/DeepMaxIndep4" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer --max_elbo_choice 5
 # srun python disentangle_train.py --test_name "Disentanglement/DeepMaxIndep5" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer --max_elbo_choice 5
-
+srun python disentangle_train.py --test_name "Disentanglement/Regular1" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+srun python disentangle_train.py --test_name "Disentanglement/Regular2" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+srun python disentangle_train.py --test_name "Disentanglement/Regular3" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+srun python disentangle_train.py --test_name "Disentanglement/Regular4" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+srun python disentangle_train.py --test_name "Disentanglement/Regular5" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deep1" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deep2" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deep3" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deep4" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deep5" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Wide1" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Wide2" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Wide3" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Wide4" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Wide5" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpRegular1" --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpRegular2" --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpRegular3" --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpRegular4" --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpRegular5" --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer
 
