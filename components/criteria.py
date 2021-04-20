@@ -283,11 +283,6 @@ class ELBo(BaseCriterion):
                               for lv_n in self.infer_lvs.keys()]) * self.sequence_mask
                     unweighted_loss = - (un_log_p_xIz/sen_len_rec - kl/sen_len_kl).sum(1).mean(0)
                 self._prepare_metrics(unweighted_loss)
-        # print("pxz", - torch.sum(self.log_p_xIz, dim=(0, 1))/self.valid_n_samples)
-        # for lv_n in self.infer_lvs.keys() :
-        #     if observed is None or (lv_n not in observed):
-        #         print("kl,", lv_n, ": ", - torch.sum(kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr),
-        #                           dim=(0, 1))/self.valid_n_samples)
 
         return loss
 
@@ -296,7 +291,7 @@ class ELBo(BaseCriterion):
         LL_name = '/p({}I{})'.format(self.generated_v.name, ', '.join(sorted(p.name for p in
                                                                              self.gen_net.parent[self.generated_v])))
         LL_value = torch.sum(self.log_p_xIz)/self.valid_n_samples
-        KL_dict = {}
+        self.KL_dict = {}
         for lv in self.gen_lvs.keys():
             if lv not in self.infer_lvs: continue
             gen_lv, inf_lv = self.gen_lvs[lv], self.infer_lvs[lv]
@@ -307,7 +302,7 @@ class ELBo(BaseCriterion):
             KL_name = '/KL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
             kl_i = kullback_liebler(inf_lv, gen_lv)*self.sequence_mask
             KL_value = torch.sum(kl_i)/self.valid_n_samples
-            KL_dict[KL_name] = KL_value
+            self.KL_dict[KL_name] = KL_value
         if not (type(self.h_params.n_latents) == int and self.h_params.n_latents == 1):
             for j, name in enumerate(self.infer_lvs.keys()):
                 if name in self.gen_lvs:
@@ -325,13 +320,13 @@ class ELBo(BaseCriterion):
                                      int((i+1)*self.h_params.z_size/n_latents)
                         kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
                         KLs.append(torch.sum(kl_i) / self.valid_n_samples)
-                    KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
+                    self.KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
 
         if self.h_params.anneal_kl_type == 'linear' and \
                 self.h_params.anneal_kl and self.model.step <= self.h_params.anneal_kl[0]:
             self._prepared_metrics = {LL_name: LL_value}
         else:
-            self._prepared_metrics = {'/ELBo': current_elbo, LL_name: LL_value, **KL_dict}
+            self._prepared_metrics = {'/ELBo': current_elbo, LL_name: LL_value, **self.KL_dict}
 
 
 class Reconstruction(BaseCriterion):

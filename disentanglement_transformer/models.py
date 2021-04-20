@@ -6,6 +6,7 @@ from tqdm import tqdm
 import pandas as pd
 
 from disentanglement_transformer.h_params import *
+from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
@@ -125,7 +126,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         else:
             infer_prev, gen_prev = None, None
 
-        #                          ----------- Unsupervised Forward/Backward ----------------
+        #                          ----------- Unsupervised Forward ----------------
         # Forward pass
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
 
@@ -141,7 +142,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         else:
             gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
 
-        # Loss computation and backward pass
+        # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
 
         if self.h_params.contiguous_lm:
@@ -351,7 +352,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             perplexity_ub = torch.exp(- neg_log_perplexity_lb)
 
             self.writer.add_scalar('test/PerplexityUB', perplexity_ub, self.step)
-            return perplexity_ub
+            return perplexity_ub.cpu().detach().item()
 
     def save(self):
         root = ''
@@ -649,6 +650,167 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         header = ['original', 'altered', 'alteration_id', 'new_rels', 'rel_diff']
         df = pd.DataFrame(stats, columns=header)
         return df
+
+    def get_att_and_rel_idx(self, text_in):
+        max_len = text_in.shape[-1]
+        text_sents = [' '.join([self.index[self.generated_v].itos[w]
+                                for w in s]).replace(' <pad>', '').replace(' <eos>', '')
+                      for s in text_in]
+        # Getting relations' positions
+        rel_idx = [out['idx'] for out in shallow_dependencies(text_sents)]
+        # Getting layer wise attention values
+
+        CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
+        self.infer_bn({'x': text_in})
+        CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+        all_att_weights = []
+        for i in range(len(self.h_params.n_latents)):
+            trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
+            all_att_weights.append(trans_mod.att_vals)
+        att_weights = []
+        for lv in range(sum(self.h_params.n_latents)):
+            var_att_weights = []
+            lv_layer = sum([lv > sum(self.h_params.n_latents[:i + 1]) for i in range(len(self.h_params.n_latents))])
+            rank = lv - sum(self.h_params.n_latents[:lv_layer])
+            for layer_att_vals in all_att_weights[lv_layer]:
+                soft_att_vals = layer_att_vals
+                att_out = torch.cat([soft_att_vals[:, rank,
+                                     :max_len], soft_att_vals[:, rank, max_len:].sum(-1).unsqueeze(-1)]
+                                    , -1)
+                if lv_layer == 2:
+                    att_out[..., -1] *= 0
+                var_att_weights.append(att_out.cpu().detach().numpy())
+            att_weights.append(var_att_weights)
+        # att_vals shape:[sent, lv, layer, tok]
+        att_vals = np.transpose(np.array(att_weights), (2, 0, 1, 3)).mean(-2)
+        att_maxes = att_vals.argmax(-1).tolist()
+        return rel_idx, att_maxes
+
+    def get_encoder_disentanglement_score(self, data_iter):
+        rel_idx, att_maxes = [], []
+        for i, batch in enumerate(tqdm(data_iter, desc="Getting model relationship accuracy")):
+            rel_idx_i, att_maxes_i = self.get_att_and_rel_idx(batch.text[..., 1:])
+            rel_idx.extend(rel_idx_i)
+            att_maxes.extend(att_maxes_i)
+
+        lv_scores = []
+        for lv in range(sum(self.h_params.n_latents)):
+            found = {'subj': [], 'verb': [], 'dobj': [], 'pobj': []}
+            for att, rel_pos in zip(att_maxes, rel_idx):
+                for k in found.keys():
+                    if len(rel_pos[k]):
+                        found[k].append(att[lv] in rel_pos[k])
+            lv_scores.append(found)
+        enc_att_scores = {'subj': [], 'verb': [], 'dobj': [], 'pobj': []}
+        for lv in range(sum(self.h_params.n_latents)):
+            for k, v in lv_scores[lv].items():
+                enc_att_scores[k].append(np.mean(v))
+
+        enc_max_score, enc_disent_score, enc_disent_vars = {}, {}, {}
+        for k, v in enc_att_scores.items():
+            sort_idx = np.argsort(v)
+            enc_disent_vars[k], enc_disent_score[k], enc_max_score[k] = \
+                sort_idx[-1], v[sort_idx[-1]] - v[sort_idx[-2]], v[sort_idx[-1]]
+        return enc_att_scores, enc_max_score, enc_disent_score, enc_disent_vars
+
+    def get_sentence_statistics2(self, orig, sen, orig_relations=None, relations=None):
+        orig_relations, relations = orig_relations['text'], relations['text']
+        same_struct = True
+        for k in orig_relations.keys():
+            if (orig_relations[k] == '' and relations[k] != '') or (orig_relations[k] == '' and relations[k] != ''):
+                same_struct = False
+
+        def get_diff(arg):
+            if orig_relations[arg] != '' and relations[arg] != '':
+                return orig_relations[arg] != relations[arg], False
+            else:
+                return False, orig_relations[arg] != relations[arg]
+
+        return get_diff('subj'), get_diff('verb'), get_diff('dobj'), get_diff('pobj'), same_struct
+
+    def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100):
+        stats = []
+        # Generating n_samples sentences
+        text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                               sample_w=False, vary_z=True, complete=None)
+        orig_rels = shallow_dependencies(text)
+        for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
+            text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                                       sample_w=False, vary_z=True, complete=None)
+            text.extend(text_i)
+            for k in samples.keys():
+                samples[k] = torch.cat([samples[k], samples_i[k]])
+            orig_rels.extend(shallow_dependencies(text_i))
+        for i in range(int(n_samples / batch_size)):
+            for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
+                # Altering the sentences
+                alt_text, _ = self._get_alternative_sentences(
+                    prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
+                                      for k, v in samples.items()},
+                    params=None, var_z_ids=[j], n_samples=n_alterations,
+                    gen_len=self.h_params.max_len - 1, complete=None)
+                alt_rels = shallow_dependencies(alt_text)
+                # Getting alteration statistics
+                for k in range(n_alterations * batch_size):
+                    orig_text = text[(i * batch_size) + k % batch_size]
+                    try:
+                        arg0_diff, v_diff, arg1_diff, arg_star_diff, same_struct = \
+                            self.get_sentence_statistics2(orig_text, alt_text[k],
+                                                     orig_rels[(i * batch_size) + k % batch_size],
+                                                     alt_rels[k])
+                    except RecursionError or IndexError:
+                        continue
+                    stats.append([orig_text, alt_text[k], j, int(arg0_diff[0]), int(v_diff[0]),
+                                  int(arg1_diff[0]), int(arg_star_diff[0]), int(arg0_diff[1]), int(v_diff[1]),
+                                  int(arg1_diff[1]), int(arg_star_diff[1]), same_struct])
+
+        header = ['original', 'altered', 'alteration_id', 'subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
+                  'subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct', 'same_struct']
+        df = pd.DataFrame(stats, columns=header)
+        var_wise_scores = df.groupby('alteration_id').mean()[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']]
+        disent_score = 0
+        lab_wise_disent = {}
+        for lab in ['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']:
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab.split('_')[0]] = diff
+            disent_score += diff
+        return disent_score, lab_wise_disent, var_wise_scores
+
+    def get_disentanglement_summaries2(self, data_iter):
+        with torch.no_grad():
+            enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
+                self.get_encoder_disentanglement_score(data_iter)
+            dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores = self._get_stat_data_frame2()
+            enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))
+            dec_heatmap = get_hm_array2(dec_var_wise_scores)
+            self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
+            self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
+            for k in enc_lab_wise_disent.keys():
+                self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
+                self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
+            self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+            self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
+        return dec_lab_wise_disent, enc_lab_wise_disent
+
+    def collect_final_stats(self, data_iter):
+        kl, kl_var, rec, nsamples = 0, 0, 0, 0
+        infer_prev, gen_prev = None, None
+        loss_obj = self.losses[0]
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Final Stats")):
+                if batch.text.shape[1] < 2: continue
+                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
+                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev))
+                if not self.h_params.contiguous_lm:
+                    infer_prev, gen_prev = None, None
+                nsamples += batch.text.shape[0]
+                kl += sum([v for k, v in loss_obj.KL_dict.items() if not k.startswith('/Var')]) * batch.text.shape[0]
+                kl_var += sum([v**2 for k, v in loss_obj.KL_dict.items() if k.startswith('/Var')]) * batch.text.shape[0]
+                rec += loss_obj.log_p_xIz.sum()
+                self.gen_bn.clear_values(), self.infer_bn.clear_values()
+        return (kl/nsamples).cpu().detach().item(), (kl_var/nsamples).sqrt().cpu().detach().item(), \
+               - (rec/nsamples).cpu().detach().item()
 
 
 class LaggingDisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
@@ -1343,6 +1505,19 @@ def get_hm_array(df):
     img_arr = np.fromstring(plt.gcf().canvas.tostring_rgb(), dtype=np.uint8, sep='').reshape(fig_shape)
     return img_arr
 
+def get_hm_array2(df):
+    plt.clf()
+    snsplt = sns.heatmap(df, cmap ='Reds', linewidths = 0.20, annot=True)
+    b, t = plt.ylim() # discover the values for bottom and top
+    b += 0.5 # Add 0.5 to the bottom
+    t -= 0.5 # Subtract 0.5 from the top
+    plt.ylim(b, t) # update the ylim(bottom, top) values
+    plt.gcf().canvas.draw()
+    fig_shape = plt.gcf().get_size_inches()*plt.gcf().dpi
+    fig_shape = (int(fig_shape[1]), int(fig_shape[0]), 3)
+    img_arr = np.fromstring(plt.gcf().canvas.tostring_rgb(), dtype=np.uint8, sep='').reshape(fig_shape)
+    img_arr = torch.from_numpy(img_arr).permute(2, 0, 1)
+    return img_arr
 
 def revert_to_l1(el):
     if type(el) == list or type(el) == np.ndarray:
@@ -1356,3 +1531,21 @@ def revert_to_l1(el):
     else:
         return []
 
+
+def shallow_dependencies(sents):
+    docs = nlp.pipe(sents)
+    relations = []
+    for doc in docs:
+        subj, verb, dobj, pobj = ['', []], ['', []], ['', []], ['', []]
+        for i, tok in enumerate(doc):
+            if tok.dep_ =='ROOT':
+                verb = [tok.text, [tok.i]]
+            if tok.dep_ == 'nsubj' and subj[0] == '':
+                subj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
+            if tok.dep_ == 'dobj' and dobj[0] == '':
+                dobj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
+            if tok.dep_ == 'pobj' and pobj[0] == '':
+                pobj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
+        relations.append({'text':{'subj': subj[0], 'verb': verb[0], 'dobj': dobj[0], 'pobj': pobj[0]},
+                         'idx':{'subj': subj[1], 'verb': verb[1], 'dobj': dobj[1], 'pobj': pobj[1]}})
+    return relations

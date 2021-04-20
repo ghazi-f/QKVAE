@@ -1,6 +1,7 @@
 # This file will implement the main training loop for a model
 from time import time
 import argparse
+import os
 
 from torch import device
 import torch
@@ -18,6 +19,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 4, 16, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
+parser.add_argument("--csv_out", default='test.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -67,13 +69,13 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
     flags.graph = "IndepInfer"
-    flags.test_name = "nliLM/iwtest"
-    flags.data = "nli"
+    flags.test_name = "nliLM/yelpMetrics"
+    flags.data = "yelp"
     flags.n_latents = [4]
 
 # torch.autograd.set_detect_anomaly(True)
@@ -195,8 +197,13 @@ def main():
                 max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
                 print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
             # else:
-            dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
-            print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
+            # dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
+            # print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
+            val_dec_lab_wise_disent, val_enc_lab_wise_disent = model.get_disentanglement_summaries2(data.val_iter)
+            print("Encoder Disentanglement Scores : {}, Total : {}".format(val_enc_lab_wise_disent,
+                                                                           sum(val_enc_lab_wise_disent.values())))
+            print("Decoder Disentanglement Scores : {}, Total : {}".format(val_dec_lab_wise_disent,
+                                                                           sum(val_dec_lab_wise_disent.values())))
 
             # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
@@ -217,7 +224,45 @@ def main():
             model.train()
         data.reinit_iterator('valid')
         data.reinit_iterator('train')
-    print("Finished training")
+    print("================= Finished training : Getting Scores on test set ============")
+    test_dec_lab_wise_disent, test_enc_lab_wise_disent = model.get_disentanglement_summaries2(data.test_iter)
+    data.reinit_iterator('test')
+    print("Encoder Disentanglement Scores : {}, Total : {}".format(test_enc_lab_wise_disent,
+                                                                   sum(test_enc_lab_wise_disent.values())))
+    print("Decoder Disentanglement Scores : {}, Total : {}".format(test_dec_lab_wise_disent,
+                                                                   sum(test_dec_lab_wise_disent.values())))
+    test_pp_ub = model.get_perplexity(data.test_iter)
+    print("Perplexity: {}".format(test_pp_ub))
+    dev_kl, dev_kl_std, dev_rec = model.collect_final_stats(data.val_iter)
+    test_kl, test_kl_std, test_rec = model.collect_final_stats(data.test_iter)
+    relations = ['subj', 'verb', 'dobj', 'pobj']
+    if not os.path.exists(flags.csv_out):
+        with open(flags.csv_out, 'w') as f:
+            f.write('\t'.join(['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents',
+                               'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
+                              'dev_tot_en_disent', 'dev_dec_disent_subj', 'dev_dec_disent_verb', 'dev_dec_disent_dobj',
+                              'dev_dec_disent_pobj', 'dev_enc_disent_subj', 'dev_enc_disent_verb', 'dev_enc_disent_dobj',
+                              'dev_enc_disent_pobj', 'dev_rec_error',
+                              'test_kl', 'test_kl_std', 'test_ppl', 'test_tot_dec_disent',
+                              'test_tot_en_disent', 'test_dec_disent_subj', 'test_dec_disent_verb', 'test_dec_disent_dobj',
+                              'test_dec_disent_pobj', 'test_enc_disent_subj', 'test_enc_disent_verb', 'test_enc_disent_dobj',
+                              'test_enc_disent_pobj', 'test_rec_error'
+                              ])+'\n')
+    with open(flags.csv_out, 'a') as f:
+        f.write('\t'.join([flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
+                           str(flags.kl_beta), str(flags.n_latents),
+                           str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum(val_dec_lab_wise_disent.values())),
+                           str(sum(val_enc_lab_wise_disent.values())),
+                           *[str(val_dec_lab_wise_disent[k]) for k in relations],
+                           *[str(val_enc_lab_wise_disent[k]) for k in relations], str(dev_rec),
+                           str(test_kl), str(test_kl_std), str(test_pp_ub), str(sum(test_dec_lab_wise_disent.values())),
+                           str(sum(test_enc_lab_wise_disent.values())),
+                           *[str(test_dec_lab_wise_disent[k]) for k in relations],
+                           *[str(test_enc_lab_wise_disent[k]) for k in relations], str(test_rec)
+                         ])+'\n')
+
+
+    print("Finished training !")
 
 
 def limited_next(iterator):
