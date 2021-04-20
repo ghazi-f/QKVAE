@@ -288,11 +288,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         assert x_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(x_hat_params.shape)
         if not gen:
             text = ' |||| '.join([' '.join([self.index[self.generated_v].itos[w]
-                                            for w in sen])#.split('<eos>')[0]
+                                            for w in sen]).replace('!', '<eos>').replace('.', '<eos>')
+                                 .replace('?', '<eos>')#.split('<eos>')[0]
                                   for sen in x_hat_params]).replace('<pad>', '_').replace('_unk', '<?>').replace('<eos>', '\n')
         else:
             samples = [' '.join([self.index[self.generated_v].itos[w]
-                                 for w in sen]).split('<eos>')[0].replace('<go>', '').replace('</go>', '')
+                                 for w in sen]).replace('!', '<eos>').replace('.', '<eos>').replace('?', '<eos>')
+                           .split('<eos>')[0].replace('<go>', '').replace('</go>', '')
                        for sen in x_hat_params]
             if self.dataset == 'yelp':
                 samples = [sen.split('<eos>')[0] for sen in samples]
@@ -319,7 +321,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         assert x_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(x_hat_params.shape)
 
         samples = [' '.join([vocab_index.itos[w]
-                             for w in sen]).split('<eos>')[0].replace('<go>', '').replace('</go>', '')
+                             for w in sen]).replace('!', '<eos>').replace('.', '<eos>').replace('?', '<eos>')
+                       .split('<eos>')[0].replace('<go>', '').replace('</go>', '')
                        .replace('<pad>', '_').replace('_unk', '<?>')
                    for sen in x_hat_params]
 
