@@ -69,14 +69,15 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
     flags.graph = "IndepInfer"
-    flags.test_name = "nliLM/yelpMetrics"
+    flags.test_name = "nliLM/yelpMetrics2"
     flags.data = "yelp"
-    flags.n_latents = [4]
+    flags.n_latents = [8]
+    flags.kl_beta = 0.35
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Discrete": get_discrete_auto_regressive_graph,
