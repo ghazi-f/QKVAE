@@ -300,7 +300,7 @@ def get_non_auto_regressive_structured_graph(h_params, word_embeddings):
 
     # Generation
     x_gen, z_gen, z_gen1, z_gen2, zlstm_gen = \
-        XGen(h_params, word_embeddings), ZGen(h_params, z_repnet, allow_prior=True), \
+        XGen(h_params, word_embeddings), ZGeni(h_params, z_repnet, 0, allow_prior=True), \
         ZGen1(h_params, z_repnet, allow_prior=True), ZGen2(h_params, z_repnet, allow_prior=True),\
         ZlstmGen(h_params, z_repnet, allow_prior=True)
     z_z1_z2_zlstm_to_x = ConditionalCoattentiveTransformerLink(zin_size, zout_size*3, xout_size,
@@ -323,7 +323,7 @@ def get_non_auto_regressive_structured_graph(h_params, word_embeddings):
 
     # Inference
     x_inf, z_inf, z_inf1, z_inf2, zlstm_inf = XInfer(h_params, word_embeddings, has_rep=False),\
-                                              ZInfer(h_params, z_repnet), \
+                                              ZInferi(h_params, z_repnet, 0), \
                                               ZInfer1(h_params, z_repnet), ZInfer2(h_params, z_repnet), \
                                               ZlstmInfer(h_params, z_repnet)
 
@@ -471,3 +471,22 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
 
     return {'infer': nn.ModuleList(infer_edges),
             'gen':   nn.ModuleList(gen_edges)}, None, x_gen
+
+
+def get_vanilla_graph(h_params, word_embeddings):
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    # Generation
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gen = ZGeni(h_params, None, 0, allow_prior=True)
+    z_xprev_to_x = LSTMLink(xin_size+zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+                            Categorical.parameter_activations, dropout=h_params.dropout)
+
+    # Inference
+    x_inf, z_inf = XInfer(h_params, word_embeddings, has_rep=False), ZInferi(h_params, None, 0)
+    x_to_z = LSTMLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l, Gaussian.parameter_activations,
+                      dropout=h_params.dropout, last_state=True, bidirectional=True)
+
+    return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_to_z, z_inf])]),
+            'gen':   nn.ModuleList([nn.ModuleList([xprev_gen, z_xprev_to_x, x_gen]),
+                                   nn.ModuleList([z_gen, z_xprev_to_x, x_gen])])}, None, x_gen

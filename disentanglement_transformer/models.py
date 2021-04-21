@@ -6,6 +6,7 @@ from tqdm import tqdm
 import pandas as pd
 
 from disentanglement_transformer.h_params import *
+from disentanglement_transformer.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
@@ -773,28 +774,40 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         var_wise_scores = df.groupby('alteration_id').mean()[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']]
         disent_score = 0
         lab_wise_disent = {}
+        dec_disent_vars = {}
         for lab in ['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']:
+            dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
             diff = top2[0] - top2[1]
             lab_wise_disent[lab.split('_')[0]] = diff
             disent_score += diff
-        return disent_score, lab_wise_disent, var_wise_scores
+        return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
 
-    def get_disentanglement_summaries2(self, data_iter):
+    def get_disentanglement_summaries2(self, data_iter, n_samples=2000):
         with torch.no_grad():
-            enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
-                self.get_encoder_disentanglement_score(data_iter)
-            dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores = self._get_stat_data_frame2()
-            enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))
-            dec_heatmap = get_hm_array2(dec_var_wise_scores)
+            if self.h_params.graph_generator != get_vanilla_graph:
+                enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
+                    self.get_encoder_disentanglement_score(data_iter)
+                self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
+                for k in enc_lab_wise_disent.keys():
+                    self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
+                enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))
+                self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+                encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
+                self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
+            else:
+                enc_lab_wise_disent, encoder_Ndisent_vars = {'subj': 0, 'verb': 0, 'dobj': 0, 'pobj': 0}, 0
+
+            dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores, dec_disent_vars\
+                = self._get_stat_data_frame2(n_samples=n_samples)
             self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
-            self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
-            for k in enc_lab_wise_disent.keys():
+            for k in dec_lab_wise_disent.keys():
                 self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
-                self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
-            self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+            dec_heatmap = get_hm_array2(dec_var_wise_scores)
             self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
-        return dec_lab_wise_disent, enc_lab_wise_disent
+            decoder_Ndisent_vars = len(set(dec_disent_vars.values()))
+            self.writer.add_scalar('test/decoder_Ndisent_vars', decoder_Ndisent_vars, self.step)
+        return dec_lab_wise_disent, enc_lab_wise_disent, decoder_Ndisent_vars, encoder_Ndisent_vars
 
     def collect_final_stats(self, data_iter):
         kl, kl_var, rec, nsamples = 0, 0, 0, 0
