@@ -674,14 +674,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         att_weights = []
         for lv in range(sum(self.h_params.n_latents)):
             var_att_weights = []
-            lv_layer = sum([lv > sum(self.h_params.n_latents[:i + 1]) for i in range(len(self.h_params.n_latents))])
+            lv_layer = sum([lv >= sum(self.h_params.n_latents[:i + 1]) for i in range(len(self.h_params.n_latents))])
             rank = lv - sum(self.h_params.n_latents[:lv_layer])
             for layer_att_vals in all_att_weights[lv_layer]:
                 soft_att_vals = layer_att_vals
                 att_out = torch.cat([soft_att_vals[:, rank,
                                      :max_len], soft_att_vals[:, rank, max_len:].sum(-1).unsqueeze(-1)]
                                     , -1)
-                if lv_layer == 2:
+                if lv_layer == 2:  # TODO: update this part for structured inference networks
                     att_out[..., -1] *= 0
                 var_att_weights.append(att_out.cpu().detach().numpy())
             att_weights.append(var_att_weights)
