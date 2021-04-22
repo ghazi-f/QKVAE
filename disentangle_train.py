@@ -16,7 +16,7 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 4, 16, 2
+k, kz, klstm = 1, 16, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
 parser.add_argument("--csv_out", default='disent.csv', type=str)
@@ -73,12 +73,12 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/testatt"
-    flags.data = "nli"
-    flags.n_latents = [4, 4, 4]
+    flags.test_name = "nliLM/testsent"
+    flags.data = "yelp"
+    flags.n_latents = [4]
     flags.graph ="IndepInfer" #  "Vanilla"
-    flags.kl_beta = 0.35
-    # flags.z_size = 32
+    flags.kl_beta = 0.1
+    flags.z_size = 16
     # flags.encoder_h = 256
     # flags.decoder_h = 256
 

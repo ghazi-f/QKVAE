@@ -444,6 +444,7 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
                                                           dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
                                                           memory=[z.name for z in z_gens], targets=['x_prev'],
                                                           nheads=4, bidirectional=False,
+                                                          mem_size=int(z_sizes[0]/h_params.n_latents[0]),
                                                           minimal_enc=h_params.minimal_enc)
     z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1], h_params.decoder_l,
                                           Gaussian.parameter_activations, nheads=4, sequence=None,

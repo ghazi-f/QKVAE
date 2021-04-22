@@ -556,9 +556,9 @@ class CoattentiveTransformerLink(NamedLink):
         super(CoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
                                                          highway, dropout=dropout, batchnorm=batchnorm,
                                                          residual=residual)
-        assert output_size % n_targets == 0
+        # assert output_size % n_targets == 0
         assert z_size % n_targets == 0
-        output_size = int(output_size/n_targets)
+        # output_size = int(output_size/n_targets)
         self.target = nn.Embedding(n_targets, output_size).weight
         self.n_mems = n_mems
         self.memory = memory
@@ -675,13 +675,15 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, memory=None, targets=None,
-                 nheads=2, minimal_enc=False):
+                 nheads=2, minimal_enc=False, mem_size=None):
         super(ConditionalCoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
-        output_size = int(output_size/n_mems)
+        # output_size = int(output_size/n_mems)
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
+        self.mem_size = mem_size or int(output_size/n_mems)
+        self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
         if minimal_enc:
             self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
         else:
@@ -711,7 +713,8 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
 
     def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
-        memory = memory.view((*memory.shape[:-1], self.n_mems, self.output_size))
+        memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
+        memory = self.memory_to_hidden(memory)
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
         if memory.ndim > 3:
