@@ -18,16 +18,16 @@
 #srun python disentangle_train.py --test_name "Disentanglement/Deeplv23" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Deeplv24" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Deeplv25" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Deeplv31" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Deeplv32" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Deeplv33" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Deeplv34" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Deeplv35" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
-#srun python disentangle_train.py --test_name "Disentanglement/DeepNet1" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
-#srun python disentangle_train.py --test_name "Disentanglement/DeepNet2" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
-#srun python disentangle_train.py --test_name "Disentanglement/DeepNet3" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
-#srun python disentangle_train.py --test_name "Disentanglement/DeepNet4" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
-#srun python disentangle_train.py --test_name "Disentanglement/DeepNet5" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
+#srun python disentangle_train.py --test_name "Disentanglement/Deeplv31" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deeplv32" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deeplv33" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deeplv34" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Deeplv35" --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
+srun python disentangle_train.py --test_name "Disentanglement/DeepNet1" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
+srun python disentangle_train.py --test_name "Disentanglement/DeepNet2" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
+srun python disentangle_train.py --test_name "Disentanglement/DeepNet3" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
+srun python disentangle_train.py --test_name "Disentanglement/DeepNet4" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
+srun python disentangle_train.py --test_name "Disentanglement/DeepNet5" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --encoder_l 3 --decoder_l 3
 #srun python disentangle_train.py --test_name "Disentanglement/Wide1" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Wide2" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Wide3" --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
