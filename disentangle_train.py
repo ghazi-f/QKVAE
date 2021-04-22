@@ -19,7 +19,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 4, 16, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
-parser.add_argument("--csv_out", default='test.csv', type=str)
+parser.add_argument("--csv_out", default='disent.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -73,14 +73,14 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.graph = "Vanilla"  # "IndepInfer"
-    flags.test_name = "nliLM/vanillaVAEnli"
+    flags.test_name = "nliLM/testatt"
     flags.data = "nli"
-    flags.n_latents = [8]
+    flags.n_latents = [4, 4, 4]
+    flags.graph ="IndepInfer" #  "Vanilla"
     flags.kl_beta = 0.35
-    flags.z_size = 32
-    flags.encoder_h = 256
-    flags.decoder_h = 256
+    # flags.z_size = 32
+    # flags.encoder_h = 256
+    # flags.decoder_h = 256
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
