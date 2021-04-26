@@ -687,7 +687,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         if minimal_enc:
             self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
         else:
-            self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size*n_mems,
+            self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
                                                                                 dropout=dropout, activation='gelu',
                                                                                 n_mems=n_mems), depth)
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
@@ -710,6 +710,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         else:
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
         assert self.residual is None, "Named links still can't have residuals"
+
 
     def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]

@@ -9,7 +9,7 @@ from torch import optim
 import numpy as np
 
 from data_prep import NLIGenData2, OntoGenData, HuggingYelp2
-from disentanglement_transformer.models import DisentanglementTransformerVAE as Model
+from disentanglement_transformer.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_transformer.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer.graphs import *
 from components.criteria import *
@@ -44,7 +44,7 @@ parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
 parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false')
 parser.set_defaults(minimal_enc=False)
-parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
+parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "Discrete", "IndepInfer", "Normal", "NormalConGen",
                                                           "NormalSimplePrior", "Normal2",  "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
@@ -69,16 +69,17 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/testsent"
-    flags.data = "yelp"
+    flags.test_name = "nliLM/testLag"
+    flags.data = "nli"
     flags.n_latents = [4]
     flags.graph ="IndepInfer" #  "Vanilla"
-    flags.kl_beta = 0.1
-    flags.z_size = 16
+    flags.losses = "LagVAE"
+    flags.kl_beta = 0.35
+    # flags.z_size = 16
     # flags.encoder_h = 256
     # flags.decoder_h = 256
 
@@ -95,6 +96,9 @@ if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
     flags.n_latents = [flags.z_size]
+if flags.losses == "LagVAE":
+    flags.anneal_kl0 = 0
+    flags.anneal_kl1 = 0
 Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
@@ -107,7 +111,8 @@ DEVICE = device(flags.device)
 if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
 LOSSES = {'IWAE': [IWLBo],
-          'VAE': [ELBo]}[flags.losses]
+          'VAE': [ELBo],
+          'LagVAE': [ELBo]}[flags.losses]
 
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu]
 LOSS_PARAMS = [1]
@@ -136,7 +141,11 @@ def main():
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
-    model = Model(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data)
+    if flags.losses == 'LagVAE':
+        model = LaggingDisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data,
+                                                     enc_iter=data.enc_train_iter)
+    else:
+        model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
@@ -159,6 +168,7 @@ def main():
     loss = torch.tensor(1e20)
     mean_loss = 0
     stabilize_epochs = 0
+    prev_mi = 0
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
@@ -171,7 +181,7 @@ def main():
                     print('Saved model after it\'s pure reconstruction phase')
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
-            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}) if flags.losses != 'S' else 0
+            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]})
 
             mean_loss += loss
             if i % 30 == 0:
@@ -218,6 +228,13 @@ def main():
             # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
 
+            dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+            data.reinit_iterator('valid')
+            if val_mi < prev_mi and flags.losses == "LagVAE":
+                print("Stopped aggressive training phase")
+                model.aggressive = False
+            prev_mi = val_mi
+
             # if pp_ub < min_perp:
             #     print('Saving The model ..')
             #     min_perp = pp_ub
@@ -255,8 +272,8 @@ def main():
                                                                               test_decoder_Ndisent_vars))
     test_pp_ub = model.get_perplexity(data.test_iter)
     print("Perplexity: {}".format(test_pp_ub))
-    dev_kl, dev_kl_std, dev_rec = model.collect_final_stats(data.val_iter)
-    test_kl, test_kl_std, test_rec = model.collect_final_stats(data.test_iter)
+    dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+    test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
     relations = ['subj', 'verb', 'dobj', 'pobj']
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
@@ -269,7 +286,7 @@ def main():
                               'test_tot_en_disent', 'test_dec_disent_subj', 'test_dec_disent_verb', 'test_dec_disent_dobj',
                               'test_dec_disent_pobj', 'test_enc_disent_subj', 'test_enc_disent_verb', 'test_enc_disent_dobj',
                               'test_enc_disent_pobj', 'test_rec_error', 'test_decoder_Ndisent_vars', 'test_encoder_Ndisent_vars',
-                              ])+'\n')
+                              'val_mi', 'test_mi'])+'\n')
     with open(flags.csv_out, 'a') as f:
         f.write('\t'.join([flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
                            str(flags.kl_beta), str(flags.n_latents),
@@ -282,7 +299,7 @@ def main():
                            str(sum(test_enc_lab_wise_disent.values())),
                            *[str(test_dec_lab_wise_disent[k]) for k in relations],
                            *[str(test_enc_lab_wise_disent[k]) for k in relations], str(test_rec),
-                           str(test_decoder_Ndisent_vars), str(test_encoder_Ndisent_vars)
+                           str(test_decoder_Ndisent_vars), str(test_encoder_Ndisent_vars), str(val_mi), str(test_mi)
                          ])+'\n')
 
 
