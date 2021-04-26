@@ -16,7 +16,7 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 1, 16, 2
+k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
 parser.add_argument("--csv_out", default='disent.csv', type=str)
@@ -57,7 +57,7 @@ parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=10, type=int)
-parser.add_argument("--kl_beta", default=0.35, type=int)
+parser.add_argument("--kl_beta", default=0.4, type=int)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.1, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -69,16 +69,16 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/testLag"
+    flags.test_name = "nliLM/testRepr2"
     flags.data = "nli"
     flags.n_latents = [4]
     flags.graph ="IndepInfer" #  "Vanilla"
-    flags.losses = "LagVAE"
-    flags.kl_beta = 0.35
+    # flags.losses = "LagVAE"
+    flags.kl_beta = 0.4
     # flags.z_size = 16
     # flags.encoder_h = 256
     # flags.decoder_h = 256

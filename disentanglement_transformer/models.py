@@ -827,7 +827,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 kl_var += sum([v**2 for k, v in loss_obj.KL_dict.items() if k.startswith('/Var')]) * batch.text.shape[0]
                 rec += loss_obj.log_p_xIz.sum()
                 mi += sum([z[0].get_mi(z[1]) for z in zs])
-                print(mi/nsamples)
                 self.gen_bn.clear_values(), self.infer_bn.clear_values()
         self.writer.add_scalar('test/MI', (mi/nsamples), self.step)
         return (kl/nsamples).cpu().detach().item(), (kl_var/nsamples).sqrt().cpu().detach().item(), \
