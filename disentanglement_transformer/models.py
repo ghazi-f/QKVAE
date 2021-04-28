@@ -17,6 +17,7 @@ from sklearn.metrics import roc_auc_score
 from allennlp.predictors.predictor import Predictor
 import matplotlib.pyplot as plt
 import seaborn as sns
+import itertools
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 
 nlp = spacy.load("en_core_web_sm")
@@ -24,7 +25,7 @@ nlp = spacy.load("en_core_web_sm")
 predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/openie-model.2020.03.26.tar.gz")
 
 
-# ==================================================== SSPOSTAG MODEL CLASS ============================================
+# ============================================= DISENTANGLEMENT MODEL CLASS ============================================
 
 class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
@@ -717,20 +718,23 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 sort_idx[-1], v[sort_idx[-1]] - v[sort_idx[-2]], v[sort_idx[-1]]
         return enc_att_scores, enc_max_score, enc_disent_score, enc_disent_vars
 
-    def get_sentence_statistics2(self, orig, sen, orig_relations=None, relations=None):
-        orig_relations, relations = orig_relations['text'], relations['text']
+    def get_sentence_statistics2(self, orig, sen, orig_relations, alt_relations, orig_temp, alt_temp):
+        orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
         same_struct = True
         for k in orig_relations.keys():
-            if (orig_relations[k] == '' and relations[k] != '') or (orig_relations[k] == '' and relations[k] != ''):
+            if (orig_relations[k] == '' and alt_relations[k] != '') or (orig_relations[k] == '' and alt_relations[k] != ''):
                 same_struct = False
 
         def get_diff(arg):
-            if orig_relations[arg] != '' and relations[arg] != '':
-                return orig_relations[arg] != relations[arg], False
+            if orig_relations[arg] != '' and alt_relations[arg] != '':
+                return orig_relations[arg] != alt_relations[arg], False
             else:
-                return False, orig_relations[arg] != relations[arg]
+                return False, orig_relations[arg] != alt_relations[arg]
+        syn_temp_diff = orig_temp['syn'] != alt_temp['syn']
+        lex_temp_diff = orig_temp['lex'] != alt_temp['lex']
 
-        return get_diff('subj'), get_diff('verb'), get_diff('dobj'), get_diff('pobj'), same_struct
+        return get_diff('subj'), get_diff('verb'), get_diff('dobj'), get_diff('pobj'), same_struct, \
+               syn_temp_diff, lex_temp_diff
 
     def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100):
         stats = []
@@ -738,6 +742,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
                                                sample_w=False, vary_z=True, complete=None)
         orig_rels = shallow_dependencies(text)
+        orig_temps = truncated_template(text)
         for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
             text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
                                                        sample_w=False, vary_z=True, complete=None)
@@ -745,6 +750,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             for k in samples.keys():
                 samples[k] = torch.cat([samples[k], samples_i[k]])
             orig_rels.extend(shallow_dependencies(text_i))
+            orig_temps.extend(truncated_template(text_i))
         for i in range(int(n_samples / batch_size)):
             for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
                 # Altering the sentences
@@ -754,33 +760,41 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     params=None, var_z_ids=[j], n_samples=n_alterations,
                     gen_len=self.h_params.max_len - 1, complete=None)
                 alt_rels = shallow_dependencies(alt_text)
+                alt_temps = truncated_template(alt_text)
                 # Getting alteration statistics
                 for k in range(n_alterations * batch_size):
                     orig_text = text[(i * batch_size) + k % batch_size]
                     try:
-                        arg0_diff, v_diff, arg1_diff, arg_star_diff, same_struct = \
+                        arg0_diff, v_diff, arg1_diff, arg_star_diff, same_struct, syn_temp_diff, lex_temp_diff = \
                             self.get_sentence_statistics2(orig_text, alt_text[k],
-                                                     orig_rels[(i * batch_size) + k % batch_size],
-                                                     alt_rels[k])
+                                                          orig_rels[(i * batch_size) + k % batch_size], alt_rels[k],
+                                                          orig_temps[(i * batch_size) + k % batch_size], alt_temps[k])
                     except RecursionError or IndexError:
                         continue
                     stats.append([orig_text, alt_text[k], j, int(arg0_diff[0]), int(v_diff[0]),
                                   int(arg1_diff[0]), int(arg_star_diff[0]), int(arg0_diff[1]), int(v_diff[1]),
-                                  int(arg1_diff[1]), int(arg_star_diff[1]), same_struct])
+                                  int(arg1_diff[1]), int(arg_star_diff[1]), same_struct, syn_temp_diff, lex_temp_diff])
 
         header = ['original', 'altered', 'alteration_id', 'subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
-                  'subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct', 'same_struct']
+                  'subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct', 'same_struct', 'syntemp_diff',
+                  'lextemp_diff']
         df = pd.DataFrame(stats, columns=header)
-        var_wise_scores = df.groupby('alteration_id').mean()[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']]
+        var_wise_scores = df.groupby('alteration_id').mean()[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
+                                                              'syntemp_diff', 'lextemp_diff']]
+        var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
         disent_score = 0
         lab_wise_disent = {}
         dec_disent_vars = {}
-        for lab in ['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']:
+        for lab in ['subj', 'verb', 'dobj', 'pobj']:
             dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
             diff = top2[0] - top2[1]
-            lab_wise_disent[lab.split('_')[0]] = diff
+            lab_wise_disent[lab] = diff
             disent_score += diff
+        for lab in ['syntemp', 'lextemp']:
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
         return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
 
     def get_disentanglement_summaries2(self, data_iter, n_samples=2000):
@@ -833,7 +847,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                - (rec/nsamples).cpu().detach().item(), (mi/nsamples).cpu().detach().item()
 
 
-
 class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None, enc_iter=None):
         self.dataset = dataset
@@ -847,7 +860,7 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
         self.optimizer = None
         self.aggressive = True
         self.inf_optimizer = h_params.optimizer(self.infer_bn.parameters(), **h_params.optimizer_kwargs)
-        self.gen_optimizer = SGD(self.gen_bn.parameters(), lr=1.)
+        self.gen_optimizer = h_params.optimizer(self.infer_bn.parameters(), **h_params.optimizer_kwargs)#SGD(self.gen_bn.parameters(), lr=1.)
 
         # Loading previous checkpoint if auto_load is set to True
         if autoload:
@@ -929,10 +942,10 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
 
 
         if opt_encoder:
-            torch.nn.utils.clip_grad_norm_(self.infer_bn.parameters(), 1.)
+            torch.nn.utils.clip_grad_norm_(self.infer_bn.parameters(), self.h_params.grad_clip)# 1.)
             self.inf_optimizer.step()
         if opt_decoder:
-            torch.nn.utils.clip_grad_norm_(self.gen_bn.parameters(), 0.5)
+            torch.nn.utils.clip_grad_norm_(self.gen_bn.parameters(), self.h_params.grad_clip)#0.5)
             self.gen_optimizer.step()
             self.step += 1
 
@@ -981,8 +994,9 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
             print("Loaded model at step", self.step)
         else:
             print("Save file doesn't exist, the model will be trained from scratch.")
-# =========================================== DISENTANGLEMENT UTILITIES ================================================
 
+
+# =========================================== DISENTANGLEMENT UTILITIES ================================================
 def batch_sent_relations(sents):
     target = [{'sentence': sent} for sent in sents]
     preds = predictor.predict_batch_json(target)
@@ -1000,15 +1014,6 @@ def batch_sent_relations(sents):
                     print('this raised an anomaly:', el)
         sent_dicts.append(sent_dict)
     return sent_dicts
-
-
-def get_depth(root, toks, tree, depth=0):
-    root_tree = list([tok for tok in tree[root]])
-    if len(root_tree) > 0:
-        child_ids = [i for i, tok in enumerate(toks) if tok in root_tree]
-        return 1 + max([get_depth(child_id, toks, tree) for child_id in child_ids])
-    else:
-        return depth
 
 
 def get_sentence_statistics(orig, sen, orig_relations=None, relations=None):
@@ -1057,6 +1062,7 @@ def get_hm_array2(df):
     img_arr = torch.from_numpy(img_arr).permute(2, 0, 1)
     return img_arr
 
+
 def revert_to_l1(el):
     if type(el) == list or type(el) == np.ndarray:
         return el
@@ -1076,7 +1082,7 @@ def shallow_dependencies(sents):
     for doc in docs:
         subj, verb, dobj, pobj = ['', []], ['', []], ['', []], ['', []]
         for i, tok in enumerate(doc):
-            if tok.dep_ =='ROOT':
+            if tok.dep_ =='ROOT' and tok.pos_ == 'VERB':
                 verb = [tok.text, [tok.i]]
             if tok.dep_ == 'nsubj' and subj[0] == '':
                 subj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
@@ -1087,3 +1093,30 @@ def shallow_dependencies(sents):
         relations.append({'text':{'subj': subj[0], 'verb': verb[0], 'dobj': dobj[0], 'pobj': pobj[0]},
                          'idx':{'subj': subj[1], 'verb': verb[1], 'dobj': dobj[1], 'pobj': pobj[1]}})
     return relations
+
+
+def get_children(tok, depth):
+    if depth == 0:
+        return list(tok.children)
+    else:
+        return list(tok.children) + \
+               list(itertools.chain.from_iterable([get_children(c, depth-1) for c in tok.children]))
+
+
+def truncated_template(sents, depth=0):
+    docs = nlp.pipe(sents)
+    templates = []
+    for doc in docs:
+        children = None
+        for i, tok in enumerate(doc):
+            if tok.dep_ =='ROOT':
+                children = [tok]+get_children(tok, depth)
+        if children is not None:
+            sort_dict_lex = {c.i: c.text for c in children}
+            sort_dict_syn = {c.i: c.dep_ for c in children}
+            templates.append({'lex': ' '.join([sort_dict_lex[i] for i in sorted(sort_dict_lex.keys())]),
+                              'syn': ' '.join([sort_dict_syn[i] for i in sorted(sort_dict_syn.keys())])})
+        else:
+            templates.append({'lex': ' ', 'syn': ' '})
+    return templates
+
