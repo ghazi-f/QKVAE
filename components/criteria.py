@@ -464,13 +464,13 @@ class IWLBo(ELBo):
         log_wi = (coeff * (log_p_z - log_q_zIx)/sen_len_kl + log_p_xIz/sen_len_rec).sum(-1)
         detached_log_wi = log_wi.detach()
         max_log_wi = torch.max(detached_log_wi)
-        detached_exp_log_wi = torch.exp(detached_log_wi - max_log_wi)
+        detached_exp_log_wi = torch.exp(detached_log_wi.type(torch.float64) - max_log_wi)
 
         if actual:
             while detached_exp_log_wi.ndim > self.input_dimensions-1:
                 detached_exp_log_wi = torch.mean(detached_exp_log_wi, dim=0)
             loss = - torch.mean(torch.log(detached_exp_log_wi) +
-                               max_log_wi)
+                               max_log_wi).type(torch.float32)
             # print('detached_exp_log_wi', detached_exp_log_wi.min(), detached_log_wi.min(), max_log_wi)
             # print("loss", loss)
             # print("px|z", log_p_xIz.sum()/(self.valid_n_samples/n_samples_correction))
@@ -482,7 +482,7 @@ class IWLBo(ELBo):
             #            self.infer_net.log_proba[inflv])*self.sequence_mask).sum()/(self.valid_n_samples/n_samples_correction))
         else:
             DReG_weights = (detached_exp_log_wi / (1e-8 + torch.sum(detached_exp_log_wi, dim=0).unsqueeze(0)))**2
-            loss = - torch.mean(DReG_weights * log_wi)
+            loss = - torch.mean(DReG_weights * log_wi).type(torch.float32)
 
         with torch.no_grad():
             if observed is None:
