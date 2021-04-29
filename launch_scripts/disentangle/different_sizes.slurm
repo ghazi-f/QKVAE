@@ -3,8 +3,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentangle_onto.txt
-#SBATCH --error=./disentangle_onto.err
+#SBATCH --output=./disentYelpBaseline.txt
+#SBATCH --error=./disentYelpBaseline.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 # Experiments on the SNLI Dataset
@@ -40,11 +40,11 @@ done
 done
 
 
-srun python disentangle_train.py --test_name "Disentanglement/Regular1" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Regular2" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Regular3" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Regular4" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/Regular5" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Regular1" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Regular2" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Regular3" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Regular4" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/Regular5" --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Deeplv21" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Deeplv22" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
 #srun python disentangle_train.py --test_name "Disentanglement/Deeplv23" --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
