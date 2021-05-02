@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 # ================= EXP GROUP 1 ==============================
 # Experiments on the SNLI Dataset
-#for BETA in 0.4 0.3 0.5
+#for BETA in 0.5 #0.4 0.3
 #do
 #for ITER in 1 2 3 4 5
 #do
@@ -18,7 +18,7 @@
 #done
 #
 ## Experiments on the Yelp Dataset
-#for BETA in 0.4 0.3 0.5
+#for BETA in 0.3 0.5 #0.4
 #do
 #for ITER in 1 2 3 4 5
 #do
@@ -29,7 +29,7 @@
 
 # ================= EXP GROUP 2 ==============================
 # Experiments on the SNLI Dataset
-#for BETA in 0.4 0.3 0.5
+#for BETA in 0.5 #0.4 0.3
 #do
 #for ITER in 1 2 3 4 5
 #do
@@ -42,7 +42,7 @@
 #
 ## ================= EXP GROUP 3 ==============================
 ## Experiments on the Yelp Dataset
-#for BETA in 0.4 0.3 0.5
+#for BETA in 0.3 0.5 #0.4
 #do
 #for ITER in 1 2 3 4 5
 #do
@@ -55,13 +55,13 @@
 #
 ## ================= EXP GROUP 4 ==============================
 ## Experiments on the SNLI Dataset
-for BETA in 0.4 0.3 0.5
+for BETA in  0.5 # 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
 srun python disentangle_train.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/SNLIDeep3_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/SNLIDeep2_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIDeep3_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIDeep2_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 4 --data nli --n_epochs 20 --graph IndepInfer
 done
 done
 # Experiments on the Yelp Dataset
@@ -70,8 +70,8 @@ do
 for ITER in 1 2 3 4 5
 do
 srun python disentangle_train.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/YelpDeep3_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 --data yelp --n_epochs 20 --graph IndepInfer
-srun python disentangle_train.py --test_name "Disentanglement/YelpDeep2_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 4 --data yelp --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpDeep3_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 --data yelp --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/YelpDeep2_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 4 4 --data yelp --n_epochs 20 --graph IndepInfer
 done
 done
 
