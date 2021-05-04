@@ -786,12 +786,22 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         lab_wise_disent = {}
         dec_disent_vars = {}
         for lab in ['subj', 'verb', 'dobj', 'pobj']:
-            dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
+            try:
+                dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
+            except TypeError :
+                dec_disent_vars[lab] = -1
+                lab_wise_disent[lab] = 0
+                continue
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
             diff = top2[0] - top2[1]
             lab_wise_disent[lab] = diff
             disent_score += diff
         for lab in ['syntemp', 'lextemp']:
+            try:
+                var_wise_scores.idxmax()[lab]
+            except TypeError:
+                lab_wise_disent[lab] = 0
+                continue
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
             diff = top2[0] - top2[1]
             lab_wise_disent[lab] = diff
