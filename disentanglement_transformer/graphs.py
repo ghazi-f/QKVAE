@@ -437,8 +437,7 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
     # Generation
     x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=(i == 0)) for i in range(n_lvls)]
-    zs_xprev_to_x = ConditionalCoattentiveTransformerLink(xin_size,
-                                                          int(zout_size*sum(h_params.n_latents)/max(h_params.n_latents)),
+    zs_xprev_to_x = ConditionalCoattentiveTransformerLink(xin_size, zout_size,
                                                           xout_size,h_params.decoder_l, Categorical.parameter_activations,
                                                           word_embeddings, highway=h_params.highway, sbn=None,
                                                           dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
@@ -453,6 +452,12 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
                                           highway=h_params.highway, dropout=h_params.dropout,
                                           n_targets=h_params.n_latents[i+1])
                for i in range(n_lvls-1)]
+    number_parameters  = sum(p.numel() for p in zs_xprev_to_x.parameters() if p.requires_grad)
+    print("reconstruction net size:", "{0:05.2f} M".format(number_parameters/1e6))
+    print("prior net sizes:")
+    for i in range(len(z_prior)):
+        number_parameters = sum(p.numel() for p in z_prior[i].parameters() if p.requires_grad)
+        print("{0:05.2f} M".format(number_parameters/1e6))
 
     # Inference
     x_inf, z_infs = XInfer(h_params, word_embeddings, has_rep=False), [ZInferi(h_params, z_repnet, i) for i in
