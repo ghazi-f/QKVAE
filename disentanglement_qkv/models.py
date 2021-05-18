@@ -5,8 +5,8 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
-from disentanglement_transformer.h_params import *
-from disentanglement_transformer.graphs import get_vanilla_graph
+from disentanglement_qkv.h_params import *
+from disentanglement_qkv.graphs import get_vanilla_graph, get_qkv_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
@@ -198,15 +198,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits'])),
             ]
 
-            n_samples = sum(self.h_params.n_latents)
+            has_struct = self.h_params.graph_generator == get_qkv_graph
+            n_samples = sum(self.h_params.n_latents) + (2 if has_struct else 0)
             repeats = 2
-            go_symbol = torch.ones([n_samples*repeats + 2 + (2 if 'zlstm' in self.gen_bn.name_to_v else 0)]).long() * \
-                        self.index[self.generated_v].stoi['<go>']
+            go_symbol = torch.ones([n_samples*repeats + 2]).long() * self.index[self.generated_v].stoi['<go>']
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
             x_prev = go_symbol
             temp = 1.0
             only_z_sampling = True
             gen_len = self.h_params.max_len * (3 if self.h_params.contiguous_lm else 1)
+            if has_struct:
+                zst_gen = self.gen_bn.name_to_v['zs']
             z_gen = self.gen_bn.name_to_v['z1']
             # When z_gen is independent from X_prev (sequence level z)
             if z_gen not in self.gen_bn.parent:
@@ -214,21 +216,33 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     # Getting original 2 sentences
                     orig_z_sample_1 = z_gen.prior_sample((1,))[0]
                     orig_z_sample_2 = z_gen.prior_sample((1,))[0]
+                    if has_struct:
+                        orig_zst_sample_1 = zst_gen.prior_sample((1,))[0]
+                        orig_zst_sample_2 = zst_gen.prior_sample((1,))[0]
 
                     child_zs = [self.gen_bn.name_to_v['z{}'.format(i)] for i in range(2, len(self.h_params.n_latents)+1)]
                     self.gen_bn({'z1': orig_z_sample_1.unsqueeze(1),
+                                 **({'zs': orig_zst_sample_1.unsqueeze(1)} if has_struct else {}),
                                  'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
                     orig_child_zs_1 = [z.post_samples.squeeze(1) for z in child_zs]
+                    if has_struct:
+                        orig_zst_1 = zst_gen.post_samples.squeeze(1)
                     self.gen_bn({'z1': orig_z_sample_2.unsqueeze(1),
+                                 **({'zs': orig_zst_sample_2.unsqueeze(1)} if has_struct else {}),
                                  'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
                     orig_child_zs_2 = [z.post_samples.squeeze(1) for z in child_zs]
+                    if has_struct:
+                        orig_zst_2 = zst_gen.post_samples.squeeze(1)
                     # Creating latent variable duplicates
                     orig_zs_samples_1 = [orig_z_sample_1] + orig_child_zs_1
                     orig_zs_samples_2 = [orig_z_sample_2] + orig_child_zs_2
-                    zs_samples_1 = [orig_s.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                                         for orig_s in orig_zs_samples_1]
-                    zs_samples_2 = [orig_s.repeat(n_samples+1+(1 if 'zlstm' in self.gen_bn.name_to_v else 0), 1)
-                                         for orig_s in orig_zs_samples_2]
+                    zs_samples_1 = [orig_s.repeat(n_samples+1, 1)
+                                    for orig_s in orig_zs_samples_1]
+                    zs_samples_2 = [orig_s.repeat(n_samples+1, 1)
+                                    for orig_s in orig_zs_samples_2]
+                    if has_struct:
+                        zst_samples_1 = torch.cat([orig_zst_1.repeat(n_samples, 1), orig_zst_2.repeat(1, 1)])
+                        zst_samples_2 = torch.cat([orig_zst_2.repeat(n_samples, 1), orig_zst_1.repeat(1, 1)])
                     # Swapping latent variable values
                     offset = 0
                     for j in range(len(zs_samples_1)):
@@ -238,9 +252,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                             zs_samples_1[j][offset + i, ..., start:end] = orig_zs_samples_2[j][0, ..., start:end]
                             zs_samples_2[j][offset + i, ..., start:end] = orig_zs_samples_1[j][0, ..., start:end]
                         offset += self.h_params.n_latents[j]
+
                     # Getting output
                     z_input = {'z{}'.format(i+1): torch.cat([z_s_i_1, z_s_i_2]).unsqueeze(1)
                                for i, (z_s_i_1, z_s_i_2) in enumerate(zip(zs_samples_1, zs_samples_2))}
+                    if has_struct:
+                        z_input['zs'] = torch.cat([zst_samples_1, zst_samples_2]).unsqueeze(1)
 
                 else:
                     z_sample = z_gen.prior_sample((n_samples, ))[0]
@@ -248,8 +265,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             else:
                 z_input = {}
             if ('zlstm' in self.gen_bn.name_to_v) and (self.gen_bn.name_to_v['zlstm'] not in self.gen_bn.parent):
-                # case where zlstm is independant of z
-                # Special case where generation is not autoregressive
+                # This is to be adapted to zs
                 zlstm = self.gen_bn.name_to_v['zlstm']
                 zlstm_sample1 = zlstm.prior_sample((1,))[0]
                 zlstm_sample2 = zlstm.prior_sample((1,))[0]
@@ -302,10 +318,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 samples = [sen.split('<eos>')[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
-                      [('orig' if i == 0 else str(i-1) if sample == first_sample[0] else '**'+str(i-1)+'**') + ': ' +
+                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i-1) if sample == first_sample[0]
+                       else '**'+str(i-1)+'**') + ': ' +
                        sample for i, sample in enumerate(first_sample)] + \
                       ['**Second Sample**\n'] + \
-                      [('orig' if i == 0 else str(i-1) if sample == second_sample[0] else '**'+str(i-1)+'**') + ': ' +
+                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i-1) if sample == second_sample[0]
+                       else '**'+str(i-1)+'**') + ': ' +
                        sample for i, sample in enumerate(second_sample)]
             text = ' |||| '.join(samples).replace('<pad>', '_').replace('_unk', '<?>')
 

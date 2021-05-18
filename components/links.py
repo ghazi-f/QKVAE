@@ -711,7 +711,6 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
         assert self.residual is None, "Named links still can't have residuals"
 
-
     def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
         memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
@@ -734,6 +733,122 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         # This conditioned is not checked by the transformer module architecture
         assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
         outputs = self.transformer_dec(memory=memory, tgt=targets, tgt_mask=target_mask).transpose(-2, 0)
+
+        if self.get_att:
+            self.att_vals = []
+            out = targets
+            for mod in self.transformer_dec.layers:
+                self.att_vals.append(
+                mod.multihead_attn(out, memory, memory)[1])
+                out = mod(out, x)
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+                    self.params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                             ).view(out_shape).exp()
+
+        return z_params
+
+    def _generate_square_subsequent_mask(self, sz):
+        device = next(self.parameters()).device
+        mask = (torch.triu(torch.ones(sz, sz, device=device)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+
+class ConditionalCoattentiveQKVTransformerLink(NamedLink):
+    get_att = False
+
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, memory=None, key=None,
+                 targets=None, nheads=2, minimal_enc=False, mem_size=None):
+        super(ConditionalCoattentiveQKVTransformerLink, self).__init__(input_size, output_size, z_size, depth,
+                                                                    params, embedding, highway, dropout=dropout,
+                                                                    batchnorm=batchnorm, residual=residual)
+        # output_size = int(output_size/n_mems)
+
+        self.input_to_hidden = nn.Linear(input_size, output_size)
+        self.mem_size = mem_size or int(output_size/n_mems)
+        self.n_keys = 1
+        self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
+        self.key_to_hidden = nn.Linear(self.mem_size, output_size)
+        if minimal_enc:
+            self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
+        else:
+            self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
+                                                                                dropout=dropout, activation='gelu',
+                                                                                n_mems=n_mems), depth)
+
+        self.key_enc = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
+                                                                  dropout=dropout, activation='gelu'), depth)
+        self.transformer_dec = QKVTransformerDecoder(
+            QKVTransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size, dropout=dropout,
+                                       activation='gelu'), depth)
+        assert (memory is None and key is None) or (memory is not None and key is not None), "if you specify memory" \
+                                                                                             " variables, also specify" \
+                                                                                             " key variables"
+        self.key_inputs = nn.Embedding(n_mems, output_size).weight
+        self.memory, self.key, self.targets = memory, key, targets
+        self.pe = PositionalEncoding(output_size)
+        self.bn = nn.BatchNorm1d(z_size)
+        self.n_mems, self.output_size = n_mems, output_size
+        self.bidirectional = bidirectional
+        self.att_vals = None
+
+        if embedding is not None:
+            self.sbn = sbn
+            if sbn is not None:
+                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
+            else:
+                z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
+        assert self.residual is None, "Named links still can't have residuals"
+
+    def forward(self, x, z_prev=None, lens=None):
+        memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
+        memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
+        memory = self.memory_to_hidden(memory)
+        key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
+        key = key.view((*key.shape[:-1], self.n_keys, self.mem_size))
+        key = self.key_to_hidden(key)
+        targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
+
+        if memory.ndim > 3:
+            batch_orig_shape = memory.shape[:-2]
+            memory = memory.view(-1, *memory.shape[-2:])
+            key = key.view(-1, *key.shape[-2:])
+            targets = targets.view(-1, *targets.shape[-2:])
+        else:
+            batch_orig_shape = None
+        targets = self.input_to_hidden(targets)
+        targets = self.pe(targets.transpose(-2, 0))
+        target_mask = self._generate_square_subsequent_mask(targets.shape[0]) if not self.bidirectional else None
+        # memory = self.pe(memory.transpose(-2, 0))
+        memory = memory.transpose(-2, 0)
+        memory = self.transformer_enc(memory)
+        key = key.transpose(-2, 0)
+        key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
+                                                         self.key_inputs.shape[1])
+        key = self.key_enc(tgt=key_inputs, memory=key)
+
+        # This conditioned is not checked by the transformer module architecture
+        assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
+        outputs = self.transformer_dec(memory=memory, tgt=targets, key=key, tgt_mask=target_mask).transpose(-2, 0)
 
         if self.get_att:
             self.att_vals = []
@@ -924,6 +1039,55 @@ class SpecialTransformerEncoder(TransformerEncoderLayer):
         src = src + self.dropout2(src2)
         src = self.norm2(src)
         return src
+
+
+class QKVTransformerDecoderLayer(TransformerDecoderLayer):
+
+    def forward(self, tgt, memory, key, tgt_mask = None, memory_mask= None,
+                tgt_key_padding_mask= None, memory_key_padding_mask= None):
+        r"""Pass the inputs (and mask) through the decoder layer.
+
+        Args:
+            tgt: the sequence to the decoder layer (required).
+            memory: the sequence from the last layer of the encoder (required).
+            tgt_mask: the mask for the tgt sequence (optional).
+            memory_mask: the mask for the memory sequence (optional).
+            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
+            memory_key_padding_mask: the mask for the memory keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
+                              key_padding_mask=tgt_key_padding_mask)[0]
+        tgt = tgt + self.dropout1(tgt2)
+        tgt = self.norm1(tgt)
+        tgt2 = self.multihead_attn(tgt, key, memory, attn_mask=memory_mask,
+                                   key_padding_mask=memory_key_padding_mask)[0]
+        tgt = tgt + self.dropout2(tgt2)
+        tgt = self.norm2(tgt)
+        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        tgt = tgt + self.dropout3(tgt2)
+        tgt = self.norm3(tgt)
+        return tgt
+
+
+class QKVTransformerDecoder(TransformerDecoder):
+
+    def forward(self, tgt, memory, key, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None,
+                memory_key_padding_mask=None):
+        output = tgt
+
+        for mod in self.layers:
+            output = mod(output, memory, key, tgt_mask=tgt_mask,
+                         memory_mask=memory_mask,
+                         tgt_key_padding_mask=tgt_key_padding_mask,
+                         memory_key_padding_mask=memory_key_padding_mask)
+
+        if self.norm is not None:
+            output = self.norm(output)
+
+        return output
 
 
 class MinimalTransformerEncoder(nn.Module):

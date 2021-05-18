@@ -304,7 +304,7 @@ class ELBo(BaseCriterion):
             KL_value = torch.sum(kl_i)/self.valid_n_samples
             self.KL_dict[KL_name] = KL_value
         if not (type(self.h_params.n_latents) == int and self.h_params.n_latents == 1):
-            for j, name in enumerate(self.infer_lvs.keys()):
+            for name in self.infer_lvs.keys():
                 if name in self.gen_lvs:
                     gen_lv, inf_lv = self.gen_lvs[name], self.infer_lvs[name]
                     infer_v_name = inf_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.infer_net.parent[inf_lv]]))
@@ -313,14 +313,15 @@ class ELBo(BaseCriterion):
                                                 if gen_lv in self.gen_net.parent else '')
                     KLs = []
                     KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name,gen_v_name)
-                    n_latents= self.h_params.n_latents[j]
-                    for i in range(n_latents):
-                        if gen_lv.post_params is None: continue
-                        start, end = int(i*self.h_params.z_size/n_latents), \
-                                     int((i+1)*self.h_params.z_size/n_latents)
-                        kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
-                        KLs.append(torch.sum(kl_i) / self.valid_n_samples)
-                    self.KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
+                    if name != "zs":
+                        n_latents = self.h_params.n_latents[int(name[-1])-1]
+                        for i in range(n_latents):
+                            if gen_lv.post_params is None: continue
+                            start, end = int(i*self.h_params.z_size/n_latents), int((i+1)*self.h_params.z_size/n_latents)
+                            kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
+                            KLs.append(torch.sum(kl_i) / self.valid_n_samples)
+                        self.KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
+
 
         if self.h_params.anneal_kl_type == 'linear' and \
                 self.h_params.anneal_kl and self.model.step <= self.h_params.anneal_kl[0]:
