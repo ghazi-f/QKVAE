@@ -73,9 +73,9 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/DeepTest"
+    flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     # flags.data = "yelp"
-    flags.n_latents = [4, 4]
+    flags.n_latents = [4]
     flags.graph ="IndepInfer"  # "Vanilla"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.3
@@ -171,7 +171,7 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
-    # model.get_disentanglement_summaries2(data.test_iter, 2000)
+    # model.get_disentanglement_summaries2(data.test_iter, 200)
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
