@@ -879,7 +879,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 for k in enc_lab_wise_disent.keys():
                     self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
                 enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
-                self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+                if enc_heatmap is not None:
+                    self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
                 encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
                 self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
             else:
@@ -891,7 +892,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             for k in dec_lab_wise_disent.keys():
                 self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
             dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
-            self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
+            if dec_heatmap is not None:
+                self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
             decoder_Ndisent_vars = len(set(dec_disent_vars.values()))
             self.writer.add_scalar('test/decoder_Ndisent_vars', decoder_Ndisent_vars, self.step)
         return dec_lab_wise_disent, enc_lab_wise_disent, decoder_Ndisent_vars, encoder_Ndisent_vars
@@ -1124,7 +1126,10 @@ def get_hm_array(df):
 def get_hm_array2(df, save_as=None):
     plt.clf()
     # df = df[['subj', 'verb', 'dobj', 'pobj']]
-    snsplt = sns.heatmap(df, cmap ='Reds', linewidths = 0.20, annot=True)
+    try:
+        snsplt = sns.heatmap(df, cmap ='Reds', linewidths = 0.20, annot=True)
+    except TypeError:
+        return None
     if save_as is not None:
         snsplt.get_figure().savefig(save_as)
     b, t = plt.ylim() # discover the values for bottom and top
