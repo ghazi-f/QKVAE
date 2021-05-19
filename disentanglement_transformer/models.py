@@ -783,8 +783,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                               'syntemp_diff', 'lextemp_diff']]
         var_wise_scores_struct = df.groupby('alteration_id').mean()[['subj_struct', 'verb_struct',
                                                                      'dobj_struct', 'pobj_struct']]
-        print(var_wise_scores[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']])
-        print(var_wise_scores_struct)
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
         disent_score = 0
         lab_wise_disent = {}

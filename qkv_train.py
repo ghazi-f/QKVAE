@@ -165,7 +165,9 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
-    # model.get_disentanglement_summaries2(data.test_iter, 200)
+    # # model.get_disentanglement_summaries2(data.test_iter, 200)
+    # # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+    # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
