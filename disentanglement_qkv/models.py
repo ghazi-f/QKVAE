@@ -318,12 +318,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 samples = [sen.split('<eos>')[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
-                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i-1) if sample == first_sample[0]
-                       else '**'+str(i-1)+'**') + ': ' +
+                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i) if sample == first_sample[0]
+                       else '**'+str(i)+'**') + ': ' +
                        sample for i, sample in enumerate(first_sample)] + \
                       ['**Second Sample**\n'] + \
-                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i-1) if sample == second_sample[0]
-                       else '**'+str(i-1)+'**') + ': ' +
+                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i) if sample == second_sample[0]
+                       else '**'+str(i)+'**') + ': ' +
                        sample for i, sample in enumerate(second_sample)]
             text = ' |||| '.join(samples).replace('<pad>', '_').replace('_unk', '<?>')
 
@@ -353,7 +353,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             neg_log_perplexity_lb = 0
             total_samples = 0
             infer_prev, gen_prev = None, None
-            force_iw = ['z{}'.format(len(self.h_params.n_latents))]
+            force_iw = ['z1'] + (['zs'] if self.h_params.graph_generator == get_qkv_graph else [])
             iwlbo = IWLBo(self, 1)
 
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Perplexity")):
@@ -524,6 +524,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def _get_alternative_sentences(self, prev_latent_vals, params, var_z_ids, n_samples, gen_len, complete=None):
         h_params = self.h_params
+        has_struct = self.h_params.graph_generator == get_qkv_graph
         n_orig_sentences = prev_latent_vals['z1'].shape[0]
         go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
                     self.index[self.generated_v].stoi['<go>']
@@ -538,22 +539,35 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         orig_zs = [prev_latent_vals['z{}'.format(i+1)].repeat(n_samples, 1) for i in range(len(h_params.n_latents))]
         zs = [self.gen_bn.name_to_v['z{}'.format(i+1)] for i in range(len(h_params.n_latents))]
-        self.gen_bn({**{'z{}'.format(i+1): orig_zs[i].unsqueeze(1) for i in range(len(orig_zs))},
+        gen_input = {**{'z{}'.format(i+1): orig_zs[i].unsqueeze(1) for i in range(len(orig_zs))},
                      'x_prev': torch.zeros((n_samples * n_orig_sentences, 1, self.generated_v.size)).to(
-                         self.h_params.device)})
+                         self.h_params.device)}
+        if has_struct:
+            orig_zst = prev_latent_vals['zs'].repeat(n_samples, 1)
+            zst = self.gen_bn.name_to_v['zs']
+            gen_input['zs'] = orig_zst.unsqueeze(1)
+        self.gen_bn(gen_input)
         zs_sample = [zs[0].prior_sample((n_samples * n_orig_sentences,))[0]] +\
                     [z.post_samples.squeeze(1) for z in zs[1:]]
+        if has_struct:
+            zst_sample = zst.prior_sample((n_samples * n_orig_sentences,))[0]
 
         for id in var_z_ids:
-            assert id < sum(h_params.n_latents)
-            z_number = sum([id > sum(h_params.n_latents[:i + 1]) for i in range(len(h_params.n_latents))])
-            z_index = id - sum(h_params.n_latents[:z_number])
-            start, end = int(h_params.z_size / max(h_params.n_latents) * z_index), int(
-                h_params.z_size / max(h_params.n_latents) * (z_index + 1))
-            source, destination = zs_sample[z_number], orig_zs[z_number]
-            destination[:, start:end] = source[:, start:end]
+            # id == sum(h_params.n_latents) means its zst
+            if id == sum(h_params.n_latents) and has_struct:
+                orig_zst = zst_sample
+            else:
+                assert id < sum(h_params.n_latents)
+                z_number = sum([id > sum(h_params.n_latents[:i + 1]) for i in range(len(h_params.n_latents))])
+                z_index = id - sum(h_params.n_latents[:z_number])
+                start, end = int(h_params.z_size / max(h_params.n_latents) * z_index), int(
+                    h_params.z_size / max(h_params.n_latents) * (z_index + 1))
+                source, destination = zs_sample[z_number], orig_zs[z_number]
+                destination[:, start:end] = source[:, start:end]
 
         z_input = {'z{}'.format(i+1): orig_zs[i].unsqueeze(1) for i in range(len(orig_zs))}
+        if has_struct:
+            z_input['zs'] = orig_zst.unsqueeze(1)
 
         # Normal Autoregressive generation
         for i in range(gen_len):
@@ -565,13 +579,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                dim=-1)
 
         text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
-        return text, {'z{}'.format(i+1): zs_sample[i].tolist() for i in range(len(orig_zs))}
+        samples = {'z{}'.format(i+1): zs_sample[i].tolist() for i in range(len(orig_zs))}
+        if has_struct:
+            samples['zs'] = zst_sample.tolist()
+        return text, samples
 
     def get_sentences(self, n_samples, gen_len=16, sample_w=False, vary_z=True, complete=None, contains=None,
                       max_tries=100):
         n_latents = self.h_params.n_latents
+        has_struct = self.h_params.graph_generator == get_qkv_graph
         final_text, final_samples, final_params = [], {'z{}'.format(i+1): [] for i in range(len(n_latents))},\
-                                                  {'z{}'.format(i+1): None for i in range(1, len(n_latents))}
+                                                      {'z{}'.format(i+1): None for i in range(1, len(n_latents))}
         trys = 0
         while n_samples > 0:
             trys += 1
@@ -586,27 +604,44 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 gen_len = gen_len - len(complete.split(' '))
             temp = 1.
             z_gen = self.gen_bn.name_to_v['z1']
+            if has_struct:
+                zst_gen = self.gen_bn.name_to_v['zs']
             if vary_z:
                 z_sample = z_gen.prior_sample((n_samples,))[0]
+                if has_struct:
+                    zst_sample = zst_gen.prior_sample((n_samples,))[0]
             else:
                 z_sample = z_gen.prior_sample((1,))[0]
                 z_sample = z_sample.repeat(n_samples, 1)
+                if has_struct:
+                    zst_sample = zst_gen.prior_sample((1,))[0]
+                    zst_sample = zst_sample.repeat(n_samples, 1)
             child_zs = [self.gen_bn.name_to_v['z{}'.format(i)] for i in range(2, len(self.h_params.n_latents) + 1)]
 
             # Structured Z case
             if vary_z:
-                self.gen_bn({'z1': z_sample.unsqueeze(1),
-                            'x_prev': torch.zeros((n_samples, 1, self.generated_v.size)).to(self.h_params.device)})
+                gen_input = {'z1': z_sample.unsqueeze(1),
+                            'x_prev': torch.zeros((n_samples, 1, self.generated_v.size)).to(self.h_params.device)}
+                if has_struct:
+                    gen_input['zs'] = zst_sample.unsqueeze(1)
+                self.gen_bn(gen_input)
                 zs_samples = [z_sample] + [z.post_samples.squeeze(1) for z in child_zs]
                 zs_params = {z.name: z.post_params for z in child_zs}
             else:
-                self.gen_bn({'z1': z_sample[0].unsqueeze(0).unsqueeze(1),
-                            'x_prev': torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
+                gen_input = {'z1': z_sample[0].unsqueeze(0).unsqueeze(1),
+                            'x_prev': torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)}
+                if has_struct:
+                    gen_input['zs'] = zst_sample[0].unsqueeze(0).unsqueeze(1)
+                self.gen_bn(gen_input)
                 zs_samples = [z_sample] + [z.post_samples.squeeze(1).repeat(n_samples, 1) for z in child_zs]
                 zs_params = {z.name: {k: v.squeeze(1).repeat(n_samples, 1) for k, v in z.post_params.items()}
                              for z in child_zs}
 
             z_input = {'z{}'.format(i+1): z_s.unsqueeze(1) for i, z_s in enumerate(zs_samples)}
+            if has_struct:
+                zs_params['zs'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zst_gen.post_params.items()}
+                z_input['zs'] = zst_sample.unsqueeze(1)
+
             # Normal Autoregressive generation
             for i in range(gen_len):
                 self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
@@ -621,8 +656,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
             text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
             if contains is None:
-                return text, {'z{}'.format(i+1): z_s for i, z_s in enumerate(zs_samples)}, zs_params
+                sample_dic = {'z{}'.format(i+1): z_s for i, z_s in enumerate(zs_samples)}
+                if has_struct:
+                    sample_dic['zs'] = zst_sample
+                return text, sample_dic, zs_params
             else:
+                if has_struct:
+                    raise NotImplementedError("key word based sampling still not implemented for qkv graph")
                 for i in range(n_samples):
                     if any([w in text[i].split(' ') for w in contains]):
                         n_samples -= 1
@@ -761,6 +801,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                sample_w=False, vary_z=True, complete=None)
         orig_rels = shallow_dependencies(text)
         orig_temps = truncated_template(text)
+        has_struct = self.h_params.graph_generator == get_qkv_graph
+        n_lvs = sum(self.h_params.n_latents) +(1 if has_struct else 0)
         for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
             text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
                                                        sample_w=False, vary_z=True, complete=None)
@@ -770,7 +812,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             orig_rels.extend(shallow_dependencies(text_i))
             orig_temps.extend(truncated_template(text_i))
         for i in range(int(n_samples / batch_size)):
-            for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
+            for j in tqdm(range(n_lvs), desc="Processing sample {}".format(str(i))):
                 # Altering the sentences
                 alt_text, _ = self._get_alternative_sentences(
                     prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
@@ -789,7 +831,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                           orig_temps[(i * batch_size) + k % batch_size], alt_temps[k])
                     except RecursionError or IndexError:
                         continue
-                    stats.append([orig_text, alt_text[k], j, int(arg0_diff[0]), int(v_diff[0]),
+                    altered_var = 'z{}'.format(j+1) if j!=(n_lvs-1) else 'zs'
+                    stats.append([orig_text, alt_text[k], altered_var, int(arg0_diff[0]), int(v_diff[0]),
                                   int(arg1_diff[0]), int(arg_star_diff[0]), int(arg0_diff[1]), int(v_diff[1]),
                                   int(arg1_diff[1]), int(arg_star_diff[1]), same_struct, syn_temp_diff, lex_temp_diff])
 
@@ -801,8 +844,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                               'syntemp_diff', 'lextemp_diff']]
         var_wise_scores_struct = df.groupby('alteration_id').mean()[['subj_struct', 'verb_struct',
                                                                      'dobj_struct', 'pobj_struct']]
-        print(var_wise_scores[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff']])
-        print(var_wise_scores_struct)
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
         disent_score = 0
         lab_wise_disent = {}
@@ -811,7 +852,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             try:
                 dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
             except TypeError :
-                dec_disent_vars[lab] = -1
+                dec_disent_vars[lab] = 'none'
                 lab_wise_disent[lab] = 0
                 continue
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
