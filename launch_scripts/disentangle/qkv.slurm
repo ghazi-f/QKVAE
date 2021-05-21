@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=QKVSNLI4
+#SBATCH --job-name=QKVSNLI3
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVSNLI4.txt
-#SBATCH --error=./QKVSNLI4.err
+#SBATCH --output=./QKVSNLI3.txt
+#SBATCH --error=./QKVSNLI3.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 # ================= EXP GROUP 1 ==============================
 ## Experiments on the SNLI Dataset
-for BETA in 0.4 #0.3 #0.5
+for BETA in 0.3 #0.4 #0.5
 do
 for ITER in 1 2 3 4 5
 do
