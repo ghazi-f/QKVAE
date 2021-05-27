@@ -10,7 +10,9 @@
 # ================= EXP GROUP 1 ==============================
 ## Experiments on the SNLI Dataset
 #for NL in 4 8
+#do
 #for K in 8 16
+#do
 #for BETA in 0.5 0.7
 #do
 #for ITER in 1 2 3
@@ -24,7 +26,9 @@
 
 # Experiments on the Yelp Dataset
 for NL in 4 8
+do
 for K in 8 16
+do
 for BETA in 0.5 0.7
 do
 for ITER in 1 2 3
