@@ -199,7 +199,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             ]
 
             has_struct = self.h_params.graph_generator == get_qkv_graph
-            n_samples = sum(self.h_params.n_latents) + (2 if has_struct else 0)
+            n_samples = sum(self.h_params.n_latents) + (1 if has_struct else 0)
             repeats = 2
             go_symbol = torch.ones([n_samples*repeats + 2]).long() * self.index[self.generated_v].stoi['<go>']
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
@@ -318,11 +318,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 samples = [sen.split('<eos>')[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
-                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i) if sample == first_sample[0]
+                      [('orig' if i == 0 else 'zs' if i == len(first_sample)-1 else str(i) if sample == first_sample[0]
                        else '**'+str(i)+'**') + ': ' +
                        sample for i, sample in enumerate(first_sample)] + \
                       ['**Second Sample**\n'] + \
-                      [('orig' if i == 0 else 'zs' if i == len(samples)-1 else str(i) if sample == second_sample[0]
+                      [('orig' if i == 0 else 'zs' if i == len(second_sample)-1 else str(i) if sample == second_sample[0]
                        else '**'+str(i)+'**') + ': ' +
                        sample for i, sample in enumerate(second_sample)]
             text = ' |||| '.join(samples).replace('<pad>', '_').replace('_unk', '<?>')
@@ -774,7 +774,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             sort_idx = np.argsort(v)
             enc_disent_vars[k], enc_disent_score[k], enc_max_score[k] = \
                 sort_idx[-1], v[sort_idx[-1]] - v[sort_idx[-2]], v[sort_idx[-1]]
-        return enc_att_scores, enc_max_score, enc_disent_score, enc_disent_vars
+        idx_names = ['z{}'.format(i+1) for i in range(sum(self.h_params.n_latents))]
+
+        return pd.DataFrame(enc_att_scores,index=idx_names), enc_max_score, enc_disent_score, enc_disent_vars
 
     def get_sentence_statistics2(self, orig, sen, orig_relations, alt_relations, orig_temp, alt_temp):
         orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
@@ -878,7 +880,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
                 for k in enc_lab_wise_disent.keys():
                     self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
-                enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
+                enc_heatmap = get_hm_array2(enc_var_wise_scores)#, "enc_heatmap_yelp.eps")
                 if enc_heatmap is not None:
                     self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
                 encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
