@@ -56,7 +56,8 @@ class DefaultHParams:
                  word_dropout=0.0,
                  contiguous_lm=False,
                  n_latents=1,
-                 minimal_enc=False):
+                 minimal_enc=False,
+                 n_keys=4):
         # A name to be used for checkpoints and Tensorboard logging indexation
         self.test_name = test_name
         self.save_path = os.path.join(ROOT_CHECKPOINTING_PATH, test_name+'.pth')
@@ -96,6 +97,7 @@ class DefaultHParams:
         self.decoder_h = decoder_h
         self.decoder_l = decoder_l
 
+        self.n_keys = n_keys
         self.n_latents = n_latents
         self.graph_generator = graph_generator
         self.highway = highway

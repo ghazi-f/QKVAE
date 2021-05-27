@@ -63,7 +63,9 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
 def get_qkv_graph(h_params, word_embeddings):
     xin_size, zin_size = h_params.embedding_dim, h_params.z_size
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
-    zstin_size, zstout_size = int(h_params.z_size/max(h_params.n_latents)), int(h_params.z_size/max(h_params.n_latents))
+    n_keys = h_params.n_keys
+    zstin_size, zstout_size = int(h_params.z_size/max(h_params.n_latents)), \
+                              int(h_params.z_size/max(h_params.n_latents))
     z_repnet = None
     n_lvls = len(h_params.n_latents)
     lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
@@ -79,7 +81,7 @@ def get_qkv_graph(h_params, word_embeddings):
                                                                  memory=[z.name for z in z_gens], targets=['x_prev'],
                                                                  key=['zs'], nheads=4, bidirectional=False,
                                                                  mem_size=int(z_sizes[0]/h_params.n_latents[0]),
-                                                                 minimal_enc=h_params.minimal_enc)
+                                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys)
     z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
                                           h_params.decoder_l, Gaussian.parameter_activations, nheads=4, sequence=None,
                                           memory=[z_gens[i].name], n_mems=h_params.n_latents[i],

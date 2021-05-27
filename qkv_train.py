@@ -32,6 +32,7 @@ parser.add_argument("--embedding_dim", default=128, type=int)#################"
 parser.add_argument("--pretrained_embeddings", default=False, type=bool)#################"
 parser.add_argument("--z_size", default=96*kz, type=int)#################"
 parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
+parser.add_argument("--n_keys", default=4, type=int)#################"
 parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)#################"
 parser.add_argument("--text_rep_l", default=3, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
@@ -72,12 +73,15 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/QKV1"
+    flags.test_name = "nliLM/QKVbetaZs3"
     # flags.data = "yelp"
-    flags.n_latents = [4]
+    flags.n_latents = [8]
     flags.graph ="QKV"  # "Vanilla"
     # flags.losses = "LagVAE"
-    flags.kl_beta = 0.3
+    flags.kl_beta = 0.5
+    flags.data = "yelp"
+    # flags.anneal_kl0 = 0
+    flags.max_elbo_choice = 6
     # flags.z_size = 16
     # flags.encoder_h = 256
     # flags.decoder_h = 256
@@ -130,7 +134,7 @@ def main():
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
-                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
+                       test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta)
     val_iterator = iter(data.val_iter)
@@ -165,8 +169,8 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
-    # # model.get_disentanglement_summaries2(data.test_iter, 200)
-    # # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+    # model.get_disentanglement_summaries2(data.test_iter, 200)
+    # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
@@ -279,7 +283,7 @@ def main():
     temps = ['syntemp', 'lextemp']
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
-            f.write('\t'.join(['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents',
+            f.write('\t'.join(['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents', 'n_keys',
                                'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
                               'dev_tot_en_disent', 'dev_dec_disent_subj', 'dev_dec_disent_verb', 'dev_dec_disent_dobj',
                               'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
@@ -293,7 +297,7 @@ def main():
                               'dev_mi', 'test_mi'])+'\n')
     with open(flags.csv_out, 'a') as f:
         f.write('\t'.join([flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
-                           str(flags.kl_beta), str(flags.n_latents),
+                           str(flags.kl_beta), str(flags.n_latents), str(flags.n_keys),
                            str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum(val_dec_lab_wise_disent.values())),
                            str(sum(val_enc_lab_wise_disent.values())),
                            *[str(val_dec_lab_wise_disent[k]) for k in relations+temps],

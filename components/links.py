@@ -772,24 +772,24 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
     get_att = False
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
-                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, memory=None, key=None,
-                 targets=None, nheads=2, minimal_enc=False, mem_size=None):
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
+                 key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None):
         super(ConditionalCoattentiveQKVTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
         # output_size = int(output_size/n_mems)
-
+        self.mem_ids = nn.Embedding(n_mems, mem_size).weight
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
-        self.n_keys = 1
-        self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
-        self.key_to_hidden = nn.Linear(self.mem_size, output_size)
-        if minimal_enc:
-            self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
-        else:
-            self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
-                                                                                dropout=dropout, activation='gelu',
-                                                                                n_mems=n_mems), depth)
+        self.n_keys = n_keys
+        self.memory_to_hidden = nn.Linear(self.mem_size*2, output_size)
+        self.key_to_hidden = nn.Linear(self.mem_size, output_size*n_keys)
+        # if minimal_enc:
+        #     self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
+        # else:
+        #     self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
+        #                                                                         dropout=dropout, activation='gelu',
+        #                                                                         n_mems=n_mems), depth)
 
         self.key_enc = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                   dropout=dropout, activation='gelu'), depth)
@@ -822,10 +822,13 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
     def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
         memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
-        memory = self.memory_to_hidden(memory)
+        mem_ids = self.mem_ids
+        while memory.ndim > mem_ids.ndim:
+            mem_ids = mem_ids.unsqueeze(0)
+        memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
-        key = key.view((*key.shape[:-1], self.n_keys, self.mem_size))
-        key = self.key_to_hidden(key)
+        key = key.view((*key.shape[:-1], 1, self.mem_size))
+        key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
         if memory.ndim > 3:
@@ -840,7 +843,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         target_mask = self._generate_square_subsequent_mask(targets.shape[0]) if not self.bidirectional else None
         # memory = self.pe(memory.transpose(-2, 0))
         memory = memory.transpose(-2, 0)
-        memory = self.transformer_enc(memory)
+        # memory = self.transformer_enc(memory)
         key = key.transpose(-2, 0)
         key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
                                                          self.key_inputs.shape[1])
