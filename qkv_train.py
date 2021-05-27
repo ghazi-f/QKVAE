@@ -73,13 +73,13 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/QKVbetaZs3"
+    flags.test_name = "nliLM/QKVOntobetaZs3"
     # flags.data = "yelp"
     flags.n_latents = [8]
     flags.graph ="QKV"  # "Vanilla"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.5
-    flags.data = "yelp"
+    flags.data = "ontonotes"
     # flags.anneal_kl0 = 0
     flags.max_elbo_choice = 6
     # flags.z_size = 16
