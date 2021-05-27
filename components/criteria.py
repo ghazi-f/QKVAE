@@ -201,7 +201,7 @@ class ELBo(BaseCriterion):
         coeff *= self.h_params.kl_beta
         if coeff == 0:
             kl = 0
-        if self.h_params.max_elbo and self.h_params.max_elbo[0] < 5:
+        if self.h_params.max_elbo and self.h_params.max_elbo[0] < 7:
             # Didn't implement observed here
             loss_choice, loss_threshold = self.h_params.max_elbo
             if not actual and type(kl) != int:
@@ -261,6 +261,16 @@ class ELBo(BaseCriterion):
 
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/loss_threshold),
                 #                    dim=(0, 1)) / self.valid_n_samples
+                elif loss_choice == 6:
+                    zs_kl0, zs_kl1 = 10000, 13000
+                    zs_beta = (0 if self.model.step < zs_kl0 else ((self.model.step - zs_kl0) / (zs_kl1 - zs_kl0)) if \
+                        zs_kl1 > self.model.step >= zs_kl0 else 1)
+                    zs_beta = zs_beta * 1/5
+                    beta_i = {lv_n: (zs_beta if lv_n=='zs' else 1) for lv_n in self.infer_lvs.keys()}
+                    kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr) * beta_i[lv_n]
+                              for lv_n in self.infer_lvs.keys() if observed is None or (lv_n not in observed)])
+                    kl *= self.sequence_mask
+                    loss = - (self.log_p_xIz / sen_len_rec - coeff * kl / sen_len_kl).sum(1).mean(0)
             else:
                 loss = - (self.log_p_xIz/sen_len_rec - coeff * kl/sen_len_kl).sum(1).mean(0)
         else:
