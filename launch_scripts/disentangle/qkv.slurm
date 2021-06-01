@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=QKVYelp
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:rtx2080:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
 #SBATCH --output=./QKVYelp.txt
