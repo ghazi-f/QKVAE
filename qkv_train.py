@@ -8,7 +8,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import NLIGenData2, OntoGenData, HuggingYelp2
+from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTData2
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -18,7 +18,7 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt'], type=str)
 parser.add_argument("--csv_out", default='disentqkv.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
@@ -46,7 +46,7 @@ parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
 parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false')
 parser.set_defaults(minimal_enc=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
-parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV"], type=str)
+parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "HQKV"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
@@ -57,7 +57,9 @@ parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=10, type=int)
-parser.add_argument("--kl_beta", default=0.4, type=float)
+parser.add_argument("--kl_beta", default=0.5, type=float)
+parser.add_argument("--kl_beta_zs", default=0.1, type=float)
+parser.add_argument("--kl_beta_zg", default=0.5/8, type=float)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.1, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -70,16 +72,16 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.batch_size = 128
-    flags.grad_accu = 1
-    flags.max_len = 17
-    flags.test_name = "nliLM/QKVOntobetaZs3"
-    # flags.data = "yelp"
+    flags.batch_size = 64
+    flags.grad_accu = 2
+    flags.max_len = 40
+    flags.test_name = "nliLM/HQKVParanmt1"
+    flags.data = "paranmt"
     flags.n_latents = [8]
-    flags.graph ="QKV"  # "Vanilla"
+    flags.graph ="HQKV"  # "Vanilla"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.5
-    flags.data = "ontonotes"
+
     # flags.anneal_kl0 = 0
     flags.max_elbo_choice = 6
     # flags.z_size = 16
@@ -90,7 +92,8 @@ if False:
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
          "IndepInfer": get_structured_auto_regressive_indep_graph,
-         "QKV": get_qkv_graph}[flags.graph]
+         "QKV": get_qkv_graph,
+         "HQKV": get_hqkv_graph}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
@@ -98,7 +101,7 @@ if flags.graph == "Vanilla":
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2}[flags.data]
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "paranmt": ParaNMTData2}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -136,7 +139,8 @@ def main():
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
-                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta)
+                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
+                       kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
@@ -169,7 +173,7 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
-    # model.get_disentanglement_summaries2(data.test_iter, 200)
+    # model.get_disentanglement_summaries2(data.val_iter, 2000)
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:

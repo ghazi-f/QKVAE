@@ -262,11 +262,16 @@ class ELBo(BaseCriterion):
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/loss_threshold),
                 #                    dim=(0, 1)) / self.valid_n_samples
                 elif loss_choice == 6:
-                    zs_kl0, zs_kl1 = 10000, 13000
+                    zs_kl0, zs_kl1 = 7000, 10000
                     zs_beta = (0 if self.model.step < zs_kl0 else ((self.model.step - zs_kl0) / (zs_kl1 - zs_kl0)) if \
                         zs_kl1 > self.model.step >= zs_kl0 else 1)
-                    zs_beta = zs_beta * 1/5
-                    beta_i = {lv_n: (zs_beta if lv_n=='zs' else 1) for lv_n in self.infer_lvs.keys()}
+                    zs_beta = zs_beta * (self.h_params.kl_beta_zs/self.h_params.kl_beta)
+                    zg_kl0, zg_kl1 = 11000, 14000
+                    zg_beta = (0 if self.model.step < zg_kl0 else ((self.model.step - zg_kl0) / (zg_kl1 - zg_kl0)) if \
+                        zg_kl1 > self.model.step >= zg_kl0 else 1)
+                    zg_beta = zg_beta * (self.h_params.kl_beta_zg/self.h_params.kl_beta)
+                    beta_i = {lv_n: (zs_beta if lv_n=='zs' else zg_beta if lv_n=='zg' else 1)
+                              for lv_n in self.infer_lvs.keys()}
                     kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr) * beta_i[lv_n]
                               for lv_n in self.infer_lvs.keys() if observed is None or (lv_n not in observed)])
                     kl *= self.sequence_mask
@@ -322,8 +327,8 @@ class ELBo(BaseCriterion):
                     gen_v_name = gen_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.gen_net.parent[gen_lv]]))
                                                 if gen_lv in self.gen_net.parent else '')
                     KLs = []
-                    KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name,gen_v_name)
-                    if name != "zs":
+                    KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
+                    if name not in ("zs", "zg"):
                         n_latents = self.h_params.n_latents[int(name[-1])-1]
                         for i in range(n_latents):
                             if gen_lv.post_params is None: continue
@@ -331,7 +336,6 @@ class ELBo(BaseCriterion):
                             kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
                             KLs.append(torch.sum(kl_i) / self.valid_n_samples)
                         self.KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
-
 
         if self.h_params.anneal_kl_type == 'linear' and \
                 self.h_params.anneal_kl and self.model.step <= self.h_params.anneal_kl[0]:
