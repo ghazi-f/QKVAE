@@ -53,27 +53,27 @@ class ZGeni(Gaussian):
 
 class ZStInfer(Gaussian):
     def __init__(self, h_params):
-        size = int(h_params.z_size/max(h_params.n_latents))
+        size = h_params.z_size#int(h_params.z_size/max(h_params.n_latents))
         super(ZStInfer, self).__init__(size, 'zs', h_params.device, markovian=h_params.markovian, stl=True,
                                       sequence_lv=True)
 
 
 class ZStGen(Gaussian):
     def __init__(self, h_params, allow_prior=True):
-        size = int(h_params.z_size/max(h_params.n_latents))
+        size = h_params.z_size#int(h_params.z_size/max(h_params.n_latents))
         super(ZStGen, self).__init__(size, 'zs', h_params.device, markovian=h_params.markovian, allow_prior=allow_prior,
                                     sequence_lv=True)
 
 
 class ZGInfer(Gaussian):
     def __init__(self, h_params):
-        size = int(h_params.z_size/max(h_params.n_latents))
+        size = h_params.z_size#int(h_params.z_size/max(h_params.n_latents))
         super(ZGInfer, self).__init__(size, 'zg', h_params.device, markovian=h_params.markovian, stl=True,
                                       sequence_lv=True)
 
 
 class ZGGen(Gaussian):
     def __init__(self, h_params, allow_prior=True):
-        size = int(h_params.z_size/max(h_params.n_latents))
+        size = h_params.z_size#int(h_params.z_size/max(h_params.n_latents))
         super(ZGGen, self).__init__(size, 'zg', h_params.device, markovian=h_params.markovian, allow_prior=allow_prior,
                                     sequence_lv=True)
