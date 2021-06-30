@@ -165,7 +165,7 @@ class ParaNMTData2:
 
         np.random.seed(42)
         # Loading Data
-        folder = ".data\\paranmt"
+        folder = os.path.join(".data", "paranmt")
         train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'valid.txt'), \
                                 os.path.join(folder, 'test.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path}
