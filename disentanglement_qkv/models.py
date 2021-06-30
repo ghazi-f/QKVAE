@@ -17,10 +17,11 @@ from sklearn.metrics import roc_auc_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
+from datasets import load_metric
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 
 nlp = spacy.load("en_core_web_sm")
-
+bleu_score = load_metric("bleu").compute
 
 
 # ============================================= DISENTANGLEMENT MODEL CLASS ============================================
@@ -96,7 +97,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
-        if self.step < self.h_params.anneal_kl[0]:
+        if self.step < self.h_params.anneal_kl[0] and self.h_params.anneal_kl_type == "linear":
             self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
                                                prev_states=self.gen_last_states)
         else:
@@ -192,16 +193,22 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # this is supposed to output a list of (summary type, summary name, summary data) triplets
         with torch.no_grad():
             summary_triplets = [
-                ('text', '/ground_truth', self.decode_to_text(self.gen_bn.variables_star[self.generated_v])),
-                ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits'])),
-            ]
+                ('text', '/ground_truth', self.decode_to_text(self.gen_bn.variables_star[self.generated_v]))]
+            gen_inputs = {**{lv.name: lv.post_params['loc'] for lv in self.infer_bn.variables if lv.name.startswith('z')},
+                          **{'x': self.gen_bn.variables_star[self.gen_bn.name_to_v['x_prev']],
+                             'x_prev': self.gen_bn.variables_star[self.gen_bn.name_to_v['x_prev']]}}
+            self.gen_bn(gen_inputs, target=self.generated_v, complete=True)
+            summary_triplets.append(
+                ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits']))
+            )
 
             has_struct = 'zs' in self.gen_bn.name_to_v
             if has_struct:
                 zst_gen = self.gen_bn.name_to_v['zs']
             z_gen = self.gen_bn.name_to_v['z1']
             has_zg = 'zg' in self.gen_bn.name_to_v
-            zg_gen = self.gen_bn.name_to_v['zg']
+            if has_zg:
+                zg_gen = self.gen_bn.name_to_v['zg']
             n_samples = sum(self.h_params.n_latents) + (1 if has_struct else 0)
             repeats = 2
             go_symbol = torch.ones([n_samples*repeats + 2]).long() * self.index[self.generated_v].stoi['<go>']
@@ -275,16 +282,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 z_input['zg'] = orig_zg_sample.repeat(2*n_samples+2, 1).unsqueeze(1)
 
             # Normal Autoregressive generation
-            for i in range(gen_len):
-                self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i+1, v.shape[-1])
-                                                  for k, v in z_input.items()}})
-                if only_z_sampling:
-                    samples_i = self.generated_v.post_params['logits']
-                else:
-                    samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'],
-                                                           temperature=temp).rsample()
-                x_prev = torch.cat([x_prev, torch.argmax(samples_i,     dim=-1)[..., -1].unsqueeze(-1)],
-                                   dim=-1)
+            x_prev = self.generate_from_z(z_input, x_prev, gen_len=gen_len, only_z_sampling=True, temp=temp)
+            # for i in range(gen_len):
+            #     self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i+1, v.shape[-1])
+            #                                       for k, v in z_input.items()}})
+            #     if only_z_sampling:
+            #         samples_i = self.generated_v.post_params['logits']
+            #     else:
+            #         samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'],
+            #                                                temperature=temp).rsample()
+            #     x_prev = torch.cat([x_prev, torch.argmax(samples_i,     dim=-1)[..., -1].unsqueeze(-1)],
+            #                        dim=-1)
 
             summary_triplets.append(
                 ('text', '/prior_sample', self.decode_to_text(x_prev, gen=True)))
@@ -350,25 +358,29 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             neg_log_perplexity_lb = 0
             total_samples = 0
-            infer_prev, gen_prev = None, None
             force_iw = ['zg'] if self.h_params.graph_generator == get_hqkv_graph else \
                 (['z1'] + (['zs'] if self.h_params.graph_generator == get_qkv_graph else []))
             iwlbo = IWLBo(self, 1)
 
+            self.gen_bn.clear_values(), self.infer_bn.clear_values()
+            # torch.cuda.synchronize(self.h_params.device)
+            # torch.cuda.ipc_collect()
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Perplexity")):
                 if batch.text.shape[1] < 2: continue
-                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
-                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev),
-                                            force_iw=force_iw,
-                                            )
-                if not self.h_params.contiguous_lm:
-                    infer_prev, gen_prev = None, None
+                self.infer_bn({'x': batch.text[..., 1:]}, n_iw=self.h_params.testing_iw_samples, force_iw=force_iw,
+                              complete=True)
+                gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
+                              **{'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}}
+                gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
+                self.gen_bn(gen_inputs, complete=True)
                 elbo = - iwlbo.get_loss(actual=True)
+
                 batch_size = batch.text.shape[0]
                 total_samples_i = torch.sum(batch.text != self.h_params.vocab_ignore_index)
                 neg_log_perplexity_lb += elbo * batch_size
 
                 total_samples += total_samples_i
+                self.gen_bn.clear_values(), self.infer_bn.clear_values()
 
             neg_log_perplexity_lb /= total_samples
             perplexity_ub = torch.exp(- neg_log_perplexity_lb)
@@ -466,6 +478,69 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
             return max_auc, auc_margin, max_auc_index
 
+    def get_paraphrase_bleu(self, iterator, beam_size=5):
+        with torch.no_grad():
+            orig, para, orig_mod, para_mod, rec = [], [], [], [], []
+            zs_infer, z_infer, x_gen = self.infer_bn.name_to_v['zs'], \
+                                          {'z{}'.format(i+1):self.infer_bn.name_to_v['z{}'.format(i+1)]
+                                           for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
+
+            go_symbol = torch.ones((1, 1)).long() * self.index[self.generated_v].stoi['<go>']
+            go_symbol = go_symbol.to(self.h_params.device)
+            temp = 1.
+            for i, batch in enumerate(tqdm(iterator, desc="Getting Model Paraphrase Bleu stats")):
+                if batch.text.shape[1] < 2: continue
+                # if i > 1: break
+
+                # get source and target sentence latent variable values
+                self.infer_bn({'x': batch.text[..., 1:]})
+                orig_zs, orig_z = zs_infer.post_params['loc'][..., 0, :], \
+                                           {k: v.post_params['loc'][..., 0, :] for k, v in z_infer.items()}
+                self.infer_bn({'x': batch.para[..., 1:]})
+                para_zs, para_z = zs_infer.post_params['loc'][..., 0, :],\
+                                           {k: v.post_params['loc'][..., 0, :] for k, v in z_infer.items()}
+
+                # generate source and target reconstructions with the latent variable swap
+                # Inputs: 1) original sentence to be reconstructed,
+                #         2) original sentence with the paraphrase's structure
+                #         3) paraphrase with the original sentence's content
+                z_input = {'zs': torch.cat([orig_zs, orig_zs, para_zs]).unsqueeze(1),
+                           **{k: torch.cat([orig_z[k], para_z[k], orig_z[k]]).unsqueeze(1) for k in para_z.keys()}}
+                x_prev = go_symbol.repeat((para_zs.shape[0]*3, 1))
+                x_prev = self.generate_from_z2(z_input, x_prev, mask_unk=False, beam_size=beam_size)
+                if beam_size > 1:
+                    x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
+                # for i in range(self.h_params.max_len):
+                #     self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
+                #                                       for k, v in z_input.items()}}, target=x_gen)
+                #     samples_i = self.generated_v.post_params['logits']
+                #     x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
+                #                        dim=-1)
+
+                # store original sentences, the 2 resulting "paraphrases", and the reconstruction of the original
+                text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
+                rec_i, para_mod_i, orig_mod_i = text[:int(len(text)/3)], text[int(len(text)/3):int(len(text)*2/3)], \
+                                                text[int(len(text)*2/3):]
+                orig_i = self.decode_to_text2(batch.text[..., 1:], self.h_params.vocab_size, self.index[self.generated_v])
+                para_i = self.decode_to_text2(batch.para[..., 1:], self.h_params.vocab_size, self.index[self.generated_v])
+                orig.extend([[o.split()] for o in orig_i])
+                para.extend([[p.split()] for p in para_i])
+                orig_mod.extend([o.split() for o in orig_mod_i])
+                para_mod.extend([p.split() for p in para_mod_i])
+                rec.extend([r.split() for r in rec_i])
+            # for o, r, pm, om in zip(orig, rec, para_mod, orig_mod):
+            #     print([' '.join(o[0]), '|||',  ' '.join(r), '|||',  ' '.join(pm), '|||',  ' '.join(om)])
+            # Calculate the 3 bleu scores
+            orig_mod_bleu = bleu_score(predictions=orig_mod, references=para)['bleu']
+            para_mod_bleu = bleu_score(predictions=para_mod, references=orig)['bleu']
+            rec_bleu = bleu_score(predictions=rec, references=orig)['bleu']
+
+            self.writer.add_scalar('test/orig_mod_bleu', orig_mod_bleu, self.step)
+            self.writer.add_scalar('test/para_mod_bleu', para_mod_bleu, self.step)
+            self.writer.add_scalar('test/rec_bleu', rec_bleu, self.step)
+
+            return orig_mod_bleu, para_mod_bleu, rec_bleu
+
     def get_disentanglement_summaries(self):
         df = self._get_stat_data_frame(n_samples=80, n_alterations=10, batch_size=20)
         df.to_csv(os.path.join(self.h_params.viz_path, 'statdf_{}.csv'.format(self.step)))
@@ -524,7 +599,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def _get_alternative_sentences(self, prev_latent_vals, params, var_z_ids, n_samples, gen_len, complete=None):
         h_params = self.h_params
         has_struct = self.h_params.graph_generator in (get_qkv_graph, get_hqkv_graph)
-        has_zg = self.h_params.graph_generator = get_hqkv_graph
+        has_zg = self.h_params.graph_generator == get_hqkv_graph
 
         n_orig_sentences = prev_latent_vals['z1'].shape[0]
         go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
@@ -944,6 +1019,77 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         self.writer.add_scalar('test/MI', (mi/nsamples), self.step)
         return (kl/nsamples).cpu().detach().item(), (kl_var/nsamples).sqrt().cpu().detach().item(), \
                - (rec/nsamples).cpu().detach().item(), (mi/nsamples).cpu().detach().item()
+
+    def generate_from_z(self, z_input, x_prev, gen_len=None, only_z_sampling=True, temp=1.0, mask_unk=True):
+        unk_mask = torch.ones(x_prev.shape[0], 1, self.h_params.vocab_size).long().to(self.h_params.device)
+        if mask_unk:
+            unk_mask[..., self.index[self.generated_v].stoi['<unk>']] = 0
+
+        for i in range(gen_len or self.h_params.max_len):
+            self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
+                                              for k, v in z_input.items()}})
+            unk_mask_i = unk_mask.expand(unk_mask.shape[0], i + 1, unk_mask.shape[-1])
+            if only_z_sampling:
+                samples_i = self.generated_v.post_params['logits']
+            else:
+                samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'],
+                                                       temperature=temp).rsample()
+            x_prev = torch.cat([x_prev, torch.argmax(samples_i*unk_mask_i, dim=-1)[..., -1].unsqueeze(-1)],
+                               dim=-1)
+        return x_prev
+
+    def generate_from_z2(self, z_input, x_prev, gen_len=None, only_z_sampling=True, temp=1.0, mask_unk=True,
+                         beam_size=1):
+        eos_idx = (self.index[self.generated_v].stoi["?"], self.index[self.generated_v].stoi["!"],
+                   self.index[self.generated_v].stoi["."], self.index[self.generated_v].stoi["<eos>"])
+        unk_mask = torch.ones(x_prev.shape[0], 1, self.h_params.vocab_size).long().to(self.h_params.device)
+        if mask_unk:
+            unk_mask[..., self.index[self.generated_v].stoi['<unk>']] = 0
+        ended = [False]*x_prev.shape[0]
+        seq_scores = torch.tensor([[0.0]*x_prev.shape[0]]*beam_size).to(x_prev.device)
+        if beam_size > 1:
+            z_input = {k: v.unsqueeze(0).expand(beam_size, v.shape[0], 1, v.shape[-1])
+                                                  for k, v in z_input.items()}
+            x_prev = x_prev.unsqueeze(0).expand(beam_size, *x_prev.shape)
+            unk_mask = unk_mask.unsqueeze(0).expand(beam_size, *unk_mask.shape)
+        for i in range(gen_len or self.h_params.max_len):
+            if beam_size == 1:
+                z_i = {k: v.expand(v.shape[0], i + 1, v.shape[-1]) for k, v in z_input.items()}
+            else:
+                z_i = {k: v.expand(beam_size, v.shape[1], i + 1, v.shape[-1]) for k, v in z_input.items()}
+            self.gen_bn({'x_prev': x_prev, **z_i})
+            unk_mask_i = unk_mask.expand(*unk_mask.shape[:-2], i + 1, unk_mask.shape[-1])
+            if only_z_sampling:
+                samples_i = self.generated_v.post_params['logits']
+            else:
+                samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'],
+                                                       temperature=temp).rsample()
+            if beam_size == 1:
+                best_toks = torch.argmax(samples_i*unk_mask_i, dim=-1)
+                x_prev = torch.cat([x_prev, best_toks[..., -1].unsqueeze(-1)], dim=-1)
+            else:
+                next_xprev = torch.zeros((x_prev.shape[0], x_prev.shape[1], x_prev.shape[2]+1)).long().to(x_prev.device)
+                for j in range(x_prev.shape[1]):
+                    if any([idx in eos_idx for idx in x_prev[0, j]]) or ended[j]:
+                        next_xprev[:, j] = torch.cat([x_prev[:, j],
+                                                      x_prev[:, j, -1:]*0+eos_idx[-1]], dim=-1)
+                        ended[j] = True
+                        continue
+                    if i==0:
+                        sample_ij = samples_i[0, j, -1].reshape(-1)*unk_mask_i[0, j, -1].reshape(-1)
+                    else:
+                        sample_ij = (samples_i[:, j, -1]+seq_scores[:, j].unsqueeze(-1)).reshape(-1)\
+                                    *unk_mask_i[:, j, -1].reshape(-1)
+
+                    tk = torch.topk(sample_ij, k=beam_size, dim=-1)
+                    vocab_size = self.h_params.vocab_size
+                    b_idx, w_idx = tk.indices.floor_divide(vocab_size), tk.indices % vocab_size
+                    seq_scores[:, j] = seq_scores[b_idx, j]+tk.values
+                    next_xprev[:, j] = torch.cat([x_prev[b_idx, j], w_idx.unsqueeze(-1)], dim=-1)
+                x_prev = next_xprev
+        if beam_size > 1:
+            x_prev = x_prev.view(x_prev.shape[0]*x_prev.shape[1], x_prev.shape[2])
+        return x_prev
 
 
 class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metaclass=abc.ABCMeta):
