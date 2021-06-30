@@ -109,7 +109,7 @@ if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
 
 
 
-OPTIMIZER = {'sgd': optim.sgd, 'adam': optim.AdamW}[flags.optimizer]
+OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.AdamW}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)}}[flags.optimizer]
 
