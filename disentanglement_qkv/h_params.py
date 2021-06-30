@@ -44,6 +44,8 @@ class DefaultHParams:
                  is_weighted=None,
                  graph_generator=None,
                  anneal_kl=None,
+                 zs_anneal_kl=None,
+                 zg_anneal_kl=None,
                  anneal_kl_type='linear',
                  grad_clip=None,
                  kl_th=None,
@@ -117,6 +119,8 @@ class DefaultHParams:
         self.optimizer_kwargs = optimizer_kwargs or {'lr': 1e-3}
         self.grad_accumulation_steps = grad_accumulation_steps
         self.anneal_kl = anneal_kl
+        self.zs_anneal_kl = zs_anneal_kl
+        self.zg_anneal_kl = zg_anneal_kl
         self.anneal_kl_type = anneal_kl_type
         self.grad_clip = grad_clip
         self.kl_th = kl_th
