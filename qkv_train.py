@@ -8,7 +8,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTData2
+from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -16,7 +16,7 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 1, 8, 2
+k, kz, klstm = 4, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt'], type=str)
 parser.add_argument("--csv_out", default='disentqkv.csv', type=str)
@@ -33,12 +33,12 @@ parser.add_argument("--pretrained_embeddings", default=False, type=bool)########
 parser.add_argument("--z_size", default=96*kz, type=int)#################"
 parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
 parser.add_argument("--n_keys", default=4, type=int)#################"
-parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)#################"
+parser.add_argument("--n_latents", default=[4], nargs='+', type=int)#################"
 parser.add_argument("--text_rep_l", default=3, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
 parser.add_argument("--encoder_h", default=192*k, type=int)#################"
 parser.add_argument("--encoder_l", default=2, type=int)#################"
-parser.add_argument("--decoder_h", default=192*k, type=int)
+parser.add_argument("--decoder_h", default=int(192*k), type=int)################
 parser.add_argument("--decoder_l", default=2, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
@@ -52,16 +52,22 @@ parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
+parser.add_argument("--zs_anneal_kl0", default=7000, type=int)
+parser.add_argument("--zs_anneal_kl1", default=10000, type=int)
+parser.add_argument("--zg_anneal_kl0", default=7000, type=int)
+parser.add_argument("--zg_anneal_kl1", default=10000, type=int)
+parser.add_argument("--anneal_kl_type", default="linear", choices=["linear", "sigmoid"], type=str)
+parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd"], type=str)
 parser.add_argument("--grad_clip", default=5., type=float)
-parser.add_argument("--kl_th", default=0/(768*k/2), type=float or None)
+parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=10, type=int)
-parser.add_argument("--kl_beta", default=0.5, type=float)
+parser.add_argument("--kl_beta", default=0.3, type=float)
 parser.add_argument("--kl_beta_zs", default=0.1, type=float)
-parser.add_argument("--kl_beta_zg", default=0.5/8, type=float)
+parser.add_argument("--kl_beta_zg", default=0.1, type=float)
 parser.add_argument("--dropout", default=0.3, type=float)
-parser.add_argument("--word_dropout", default=0.1, type=float)
+parser.add_argument("--word_dropout", default=0.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
@@ -72,15 +78,23 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.batch_size = 64
-    flags.grad_accu = 2
-    flags.max_len = 40
-    flags.test_name = "nliLM/HQKVParanmt1"
+    flags.batch_size = 128
+    flags.grad_accu = 1
+    flags.max_len = 20
+    flags.test_name = "nliLM/HQKVParanmtBig"
     flags.data = "paranmt"
-    flags.n_latents = [8]
-    flags.graph ="HQKV"  # "Vanilla"
+    flags.n_latents = [4]
+    flags.n_keys = 4
+    flags.graph ="QKV"  # "Vanilla"
     # flags.losses = "LagVAE"
-    flags.kl_beta = 0.5
+    flags.kl_beta = 0.2
+    flags.kl_beta_zg = 0.1
+    flags.kl_beta_zs = 0.1
+    flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
+    flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
+    flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
+    flags.word_dropout = 0.4
+    flags.anneal_kl_type = "sigmoid"
 
     # flags.anneal_kl0 = 0
     flags.max_elbo_choice = 6
@@ -88,11 +102,21 @@ if False:
     # flags.encoder_h = 256
     # flags.decoder_h = 256
 
+if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
+    flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
+    flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
+    flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
+
+
+
+OPTIMIZER = {'sgd': optim.sgd, 'adam': optim.AdamW}[flags.optimizer]
+OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
+              'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)}}[flags.optimizer]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
          "IndepInfer": get_structured_auto_regressive_indep_graph,
-         "QKV": get_qkv_graph,
+         "QKV": get_qkv_graph2,
          "HQKV": get_hqkv_graph}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
@@ -101,7 +125,7 @@ if flags.graph == "Vanilla":
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "paranmt": ParaNMTData2}[flags.data]
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "paranmt": ParaNMTCuratedData}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -117,6 +141,8 @@ LOSSES = {'IWAE': [IWLBo],
           'LagVAE': [ELBo]}[flags.losses]
 
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu]
+ZS_ANNEAL_KL = [flags.zs_anneal_kl0*flags.grad_accu, flags.zs_anneal_kl1*flags.grad_accu]
+ZG_ANNEAL_KL = [flags.zg_anneal_kl0*flags.grad_accu, flags.zg_anneal_kl1*flags.grad_accu]
 LOSS_PARAMS = [1]
 if flags.grad_accu > 1:
     LOSS_PARAMS = [w/flags.grad_accu for w in LOSS_PARAMS]
@@ -129,18 +155,17 @@ def main():
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
-                                         'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
-                       is_weighted=[], graph_generator=GRAPH,
-                       z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
+                       optimizer_kwargs=OPT_KWARGS,
+                       is_weighted=[], graph_generator=GRAPH, z_size=flags.z_size, embedding_dim=flags.embedding_dim,
+                       anneal_kl=ANNEAL_KL, zs_anneal_kl=ZS_ANNEAL_KL, zg_anneal_kl=ZG_ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
-                       testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
+                       testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=OPTIMIZER,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
-                       kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg)
+                       kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
@@ -153,7 +178,7 @@ def main():
         model.cuda(DEVICE)
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
-    total_unsupervised_val_samples = len(data.val_iter)*BATCH_SIZE
+    total_unsupervised_val_samples = len(data.val_iter)*(BATCH_SIZE/data.divide_bs)
     print("Unsupervised training examples: ", total_unsupervised_train_samples)
     print("Unsupervised val examples: ", total_unsupervised_val_samples)
     current_time = time()
@@ -173,11 +198,14 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
-    # model.get_disentanglement_summaries2(data.val_iter, 2000)
+    # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=1)
+    # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
+    # model.get_disentanglement_summaries2(data.val_iter, 200)
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
         for i, training_batch in enumerate(data.train_iter):
+            #if i >3500: break # limiting epoch iters
             if training_batch.text.shape[1] < 2: continue
 
             if model.step == h_params.anneal_kl[0]:
@@ -209,8 +237,8 @@ def main():
                 model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()
-            if model.step >= 7000:
-                h_params.max_elbo = [flags.max_elbo_choice, flags.max_elbo2]
+            # if model.step >= 7000:
+            #     h_params.max_elbo = [flags.max_elbo_choice, flags.max_elbo2]
             current_time = time()
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0]:  # and ((data.n_epochs % 3) == 0):
@@ -220,6 +248,9 @@ def main():
             if flags.data == "yelp":
                 max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
                 print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
+            if flags.data == "paranmt":
+                orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter)
+                print("orig_mod_bleu: {}, para_mod_bleu: {}, rec_bleu: {} ".format(orig_mod_bleu, para_mod_bleu, rec_bleu))
             # else:
             # dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
             # print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
@@ -235,12 +266,12 @@ def main():
             # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
 
-            dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
-            data.reinit_iterator('valid')
-            if val_mi < prev_mi and flags.losses == "LagVAE":
-                print("Stopped aggressive training phase")
-                model.aggressive = False
-            prev_mi = val_mi
+            # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+            # data.reinit_iterator('valid')
+            # if val_mi < prev_mi and flags.losses == "LagVAE":
+            #     print("Stopped aggressive training phase")
+            #     model.aggressive = False
+            # prev_mi = val_mi
 
             # if pp_ub < min_perp:
             #     print('Saving The model ..')
@@ -250,6 +281,7 @@ def main():
             # else:
             #     wait_count += 1
             if flags.save_all:
+                print('Saving The model ..')
                 model.save()
 
             # if wait_count == flags.wait_epochs*2:
