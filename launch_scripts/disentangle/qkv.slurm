@@ -3,8 +3,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVParasgd.txt
-#SBATCH --error=./QKVParasgd.err
+#SBATCH --output=./QKVParaHQKV.txt
+#SBATCH --error=./QKVParaHQKV.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 # ================= EXP GROUP 1 ==============================
@@ -82,9 +82,9 @@
 #--z_emb_dim 1536 --encoder_h 1536 --decoder_h 1536
 #srun python qkv_train.py --test_name "Disentanglement/ParaQKV_klw" --kl_beta 0.5 --n_latents 4 --kl_beta_zs 0.2 \
 #--data paranmt --n_epochs 10 --graph QKV --max_elbo_choice 6 --n_keys 4 --max_len 20 --optimizer adam --anneal_kl_type sigmoid
-srun python qkv_train.py --test_name "Disentanglement/ParaQKV_sgd" --kl_beta 0.3 --n_latents 4 \
---data paranmt --n_epochs 10 --graph QKV --max_elbo_choice 6 --n_keys 4 --max_len 20 --optimizer sgd --anneal_kl_type sigmoid
-#srun python qkv_train.py --test_name "Disentanglement/ParaQKV_hqkv" --kl_beta 0.3 --n_latents 4 \
-#--data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys 4 --max_len 20 --optimizer adam --anneal_kl_type sigmoid
+#srun python qkv_train.py --test_name "Disentanglement/ParaQKV_sgd" --kl_beta 0.3 --n_latents 4 \
+#--data paranmt --n_epochs 10 --graph QKV --max_elbo_choice 6 --n_keys 4 --max_len 20 --optimizer sgd --anneal_kl_type sigmoid
+srun python qkv_train.py --test_name "Disentanglement/ParaQKV_hqkv" --kl_beta 0.3 --n_latents 4 \
+--data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys 4 --max_len 20 --optimizer adam --anneal_kl_type sigmoid
 #srun python qkv_train.py --test_name "Disentanglement/ParaQKV_linear" --kl_beta 0.3 --n_latents 4 \
 #--data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys 4 --max_len 20 --optimizer adam --anneal_kl_type linear
