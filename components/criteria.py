@@ -262,13 +262,20 @@ class ELBo(BaseCriterion):
                 # loss = - torch.sum(torch.min(self.log_p_xIz, -coeff * this_kl/loss_threshold),
                 #                    dim=(0, 1)) / self.valid_n_samples
                 elif loss_choice == 6:
-                    zs_kl0, zs_kl1 = 7000, 10000
-                    zs_beta = (0 if self.model.step < zs_kl0 else ((self.model.step - zs_kl0) / (zs_kl1 - zs_kl0)) if \
-                        zs_kl1 > self.model.step >= zs_kl0 else 1)
+                    zs_anl_kl, zg_anl_kl = self.h_params.zs_anneal_kl, self.h_params.zg_anneal_kl
+                    zs_kl0, zs_kl1 = zs_anl_kl[0], zs_anl_kl[1]
+                    zg_kl0, zg_kl1 = zg_anl_kl[0], zg_anl_kl[1]
+                    if self.h_params.anneal_kl_type == 'sigmoid':
+                        zs_beta = torch.sigmoid(torch.tensor((self.model.step-zs_kl0)/zs_kl1, device=self.h_params.device))
+                        zg_beta = torch.sigmoid(torch.tensor((self.model.step-zg_kl0)/zg_kl1, device=self.h_params.device))
+                    elif self.h_params.anneal_kl_type == 'linear':
+                        zs_beta = (0 if self.model.step < zs_kl0 else ((self.model.step - zs_kl0) / (zs_kl1 - zs_kl0)) if \
+                            zs_kl1 > self.model.step >= zs_kl0 else 1)
+                        zg_beta = (0 if self.model.step < zg_kl0 else ((self.model.step - zg_kl0) / (zg_kl1 - zg_kl0)) if \
+                            zg_kl1 > self.model.step >= zg_kl0 else 1)
+                    else:
+                        raise NotImplementedError('Unrecognized KL annealing scheme {}.'.format(self.h_params.anneal_kl_type))
                     zs_beta = zs_beta * (self.h_params.kl_beta_zs/self.h_params.kl_beta)
-                    zg_kl0, zg_kl1 = 11000, 14000
-                    zg_beta = (0 if self.model.step < zg_kl0 else ((self.model.step - zg_kl0) / (zg_kl1 - zg_kl0)) if \
-                        zg_kl1 > self.model.step >= zg_kl0 else 1)
                     zg_beta = zg_beta * (self.h_params.kl_beta_zg/self.h_params.kl_beta)
                     beta_i = {lv_n: (zs_beta if lv_n=='zs' else zg_beta if lv_n=='zg' else 1)
                               for lv_n in self.infer_lvs.keys()}
@@ -327,15 +334,15 @@ class ELBo(BaseCriterion):
                     gen_v_name = gen_lv.name + ('I{}'.format(', '.join([lv.name for lv in self.gen_net.parent[gen_lv]]))
                                                 if gen_lv in self.gen_net.parent else '')
                     KLs = []
-                    KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
-                    if name not in ("zs", "zg"):
-                        n_latents = self.h_params.n_latents[int(name[-1])-1]
-                        for i in range(n_latents):
-                            if gen_lv.post_params is None: continue
-                            start, end = int(i*self.h_params.z_size/n_latents), int((i+1)*self.h_params.z_size/n_latents)
-                            kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
-                            KLs.append(torch.sum(kl_i) / self.valid_n_samples)
-                        self.KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
+                    # KL_var_name = '/VarKL(q({})IIp({}))'.format(infer_v_name, gen_v_name)
+                    # if name not in ("zs", "zg"):
+                    #     n_latents = self.h_params.n_latents[int(name[-1])-1]
+                    #     for i in range(n_latents):
+                    #         if gen_lv.post_params is None: continue
+                    #         start, end = int(i*self.h_params.z_size/n_latents), int((i+1)*self.h_params.z_size/n_latents)
+                    #         kl_i = kullback_liebler(inf_lv, gen_lv, slice=(start, end)) * self.sequence_mask
+                    #         KLs.append(torch.sum(kl_i) / self.valid_n_samples)
+                    #     self.KL_dict[KL_var_name] = torch.std(torch.tensor(KLs))
 
         if self.h_params.anneal_kl_type == 'linear' and \
                 self.h_params.anneal_kl and self.model.step <= self.h_params.anneal_kl[0]:
