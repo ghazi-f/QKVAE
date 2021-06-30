@@ -13,9 +13,9 @@ import torch
 from time import time
 
 from datasets import load_dataset
-from tokenizers.models import BPE
+from tokenizers.models import BPE, WordLevel
 from tokenizers import Tokenizer
-from tokenizers.trainers import BpeTrainer
+from tokenizers.trainers import BpeTrainer, WordLevelTrainer
 from tokenizers.pre_tokenizers import Whitespace
 import datasets as hdatasets
 
@@ -161,6 +161,7 @@ class ParaNMTData2:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
+        self.divide_bs = 1
 
         np.random.seed(42)
         # Loading Data
@@ -169,19 +170,32 @@ class ParaNMTData2:
                                 os.path.join(folder, 'test.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path}
                                , delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
-        self.dataset = {'train': self.dataset['train'][:],
-                        'valid': self.dataset['valid'][:],
-                        'test': self.dataset['test'][:]}
+        # print("Original text Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['text'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Original text length:", np.mean(tr_len))
+        # print("Paraphrase Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['para'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Paraphrase length:", np.mean(tr_len))
+        self.dataset = {'train': self.dataset['train'][:500000],
+                        'valid': self.dataset['valid'][:5000],
+                        'test': self.dataset['test'][:5000]}
         # load_from_disk()
 
         # Getting Tokenizer
-        tokenizer_path = os.path.join("tokenizers", "paranmttest.json")
+        is_bpe = False
+        if is_bpe:
+            tok_name, tok_model, tok_trainer = "paranmttest.json", BPE, BpeTrainer
+        else:
+            tok_name, tok_model, tok_trainer = "paranmttest_wl.json", WordLevel, WordLevelTrainer
+        tokenizer_path = os.path.join("tokenizers", tok_name)
         if not os.path.exists(tokenizer_path):
             # Initialize a tokenizer
-            trainer = BpeTrainer(vocab_size=VOCAB_LIMIT, min_frequency=2,
+            trainer = tok_trainer(vocab_size=VOCAB_LIMIT, min_frequency=2,
                                  special_tokens=['<unk>', '<eos>', '<go>', '<pad>'], show_progress=True,
                                  continuing_subword_prefix='ğ')
-            self.tokenizer = Tokenizer(BPE(unk_token='<unk>'))
+            self.tokenizer = Tokenizer(tok_model(unk_token='<unk>'))
             self.tokenizer.pre_tokenizer = Whitespace()
             # Customize training
             self.tokenizer.train(files=[train_path], trainer=trainer)
@@ -208,8 +222,8 @@ class ParaNMTData2:
         np.random.shuffle(self.dataset['test']['text']), np.random.shuffle(self.dataset['test']['para'])
         self.train_iter, self.enc_train_iter = MyIter(self, self.dataset['train']), \
                                                MyIter(self, self.dataset['train'])
-        self.val_iter, self.test_iter = MyIter(self, self.dataset['valid'], divide_bs=5), \
-                                        MyIter(self, self.dataset['test'], divide_bs=5)
+        self.val_iter, self.test_iter = MyIter(self, self.dataset['valid'], divide_bs=self.divide_bs), \
+                                        MyIter(self, self.dataset['test'], divide_bs=self.divide_bs)
 
         self.tags = None
         if pretrained:
@@ -231,14 +245,116 @@ class ParaNMTData2:
 
         elif split == 'valid':
             np.random.shuffle(self.dataset['valid']['text']), np.random.shuffle(self.dataset['valid']['para'])
-            self.val_iter = MyIter(self, self.dataset['valid'], divide_bs=5)
+            self.val_iter = MyIter(self, self.dataset['valid'], divide_bs=self.divide_bs)
         elif split == 'test':
             np.random.shuffle(self.dataset['test']['text']), np.random.shuffle(self.dataset['test']['para'])
             np.random.shuffle(self.dataset['test'])
-            self.test_iter = MyIter(self, self.dataset['test'], divide_bs=5)
+            self.test_iter = MyIter(self, self.dataset['test'], divide_bs=self.divide_bs)
         else:
             raise NameError('Misspelled split name : {}'.format(split))
 
+
+class ParaNMTCuratedData:
+
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
+                 pretrained=False):
+
+        self.device = device
+        self.max_len = max_len
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        self.divide_bs = 4
+
+        np.random.seed(42)
+        # Loading Data
+        folder = ".data\\paranmt2"
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
+                                os.path.join(folder, 'test.txt')
+        self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
+                                    delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
+        # print("Original text Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['text'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Original text length:", np.mean(tr_len))
+        # print("Paraphrase Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['para'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Paraphrase length:", np.mean(tr_len))
+        self.dataset = {'train': self.dataset['train'][:],
+                        'valid': self.dataset['valid'][:],
+                        'test': self.dataset['test'][:]}
+        # load_from_disk()
+
+        # Getting Tokenizer
+        is_bpe = False
+        if is_bpe:
+            tok_name, tok_model, tok_trainer = "paranmttest.json", BPE, BpeTrainer
+        else:
+            tok_name, tok_model, tok_trainer = "paranmttest_wl.json", WordLevel, WordLevelTrainer
+        tokenizer_path = os.path.join("tokenizers", tok_name)
+        if not os.path.exists(tokenizer_path):
+            # Initialize a tokenizer
+            trainer = tok_trainer(vocab_size=VOCAB_LIMIT, min_frequency=2,
+                                 special_tokens=['<unk>', '<eos>', '<go>', '<pad>'], show_progress=True,
+                                 continuing_subword_prefix='ğ')
+            self.tokenizer = Tokenizer(tok_model(unk_token='<unk>'))
+            self.tokenizer.pre_tokenizer = Whitespace()
+            # Customize training
+            self.tokenizer.train(files=[train_path], trainer=trainer)
+
+            # # Save files to disk
+            if not os.path.exists("tokenizers"):
+                os.mkdir("tokenizers")
+            self.tokenizer.save(tokenizer_path)
+        else:
+            self.tokenizer = Tokenizer.from_file(tokenizer_path)
+        self.tokenizer.enable_truncation(max_length=max_len)
+
+        # Getting vocabulary object
+        stoi = self.tokenizer.get_vocab()
+        itos = [None] * len(stoi)
+        for k, v in stoi.items():
+            itos[v] = k
+        self.vocab = MyVocab(itos, stoi)
+
+        # Setting up iterators
+
+        np.random.shuffle(self.dataset['train']['text']), np.random.shuffle(self.dataset['train']['para'])
+        np.random.shuffle(self.dataset['valid']['text']), np.random.shuffle(self.dataset['valid']['para'])
+        np.random.shuffle(self.dataset['test']['text']), np.random.shuffle(self.dataset['test']['para'])
+        self.train_iter, self.enc_train_iter = MyIter(self, self.dataset['train']), \
+                                               MyIter(self, self.dataset['train'])
+        self.val_iter, self.test_iter = MyIter(self, self.dataset['valid'], divide_bs=self.divide_bs), \
+                                        MyIter(self, self.dataset['test'], divide_bs=self.divide_bs)
+
+        self.tags = None
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                np.random.shuffle(self.dataset['train']['text']), np.random.shuffle(self.dataset['train']['para'])
+                self.train_iter = MyIter(self, self.dataset['train'])
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            np.random.shuffle(self.dataset['valid']['text']), np.random.shuffle(self.dataset['valid']['para'])
+            self.val_iter = MyIter(self, self.dataset['valid'], divide_bs=self.divide_bs)
+        elif split == 'test':
+            np.random.shuffle(self.dataset['test']['text']), np.random.shuffle(self.dataset['test']['para'])
+            np.random.shuffle(self.dataset['test'])
+            self.test_iter = MyIter(self, self.dataset['test'], divide_bs=self.divide_bs)
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
 
 
 
@@ -375,11 +491,12 @@ class MyIter:
         self.divide_bs = divide_bs
 
     def __iter__(self):
-        for i in range(0, len(self.dat["text"]), int(self.data_obj.batch_size/self.divide_bs)):
+        this_bs, device = int(self.data_obj.batch_size/self.divide_bs), self.data_obj.device
+        for i in range(0, len(self.dat["text"]), this_bs):
             text = torch.Tensor([self.data_obj.tokenizer.encode('<go> '+ex+' <pad>'*self.data_obj.max_len).ids
-                    for ex in self.dat["text"][i: i + self.data_obj.batch_size]]).long().to(self.data_obj.device)
+                                 for ex in self.dat["text"][i: i + this_bs]]).long().to(device)
             para = torch.Tensor([self.data_obj.tokenizer.encode('<go> '+ex+' <pad>'*self.data_obj.max_len).ids
-                    for ex in self.dat["para"][i: i + self.data_obj.batch_size]]).long().to(self.data_obj.device)
+                                 for ex in self.dat["para"][i: i + this_bs]]).long().to(device)
             yield ParaExample(text, para)
 
     def __len__(self):
