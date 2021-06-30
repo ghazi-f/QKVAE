@@ -268,7 +268,7 @@ class ParaNMTCuratedData:
 
         np.random.seed(42)
         # Loading Data
-        folder = os.path.join(".data", "paranmt")
+        folder = os.path.join(".data", "paranmt2")
         train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
                                 os.path.join(folder, 'test.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
