@@ -32,6 +32,7 @@ class HuggingYelp2:
         label_field = data.Field(fix_length=max_len - 1, batch_first=True, unk_token=None)
 
         start = time()
+        self.divide_bs = 10
 
         train, val, test = BinaryYelp.splits((('text', text_field), ('label', label_field)))
 
@@ -53,7 +54,7 @@ class HuggingYelp2:
             (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
 
         _, self.val_iter, self.test_iter = data.BucketIterator.splits(
-            (train, val, test), batch_size=int(batch_size/10), device=device, shuffle=False, sort=False)
+            (train, val, test), batch_size=int(batch_size/self.divide_bs), device=device, shuffle=False, sort=False)
 
         self.vocab = text_field.vocab
         self.tags = label_field.vocab
@@ -284,7 +285,6 @@ class ParaNMTCuratedData:
         self.dataset = {'train': self.dataset['train'][:],
                         'valid': self.dataset['valid'][:],
                         'test': self.dataset['test'][:]}
-        # load_from_disk()
 
         # Getting Tokenizer
         is_bpe = False
@@ -319,10 +319,7 @@ class ParaNMTCuratedData:
         self.vocab = MyVocab(itos, stoi)
 
         # Setting up iterators
-
-        np.random.shuffle(self.dataset['train']['text']), np.random.shuffle(self.dataset['train']['para'])
-        np.random.shuffle(self.dataset['valid']['text']), np.random.shuffle(self.dataset['valid']['para'])
-        np.random.shuffle(self.dataset['test']['text']), np.random.shuffle(self.dataset['test']['para'])
+        self.shuffle_split('train'), self.shuffle_split('valid'), self.shuffle_split('test')
         self.train_iter, self.enc_train_iter = MyIter(self, self.dataset['train']), \
                                                MyIter(self, self.dataset['train'])
         self.val_iter, self.test_iter = MyIter(self, self.dataset['valid'], divide_bs=self.divide_bs), \
@@ -335,23 +332,29 @@ class ParaNMTCuratedData:
         else:
             self.wvs = None
 
+    def shuffle_split(self, split):
+        assert split in ('train', 'valid', 'test')
+        rrange = np.arange(len(self.dataset[split]['text']))
+        np.random.shuffle(rrange)
+        self.dataset[split]['text'] = np.array(self.dataset[split]['text'])[rrange].tolist()
+        self.dataset[split]['para'] = np.array(self.dataset[split]['para'])[rrange].tolist()
+
     def reinit_iterator(self, split):
         if split == 'train':
             self.n_epochs += 1
             print("Finished epoch n°{}".format(self.n_epochs))
             if self.n_epochs < self.max_epochs:
-                np.random.shuffle(self.dataset['train']['text']), np.random.shuffle(self.dataset['train']['para'])
+                self.shuffle_split('train')
                 self.train_iter = MyIter(self, self.dataset['train'])
             else:
                 print("Reached n_epochs={} and finished training !".format(self.n_epochs))
                 self.train_iter = None
 
         elif split == 'valid':
-            np.random.shuffle(self.dataset['valid']['text']), np.random.shuffle(self.dataset['valid']['para'])
+            self.shuffle_split('valid')
             self.val_iter = MyIter(self, self.dataset['valid'], divide_bs=self.divide_bs)
         elif split == 'test':
-            np.random.shuffle(self.dataset['test']['text']), np.random.shuffle(self.dataset['test']['para'])
-            np.random.shuffle(self.dataset['test'])
+            self.shuffle_split('test')
             self.test_iter = MyIter(self, self.dataset['test'], divide_bs=self.divide_bs)
         else:
             raise NameError('Misspelled split name : {}'.format(split))
