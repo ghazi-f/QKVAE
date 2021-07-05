@@ -3,8 +3,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVParaNL.txt
-#SBATCH --error=./QKVParaNL.err
+#SBATCH --output=./QKVParaNK.txt
+#SBATCH --error=./QKVParaNK.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -94,15 +94,15 @@
 #done
 
 
-for NL in 8 16 32
-do
-srun python qkv_train.py --test_name "Disentanglement/ParaHQKVNL$NL" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents $NL \
---data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys 8 --max_len 20 --anneal_kl_type sigmoid
-done
-
-
-#for NK in 8 16 32
+#for NL in 8 16 32
 #do
-#srun python qkv_train.py --test_name "Disentanglement/ParaHQKVNK$NK" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 4 \
-#--data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys $NK --max_len 20 --anneal_kl_type sigmoid
+#srun python qkv_train.py --test_name "Disentanglement/ParaHQKVNL$NL" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents $NL \
+#--data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys 8 --max_len 20 --anneal_kl_type sigmoid
 #done
+
+
+for NK in 8 16 32
+do
+srun python qkv_train.py --test_name "Disentanglement/ParaHQKVNK$NK" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 4 \
+--data paranmt --n_epochs 10 --graph HQKV --max_elbo_choice 6 --n_keys $NK --max_len 20 --anneal_kl_type sigmoid
+done
