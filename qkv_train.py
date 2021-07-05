@@ -16,7 +16,7 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 4, 4, 2
+k, kz, klstm = 2 , 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt'], type=str)
 parser.add_argument("--csv_out", default='disentqkv.csv', type=str)
@@ -81,15 +81,15 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/HQKVParanmtBig"
+    flags.test_name = "nliLM/ParaRetryH2"
     flags.data = "paranmt"
     flags.n_latents = [4]
-    flags.n_keys = 4
-    flags.graph ="QKV"  # "Vanilla"
+    flags.n_keys = 8
+    flags.graph ="HQKV"  # "Vanilla"
     # flags.losses = "LagVAE"
-    flags.kl_beta = 0.2
+    flags.kl_beta = 0.6
     flags.kl_beta_zg = 0.1
-    flags.kl_beta_zs = 0.1
+    flags.kl_beta_zs = 0.01
     flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
     flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
     flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
@@ -198,7 +198,7 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
-    # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=1)
+    # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
     # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
     # model.get_disentanglement_summaries2(data.val_iter, 200)
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
