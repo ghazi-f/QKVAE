@@ -529,12 +529,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 orig_mod.extend([o.split() for o in orig_mod_i])
                 para_mod.extend([p.split() for p in para_mod_i])
                 rec.extend([r.split() for r in rec_i])
+                # for o, r, p, pm, om in zip(orig_i, rec_i, para_i, para_mod_i, orig_mod_i):
+                #     print(o, '|||',  r, '|||',   p, '|||',   pm, '|||',   om)
             # for o, r, pm, om in zip(orig, rec, para_mod, orig_mod):
             #     print([' '.join(o[0]), '|||',  ' '.join(r), '|||',  ' '.join(pm), '|||',  ' '.join(om)])
             # Calculate the 3 bleu scores
-            orig_mod_bleu = bleu_score(predictions=orig_mod, references=para)['bleu']
-            para_mod_bleu = bleu_score(predictions=para_mod, references=orig)['bleu']
-            rec_bleu = bleu_score(predictions=rec, references=orig)['bleu']
+            orig_mod_bleu = bleu_score(predictions=orig_mod, references=para)['bleu']*100
+            para_mod_bleu = bleu_score(predictions=para_mod, references=orig)['bleu']*100
+            rec_bleu = bleu_score(predictions=rec, references=orig)['bleu']*100
+            copy_bleu = bleu_score(predictions=[o[0] for o in orig], references=para)['bleu']*100
+            print("Copy Bleu :", copy_bleu)
 
             self.writer.add_scalar('test/orig_mod_bleu', orig_mod_bleu, self.step)
             self.writer.add_scalar('test/para_mod_bleu', para_mod_bleu, self.step)
