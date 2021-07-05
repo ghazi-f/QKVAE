@@ -6,8 +6,9 @@ from tqdm import tqdm
 import pandas as pd
 
 from disentanglement_qkv.h_params import *
-from disentanglement_qkv.graphs import get_vanilla_graph, get_qkv_graph, get_hqkv_graph
-from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink
+from disentanglement_qkv.graphs import get_vanilla_graph
+from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
+    ConditionalCoattentiveQKVTransformerLink, CoattentiveTransformerLink2, ConditionalCoattentiveTransformerLink2
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
@@ -358,8 +359,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             neg_log_perplexity_lb = 0
             total_samples = 0
-            force_iw = ['zg'] if self.h_params.graph_generator == get_hqkv_graph else \
-                (['z1'] + (['zs'] if self.h_params.graph_generator == get_qkv_graph else []))
+            force_iw = ['zg'] if 'zg' in self.gen_bn.name_to_v else \
+                (['z1'] + (['zs'] if 'zs' in self.gen_bn.name_to_v else []))
             iwlbo = IWLBo(self, 1)
 
             self.gen_bn.clear_values(), self.infer_bn.clear_values()
@@ -598,8 +599,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def _get_alternative_sentences(self, prev_latent_vals, params, var_z_ids, n_samples, gen_len, complete=None):
         h_params = self.h_params
-        has_struct = self.h_params.graph_generator in (get_qkv_graph, get_hqkv_graph)
-        has_zg = self.h_params.graph_generator == get_hqkv_graph
+        has_struct = 'zs' in self.gen_bn.name_to_v
+        has_zg = 'zg' in self.gen_bn.name_to_v
 
         n_orig_sentences = prev_latent_vals['z1'].shape[0]
         go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
@@ -678,8 +679,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def get_sentences(self, n_samples, gen_len=16, sample_w=False, vary_z=True, complete=None, contains=None,
                       max_tries=100):
         n_latents = self.h_params.n_latents
-        has_struct = self.h_params.graph_generator in (get_qkv_graph, get_hqkv_graph)
-        has_zg = self.h_params.graph_generator == get_hqkv_graph
+        has_struct = 'zs' in self.gen_bn.name_to_v
+        has_zg = 'zg' in self.gen_bn.name_to_v
         final_text, final_samples, final_params = [], {'z{}'.format(i+1): [] for i in range(len(n_latents))},\
                                                       {'z{}'.format(i+1): None for i in range(1, len(n_latents))}
         trys = 0
@@ -731,7 +732,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             if has_zg:
                 zs_params['zg'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zg_gen.post_params.items()}
                 z_input['zg'] = zg_sample.unsqueeze(1)
-
 
             # Normal Autoregressive generation
             for i in range(gen_len):
@@ -817,8 +817,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # Getting layer wise attention values
 
         CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
+        ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = True, True
+        ConditionalCoattentiveTransformerLink2.get_att = True
         self.infer_bn({'x': text_in})
         CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+        ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = False, False
+        ConditionalCoattentiveTransformerLink2.get_att = False
         all_att_weights = []
         for i in range(len(self.h_params.n_latents)):
             trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
@@ -896,7 +900,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                sample_w=False, vary_z=True, complete=None)
         orig_rels = shallow_dependencies(text)
         orig_temps = truncated_template(text)
-        has_struct = self.h_params.graph_generator == get_qkv_graph
+        has_struct = 'zs' in self.gen_bn.name_to_v
         n_lvs = sum(self.h_params.n_latents) +(1 if has_struct else 0)
         for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
             text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
@@ -1057,7 +1061,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 z_i = {k: v.expand(v.shape[0], i + 1, v.shape[-1]) for k, v in z_input.items()}
             else:
                 z_i = {k: v.expand(beam_size, v.shape[1], i + 1, v.shape[-1]) for k, v in z_input.items()}
-            self.gen_bn({'x_prev': x_prev, **z_i})
+            self.gen_bn({'x_prev': x_prev, **z_i}, target=self.gen_bn.name_to_v['x'])
             unk_mask_i = unk_mask.expand(*unk_mask.shape[:-2], i + 1, unk_mask.shape[-1])
             if only_z_sampling:
                 samples_i = self.generated_v.post_params['logits']
