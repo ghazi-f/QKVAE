@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=HQKVN16
+#SBATCH --job-name=HQKVN32
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVParaNK16.txt
-#SBATCH --error=./QKVParaN16.err
+#SBATCH --output=./QKVParaNK32.txt
+#SBATCH --error=./QKVParaN32.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -112,10 +112,10 @@
 #done
 
 
-srun python qkv_train.py --test_name "Disentanglement/ParaHQKVN16" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 16 \
---data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
-done
-
-#srun python qkv_train.py --test_name "Disentanglement/ParaHQKVN32" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 32 \
-#--data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 32 --max_len 20 --anneal_kl_type sigmoid
+#srun python qkv_train.py --test_name "Disentanglement/ParaHQKVN16" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 16 \
+#--data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
 #done
+
+srun python qkv_train.py --test_name "Disentanglement/ParaHQKVN32" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 32 \
+--data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 32 --max_len 20 --anneal_kl_type sigmoid
+done
