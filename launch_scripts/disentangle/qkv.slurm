@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=HQKVN32
+#SBATCH --job-name=HQKVNMinLen
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVParaNK32.txt
-#SBATCH --error=./QKVParaN32.err
+#SBATCH --output=./QKVParaMinLen1.txt
+#SBATCH --error=./QKVParaMinLen1.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -116,6 +116,24 @@
 #--data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
 #done
 
-srun python qkv_train.py --test_name "Disentanglement/ParaHQKVN32" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 32 \
---data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 32 --max_len 20 --anneal_kl_type sigmoid
+# srun python qkv_train.py --test_name "Disentanglement/ParaHQKVN32" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 32 \
+# --data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 32 --max_len 20 --anneal_kl_type sigmoid
+# done
+
+# Limited Sentence size experiments on ParaNMT
+
+srun python qkv_train.py --test_name "Disentanglement/ParaMinLen1" --kl_beta 0.3 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 16 \
+--data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
 done
+
+# srun python qkv_train.py --test_name "Disentanglement/ParaMinLen2" --kl_beta 0.4 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 16 \
+# --data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
+# done
+
+# srun python qkv_train.py --test_name "Disentanglement/ParaMinLen3" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.1 --n_latents 16 \
+# --data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
+# done
+
+# srun python qkv_train.py --test_name "Disentanglement/ParaMinLen4" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.01 --n_latents 16 \
+# --data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
+# done
