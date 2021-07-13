@@ -503,8 +503,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
                 # generate source and target reconstructions with the latent variable swap
                 # Inputs: 1) original sentence to be reconstructed,
-                #         2) original sentence with the paraphrase's structure
-                #         3) paraphrase with the original sentence's content
+                #         2) paraphrase with the original's structure
+                #         3) original with the paraphrase's structure
                 z_input = {'zs': torch.cat([orig_zs, orig_zs, para_zs]).unsqueeze(1),
                            **{k: torch.cat([orig_z[k], para_z[k], orig_z[k]]).unsqueeze(1) for k in para_z.keys()}}
                 x_prev = go_symbol.repeat((para_zs.shape[0]*3, 1))
