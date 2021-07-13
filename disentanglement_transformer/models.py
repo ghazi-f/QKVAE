@@ -872,7 +872,7 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
         self.optimizer = None
         self.aggressive = True
         self.inf_optimizer = h_params.optimizer(self.infer_bn.parameters(), **h_params.optimizer_kwargs)
-        self.gen_optimizer = h_params.optimizer(self.infer_bn.parameters(), **h_params.optimizer_kwargs)#SGD(self.gen_bn.parameters(), lr=1.)
+        self.gen_optimizer = h_params.optimizer(self.gen_bn.parameters(), **h_params.optimizer_kwargs)#SGD(self.gen_bn.parameters(), lr=1.)
 
         # Loading previous checkpoint if auto_load is set to True
         if autoload:
