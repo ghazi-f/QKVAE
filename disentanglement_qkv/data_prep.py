@@ -274,6 +274,7 @@ class ParaNMTCuratedData:
                                 os.path.join(folder, 'test.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
                                     delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
+
         # print("Original text Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
         # tr_len = [len(ex['text'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
         # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
@@ -331,6 +332,21 @@ class ParaNMTCuratedData:
             self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
         else:
             self.wvs = None
+
+    def redefine_max_len(self, new_len):
+        folder = os.path.join(".data", "paranmt2")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
+                                os.path.join(folder, 'test.txt')
+        print("Reloading the data with max words per sentence : ", new_len)
+        self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
+                                    delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
+        self.dataset = self.dataset.filter(lambda x: len(x['text'].split()) < new_len)
+        self.dataset = {'train': self.dataset['train'][:],
+                        'valid': self.dataset['valid'][:],
+                        'test': self.dataset['test'][:]}
+        self.reinit_iterator('train')
+        self.reinit_iterator('valid')
+        self.reinit_iterator('test')
 
     def shuffle_split(self, split):
         assert split in ('train', 'valid', 'test')

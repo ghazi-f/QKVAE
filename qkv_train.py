@@ -81,20 +81,24 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/ParaRetryH2"
+    flags.test_name = "nliLM/ParaMinLen"
     flags.data = "paranmt"
-    flags.n_latents = [4]
-    flags.n_keys = 8
+    flags.n_latents = [16]
+    flags.n_keys = 16
     flags.graph ="HQKV"  # "Vanilla"
     # flags.losses = "LagVAE"
-    flags.kl_beta = 0.6
+    flags.kl_beta = 0.3
     flags.kl_beta_zg = 0.1
     flags.kl_beta_zs = 0.01
-    flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
-    flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
-    flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
+    # flags.encoder_h = 768
+    # flags.decoder_h = 768
+    # flags.anneal_kl0, flags.anneal_kl1 = 4000, 500
+    # flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 6000, 500
+    # flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 6000, 500
     flags.word_dropout = 0.4
     flags.anneal_kl_type = "sigmoid"
+    # flags.encoder_l = 4
+    # flags.decoder_l = 4
 
     # flags.anneal_kl0 = 0
     flags.max_elbo_choice = 6
@@ -126,6 +130,7 @@ if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
 Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "paranmt": ParaNMTCuratedData}[flags.data]
+INIT_LEN = 12
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -163,7 +168,7 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=OPTIMIZER,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
-                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
+                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type)
     val_iterator = iter(data.val_iter)
@@ -176,6 +181,10 @@ def main():
         model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
+
+    # Redefining examples lengths:
+    data.redefine_max_len(INIT_LEN)
+    h_params.max_len = INIT_LEN
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
     total_unsupervised_val_samples = len(data.val_iter)*(BATCH_SIZE/data.divide_bs)
