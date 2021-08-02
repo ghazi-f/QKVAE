@@ -14,15 +14,17 @@ from components.latent_variables import MultiCategorical
 import spacy
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from allennlp.predictors.predictor import Predictor
+#from allennlp.predictors.predictor import Predictor
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 
-nlp = spacy.load("en_core_web_sm")
+import spacy_udpipe
+nlp = spacy_udpipe.load("en")
+# nlp = spacy.load("en_core_web_sm")
 
-predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/openie-model.2020.03.26.tar.gz")
+#predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/openie-model.2020.03.26.tar.gz")
 
 
 # ============================================= DISENTANGLEMENT MODEL CLASS ============================================
@@ -691,6 +693,42 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         att_maxes = att_vals.argmax(-1).tolist()
         return rel_idx, att_maxes
 
+    def get_att_and_rel_idx_all(self, text_in, roles=None):
+        roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
+        max_len = text_in.shape[-1]
+        text_sents = [' '.join([self.index[self.generated_v].itos[w]
+                                for w in s]).replace(' <pad>', '').replace(' <eos>', '')
+                      for s in text_in]
+        # Getting relations' positions
+        rel_idx = [out['idx'] for out in shallow_dependencies2(text_sents, roles)]
+        # Getting layer wise attention values
+
+        CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
+        self.infer_bn({'x': text_in})
+        CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+        all_att_weights = []
+        for i in range(len(self.h_params.n_latents)):
+            trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
+            all_att_weights.append(trans_mod.att_vals)
+        att_weights = []
+        for lv in range(sum(self.h_params.n_latents)):
+            var_att_weights = []
+            lv_layer = sum([lv >= sum(self.h_params.n_latents[:i + 1]) for i in range(len(self.h_params.n_latents))])
+            rank = lv - sum(self.h_params.n_latents[:lv_layer])
+            for layer_att_vals in all_att_weights[lv_layer]:
+                soft_att_vals = layer_att_vals
+                att_out = torch.cat([soft_att_vals[:, rank,
+                                     :max_len], soft_att_vals[:, rank, max_len:].sum(-1).unsqueeze(-1)]
+                                    , -1)
+                if lv_layer == 2:  # TODO: update this part for structured inference networks
+                    att_out[..., -1] *= 0
+                var_att_weights.append(att_out.cpu().detach().numpy())
+            att_weights.append(var_att_weights)
+        # att_vals shape:[sent, lv, layer, tok]
+        att_vals = np.transpose(np.array(att_weights), (2, 0, 1, 3)).mean(-2)
+        att_maxes = att_vals.argmax(-1).tolist()
+        return rel_idx, att_maxes
+
     def get_encoder_disentanglement_score(self, data_iter):
         rel_idx, att_maxes = [], []
         for i, batch in enumerate(tqdm(data_iter, desc="Getting model relationship accuracy")):
@@ -707,6 +745,34 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                         found[k].append(att[lv] in rel_pos[k])
             lv_scores.append(found)
         enc_att_scores = {'subj': [], 'verb': [], 'dobj': [], 'pobj': []}
+        for lv in range(sum(self.h_params.n_latents)):
+            for k, v in lv_scores[lv].items():
+                enc_att_scores[k].append(np.mean(v))
+
+        enc_max_score, enc_disent_score, enc_disent_vars = {}, {}, {}
+        for k, v in enc_att_scores.items():
+            sort_idx = np.argsort(v)
+            enc_disent_vars[k], enc_disent_score[k], enc_max_score[k] = \
+                sort_idx[-1], v[sort_idx[-1]] - v[sort_idx[-2]], v[sort_idx[-1]]
+        return enc_att_scores, enc_max_score, enc_disent_score, enc_disent_vars
+
+    def get_encoder_disentanglement_score_all(self, data_iter, roles=None):
+        roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
+        rel_idx, att_maxes = [], []
+        for i, batch in enumerate(tqdm(data_iter, desc="Getting model relationship accuracy")):
+            rel_idx_i, att_maxes_i = self.get_att_and_rel_idx_all(batch.text[..., 1:], roles)
+            rel_idx.extend(rel_idx_i)
+            att_maxes.extend(att_maxes_i)
+
+        lv_scores = []
+        for lv in range(sum(self.h_params.n_latents)):
+            found = {r: [] for r in roles}
+            for att, rel_pos in zip(att_maxes, rel_idx):
+                for k in found.keys():
+                    if len(rel_pos[k]):
+                        found[k].append(att[lv] in rel_pos[k])
+            lv_scores.append(found)
+        enc_att_scores = {r:[] for r in roles}
         for lv in range(sum(self.h_params.n_latents)):
             for k, v in lv_scores[lv].items():
                 enc_att_scores[k].append(np.mean(v))
@@ -736,16 +802,36 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return get_diff('subj'), get_diff('verb'), get_diff('dobj'), get_diff('pobj'), same_struct, \
                syn_temp_diff, lex_temp_diff
 
+
+    def get_sentence_statistics_all(self, orig, sen, orig_relations, alt_relations, orig_temp, alt_temp, roles):
+        roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
+        orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
+        same_struct = True
+        for k in orig_relations.keys():
+            if (orig_relations[k] == '' and alt_relations[k] != '') or (orig_relations[k] == '' and alt_relations[k] != ''):
+                same_struct = False
+
+        def get_diff(arg):
+            if orig_relations[arg] != '' and alt_relations[arg] != '':
+                return orig_relations[arg] != alt_relations[arg], False
+            else:
+                return False, orig_relations[arg] != alt_relations[arg]
+        syn_temp_diff = orig_temp['syn'] != alt_temp['syn']
+        lex_temp_diff = orig_temp['lex'] != alt_temp['lex']
+        diffs = [get_diff(r) for r in roles]
+        return diffs, same_struct, \
+               syn_temp_diff, lex_temp_diff
+
     def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100):
         stats = []
         # Generating n_samples sentences
         text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
-                                               sample_w=False, vary_z=True, complete=None)
+                                              sample_w=False, vary_z=True, complete=None)
         orig_rels = shallow_dependencies(text)
         orig_temps = truncated_template(text)
         for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
             text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
-                                                       sample_w=False, vary_z=True, complete=None)
+                                                      sample_w=False, vary_z=True, complete=None)
             text.extend(text_i)
             for k in samples.keys():
                 samples[k] = torch.cat([samples[k], samples_i[k]])
@@ -790,6 +876,80 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         for lab in ['subj', 'verb', 'dobj', 'pobj']:
             try:
                 dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
+            except TypeError:
+                dec_disent_vars[lab] = -1
+                lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
+            disent_score += diff
+        for lab in ['syntemp', 'lextemp']:
+            try:
+                var_wise_scores.idxmax()[lab]
+            except TypeError:
+                lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
+        return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
+
+    def _get_stat_data_frame_all(self, n_samples=2000, n_alterations=1, batch_size=100, roles=None):
+        roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
+        stats = []
+        # Generating n_samples sentences
+        text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                               sample_w=False, vary_z=True, complete=None)
+        orig_rels = shallow_dependencies2(text, roles)
+        orig_temps = truncated_template(text)
+        for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
+            text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                                       sample_w=False, vary_z=True, complete=None)
+            text.extend(text_i)
+            for k in samples.keys():
+                samples[k] = torch.cat([samples[k], samples_i[k]])
+            orig_rels.extend(shallow_dependencies2(text_i, roles))
+            orig_temps.extend(truncated_template(text_i))
+        for i in range(int(n_samples / batch_size)):
+            for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
+                # Altering the sentences
+                alt_text, _ = self._get_alternative_sentences(
+                    prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
+                                      for k, v in samples.items()},
+                    params=None, var_z_ids=[j], n_samples=n_alterations,
+                    gen_len=self.h_params.max_len - 1, complete=None)
+                alt_rels = shallow_dependencies2(alt_text, roles)
+                alt_temps = truncated_template(alt_text)
+                # Getting alteration statistics
+                for k in range(n_alterations * batch_size):
+                    orig_text = text[(i * batch_size) + k % batch_size]
+                    try:
+                        diffs, same_struct, syn_temp_diff, lex_temp_diff = \
+                            self.get_sentence_statistics_all(orig_text, alt_text[k],
+                                                          orig_rels[(i * batch_size) + k % batch_size], alt_rels[k],
+                                                          orig_temps[(i * batch_size) + k % batch_size], alt_temps[k],
+                                                             roles)
+                    except RecursionError or IndexError:
+                        print("Rec err !")
+                        continue
+                    stats.append([orig_text, alt_text[k], j, *[int(diff[0]) for diff in diffs],
+                                  *[int(diff[1]) for diff in diffs], same_struct, syn_temp_diff, lex_temp_diff])
+
+        header = ['original', 'altered', 'alteration_id', *[r+'_diff' for r in roles], *[r+'_struct' for r in roles],
+                  'same_struct', 'syntemp_diff',
+                  'lextemp_diff']
+        df = pd.DataFrame(stats, columns=header)
+        var_wise_scores = df.groupby('alteration_id').mean()[[*[r+'_diff' for r in roles],
+                                                              'syntemp_diff', 'lextemp_diff']]
+        var_wise_scores_struct = df.groupby('alteration_id').mean()[[r+'_struct' for r in roles]]
+        var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
+        disent_score = 0
+        lab_wise_disent = {}
+        dec_disent_vars = {}
+        for lab in roles:
+            try:
+                dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
             except TypeError :
                 dec_disent_vars[lab] = -1
                 lab_wise_disent[lab] = 0
@@ -808,6 +968,33 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             diff = top2[0] - top2[1]
             lab_wise_disent[lab] = diff
         return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
+
+    def get_disentanglement_summaries_all(self, data_iter, n_samples=2000, roles=None):
+        roles = roles if roles is not None else ["nsubj", "verb", "obj", "iobj"]
+        with torch.no_grad():
+            if self.h_params.graph_generator != get_vanilla_graph:
+                enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
+                    self.get_encoder_disentanglement_score_all(data_iter, roles)
+                self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
+                for k in enc_lab_wise_disent.keys():
+                    self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
+                enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
+                self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+                encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
+                self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
+            else:
+                enc_lab_wise_disent, encoder_Ndisent_vars = {r: 0 for r in roles}, 0
+
+            dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores, dec_disent_vars\
+                = self._get_stat_data_frame_all(n_samples=n_samples, roles=roles)
+            self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
+            for k in dec_lab_wise_disent.keys():
+                self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
+            dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
+            self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
+            decoder_Ndisent_vars = len(set(dec_disent_vars.values()))
+            self.writer.add_scalar('test/decoder_Ndisent_vars', decoder_Ndisent_vars, self.step)
+        return dec_lab_wise_disent, enc_lab_wise_disent, decoder_Ndisent_vars, encoder_Ndisent_vars
 
     def get_disentanglement_summaries2(self, data_iter, n_samples=2000):
         with torch.no_grad():
@@ -855,7 +1042,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 mi += sum([z[0].get_mi(z[1]) for z in zs])
                 self.gen_bn.clear_values(), self.infer_bn.clear_values()
         self.writer.add_scalar('test/MI', (mi/nsamples), self.step)
-        return (kl/nsamples).cpu().detach().item(), (kl_var/nsamples).sqrt().cpu().detach().item(), \
+        return (kl/nsamples).cpu().detach().item(), np.sqrt(kl_var/nsamples), \
                - (rec/nsamples).cpu().detach().item(), (mi/nsamples).cpu().detach().item()
 
 
@@ -1105,8 +1292,46 @@ def shallow_dependencies(sents):
                 dobj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
             if tok.dep_ == 'pobj' and pobj[0] == '':
                 pobj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
+
         relations.append({'text':{'subj': subj[0], 'verb': verb[0], 'dobj': dobj[0], 'pobj': pobj[0]},
                          'idx':{'subj': subj[1], 'verb': verb[1], 'dobj': dobj[1], 'pobj': pobj[1]}})
+    return relations
+
+
+def shallow_dependencies_pos(sents, roles=None):
+    # this one is for PoS tags
+    docs = nlp.pipe(sents)
+    relations = []
+    for doc in docs:
+        realizations = {r: ['', []] for r in roles}
+        for i, tok in enumerate(doc):
+            for r in roles:
+                if tok.pos_ == r and realizations[r][0] == '':
+                        realizations[r] = [tok.text, [tok.i]]
+
+        relations.append({'text':{k: v[0] for k, v in realizations.items()},
+                         'idx': {k: v[1] for k, v in realizations.items()}})
+    return relations
+
+
+def shallow_dependencies2(sents, roles=None):
+    roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
+    docs = nlp.pipe(sents)
+    relations = []
+    for doc in docs:
+        realizations = {r: ['', []] for r in roles}
+        for i, tok in enumerate(doc):
+            for r in roles:
+                if r == 'verb':
+                    if tok.dep_ == 'ROOT' and tok.pos_ == 'VERB':
+                        realizations[r] = [tok.text, [tok.i]]
+                else:
+                    if tok.dep_ == r and realizations[r][0] == '':
+                        realizations[r] = [' '.join([toki.text for toki in tok.subtree]),
+                                           [toki.i for toki in tok.subtree]]
+
+        relations.append({'text':{k: v[0] for k, v in realizations.items()},
+                         'idx': {k: v[1] for k, v in realizations.items()}})
     return relations
 
 

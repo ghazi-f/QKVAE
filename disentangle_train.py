@@ -172,7 +172,7 @@ def main():
     prev_mi = 0
     # model.eval()
     # model.get_disentanglement_summaries2(data.test_iter, 200)
-    while data.train_iter is not None:
+    while data.train_iter is not None :
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
 
@@ -220,7 +220,7 @@ def main():
             # dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
             # print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
             val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
-                = model.get_disentanglement_summaries2(data.val_iter, 200)
+                = model.get_disentanglement_summaries_all(data.val_iter, 200)
             print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                            sum(val_enc_lab_wise_disent.values()),
                                                                                       val_encoder_Ndisent_vars))
@@ -258,7 +258,7 @@ def main():
     model.eval()
 
     val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
-        = model.get_disentanglement_summaries2(data.val_iter)
+        = model.get_disentanglement_summaries_all(data.val_iter, n_samples=100)
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                    sum(val_enc_lab_wise_disent.values()),
                                                                               val_encoder_Ndisent_vars))
@@ -266,7 +266,7 @@ def main():
                                                                    sum(val_dec_lab_wise_disent.values()),
                                                                               val_decoder_Ndisent_vars))
     test_dec_lab_wise_disent, test_enc_lab_wise_disent, test_decoder_Ndisent_vars, test_encoder_Ndisent_vars\
-        = model.get_disentanglement_summaries2(data.test_iter)
+        = model.get_disentanglement_summaries_all(data.test_iter, n_samples=100)
     data.reinit_iterator('test')
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_enc_lab_wise_disent,
                                                                    sum(test_enc_lab_wise_disent.values()),
@@ -279,7 +279,7 @@ def main():
     print("Perplexity: {}".format(test_pp_ub))
     dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
-    relations = ['subj', 'verb', 'dobj', 'pobj']
+    relations = ["nsubj", "verb", "obj", "iobj"]#['subj', 'verb', 'dobj', 'pobj']
     temps = ['syntemp', 'lextemp']
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
