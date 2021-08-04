@@ -19,7 +19,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
-parser.add_argument("--csv_out", default='disentFinal.csv', type=str)
+parser.add_argument("--csv_out", default='disentUD2.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -172,7 +172,7 @@ def main():
     prev_mi = 0
     # model.eval()
     # model.get_disentanglement_summaries2(data.test_iter, 200)
-    while data.train_iter is not None :
+    while data.train_iter is not None and False: # TODO: Remove this False !!
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
 
@@ -258,7 +258,7 @@ def main():
     model.eval()
 
     val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
-        = model.get_disentanglement_summaries_all(data.val_iter, n_samples=100)
+        = model.get_disentanglement_summaries_all(data.val_iter, n_samples=100000)
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                    sum(val_enc_lab_wise_disent.values()),
                                                                               val_encoder_Ndisent_vars))
@@ -266,7 +266,7 @@ def main():
                                                                    sum(val_dec_lab_wise_disent.values()),
                                                                               val_decoder_Ndisent_vars))
     test_dec_lab_wise_disent, test_enc_lab_wise_disent, test_decoder_Ndisent_vars, test_encoder_Ndisent_vars\
-        = model.get_disentanglement_summaries_all(data.test_iter, n_samples=100)
+        = model.get_disentanglement_summaries_all(data.test_iter, n_samples=100000)
     data.reinit_iterator('test')
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_enc_lab_wise_disent,
                                                                    sum(test_enc_lab_wise_disent.values()),
