@@ -367,7 +367,6 @@ class Gaussian(BaseLatentVariable):
         return mean_kl - marginal_kl
 
 
-
 class Categorical(BaseLatentVariable):
     parameter_activations = {'logits': nn.Sequential()}
 
@@ -392,11 +391,8 @@ class Categorical(BaseLatentVariable):
         self.batch_norm = nn.BatchNorm1d(embedding_size) if emb_batch_norm else None
 
     def infer(self, x_params):
-        # Not sure this works with Relaxed distributions. But it's still not used anyway
-        if 'temperature' not in x_params:
-            x_params = {**x_params, **{'temperature': self.prior_temperature}}
         inferred = torch.argmax(x_params['logits'], dim=-1)
-        return inferred, self.prior(x_params).log_prob(F.one_hot(inferred, x_params['logits'].shape[-1]))
+        return inferred
 
     def posterior_sample(self, x_params):
         if 'temperature' not in x_params:
@@ -494,7 +490,7 @@ class MultiCategorical(BaseLatentVariable):
         if 'temperature' not in x_params:
             x_params = {**x_params, **{'temperature': self.prior_temperature}, 'n_disc':self.n_disc}
         inferred = torch.argmax(x_params['logits'], dim=-1)
-        return inferred, self.prior(x_params).log_prob(F.one_hot(inferred, x_params['logits'].shape[-1]))
+        return inferred
 
     def posterior_sample(self, x_params):
         if 'temperature' not in x_params:
