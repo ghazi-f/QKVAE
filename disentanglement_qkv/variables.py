@@ -65,6 +65,20 @@ class ZStGen(Gaussian):
                                     sequence_lv=True)
 
 
+class ZStDiscInfer(Categorical):
+    def __init__(self, h_params, embedding):
+        size = h_params.z_size
+        super(ZStDiscInfer, self).__init__(size, 'zs', h_params.device, embedding, None, markovian=h_params.markovian,
+                                           stl=True, sequence_lv=True)
+
+
+class ZStDiscGen(Categorical):
+    def __init__(self, h_params, embedding, allow_prior=True):
+        size = h_params.z_size
+        super(ZStDiscGen, self).__init__(size, 'zs', h_params.device, embedding, None, markovian=h_params.markovian,
+                                         allow_prior=allow_prior, sequence_lv=True)
+
+
 class ZGInfer(Gaussian):
     def __init__(self, h_params):
         size = h_params.z_size#int(h_params.z_size/max(h_params.n_latents))
@@ -76,4 +90,33 @@ class ZGGen(Gaussian):
     def __init__(self, h_params, allow_prior=True):
         size = h_params.z_size#int(h_params.z_size/max(h_params.n_latents))
         super(ZGGen, self).__init__(size, 'zg', h_params.device, markovian=h_params.markovian, allow_prior=allow_prior,
+                                    sequence_lv=True)
+
+# ============================================= LEGACY =============================================
+
+
+class ZGInferLeg(Gaussian):
+    def __init__(self, h_params):
+        size = int(h_params.z_size/max(h_params.n_latents))
+        super(ZGInferLeg, self).__init__(size, 'zg', h_params.device, markovian=h_params.markovian, stl=True,
+                                      sequence_lv=True)
+
+
+class ZGGenLeg(Gaussian):
+    def __init__(self, h_params, allow_prior=True):
+        size = int(h_params.z_size/max(h_params.n_latents))
+        super(ZGGenLeg, self).__init__(size, 'zg', h_params.device, markovian=h_params.markovian, allow_prior=allow_prior,
+                                    sequence_lv=True)
+
+class ZStInferLeg(Gaussian):
+    def __init__(self, h_params):
+        size = int(h_params.z_size/max(h_params.n_latents))
+        super(ZStInferLeg, self).__init__(size, 'zs', h_params.device, markovian=h_params.markovian, stl=True,
+                                      sequence_lv=True)
+
+
+class ZStGenLeg(Gaussian):
+    def __init__(self, h_params, allow_prior=True):
+        size = int(h_params.z_size/max(h_params.n_latents))
+        super(ZStGenLeg, self).__init__(size, 'zs', h_params.device, markovian=h_params.markovian, allow_prior=allow_prior,
                                     sequence_lv=True)
