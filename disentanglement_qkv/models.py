@@ -1,3 +1,5 @@
+import sys
+
 from torch.utils.tensorboard import SummaryWriter
 import torch
 from torch.optim import SGD
@@ -12,17 +14,29 @@ from components.links import CoattentiveTransformerLink, ConditionalCoattentiveT
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
+
+# sys.path.insert(0, os.path.join("disentanglement_qkv", "senteval"))
+# from senteval.engine import SE
+
 import spacy
+# import benepar
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
 from datasets import load_metric
-sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
+from supar import Parser
 
-nlp = spacy.load("en_core_web_sm")
+const_parser = Parser.load('crf-con-en')
+sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 bleu_score = load_metric("bleu").compute
+nlp = spacy.load("en_core_web_sm")
+# try:
+#     nlp.add_pipe(benepar.BeneparComponent("benepar_en3"))
+# except LookupError:
+#     benepar.download('benepar_en3')
+#     nlp.add_pipe(benepar.BeneparComponent("benepar_en3"))
 
 
 # ============================================= DISENTANGLEMENT MODEL CLASS ============================================
@@ -195,7 +209,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             summary_triplets = [
                 ('text', '/ground_truth', self.decode_to_text(self.gen_bn.variables_star[self.generated_v]))]
-            gen_inputs = {**{lv.name: lv.post_params['loc'] for lv in self.infer_bn.variables if lv.name.startswith('z')},
+            gen_inputs = {**{lv.name: lv.infer(lv.post_params) for lv in self.infer_bn.variables if lv.name.startswith('z')},
                           **{'x': self.gen_bn.variables_star[self.gen_bn.name_to_v['x_prev']],
                              'x_prev': self.gen_bn.variables_star[self.gen_bn.name_to_v['x_prev']]}}
             self.gen_bn(gen_inputs, target=self.generated_v, complete=True)
@@ -227,13 +241,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     orig_zst_sample_1 = zst_gen.prior_sample((1,))[0]
                     orig_zst_sample_2 = zst_gen.prior_sample((1,))[0]
             else:
-                orig_zg_sample = zg_gen.prior_sample((1,))[0]
-                self.gen_bn({'zg': orig_zg_sample.unsqueeze(1),
+                orig_zg_sample1 = zg_gen.prior_sample((1,))[0]
+                orig_zg_sample2 = zg_gen.prior_sample((1,))[0]
+                self.gen_bn({'zg': orig_zg_sample1.unsqueeze(1),
                              'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
                 orig_z_sample_1 = self.gen_bn.name_to_v['z1'].post_samples.squeeze(1)
                 if has_struct:
                     orig_zst_sample_1 = self.gen_bn.name_to_v['zs'].post_samples.squeeze(1)
-                self.gen_bn({'zg': orig_zg_sample.unsqueeze(1),
+                self.gen_bn({'zg': orig_zg_sample2.unsqueeze(1),
                              'x_prev': torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
                 orig_z_sample_2 = self.gen_bn.name_to_v['z1'].post_samples.squeeze(1)
                 if has_struct:
@@ -242,14 +257,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             child_zs = [self.gen_bn.name_to_v['z{}'.format(i)] for i in range(2, len(self.h_params.n_latents)+1)]
             self.gen_bn({'z1': orig_z_sample_1.unsqueeze(1),
                          **({'zs': orig_zst_sample_1.unsqueeze(1)} if has_struct else {}),
-                         **({'zg': orig_zg_sample.unsqueeze(1)} if has_zg else {}),
+                         **({'zg': orig_zg_sample1.unsqueeze(1)} if has_zg else {}),
                          'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
             orig_child_zs_1 = [z.post_samples.squeeze(1) for z in child_zs]
             if has_struct:
                 orig_zst_1 = orig_zst_sample_1
             self.gen_bn({'z1': orig_z_sample_2.unsqueeze(1),
                          **({'zs': orig_zst_sample_2.unsqueeze(1)} if has_struct else {}),
-                         **({'zg': orig_zg_sample.unsqueeze(1)} if has_zg else {}),
+                         **({'zg': orig_zg_sample2.unsqueeze(1)} if has_zg else {}),
                          'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
             orig_child_zs_2 = [z.post_samples.squeeze(1) for z in child_zs]
             if has_struct:
@@ -280,7 +295,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             if has_struct:
                 z_input['zs'] = torch.cat([zst_samples_1, zst_samples_2]).unsqueeze(1)
             if has_zg:
-                z_input['zg'] = orig_zg_sample.repeat(2*n_samples+2, 1).unsqueeze(1)
+                z_input['zg'] = torch.cat([orig_zg_sample1, orig_zg_sample2]).unsqueeze(1)
+                # z_input['zg'] = orig_zg_sample.repeat(2*n_samples+2, 1).unsqueeze(1)
 
             # Normal Autoregressive generation
             x_prev = self.generate_from_z(z_input, x_prev, gen_len=gen_len, only_z_sampling=True, temp=temp)
@@ -495,11 +511,15 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
                 # get source and target sentence latent variable values
                 self.infer_bn({'x': batch.text[..., 1:]})
-                orig_zs, orig_z = zs_infer.post_params['loc'][..., 0, :], \
+                orig_zs, orig_z = zs_infer.infer(zs_infer.post_params), \
                                            {k: v.post_params['loc'][..., 0, :] for k, v in z_infer.items()}
                 self.infer_bn({'x': batch.para[..., 1:]})
-                para_zs, para_z = zs_infer.post_params['loc'][..., 0, :],\
+                para_zs, para_z = zs_infer.infer(zs_infer.post_params),\
                                            {k: v.post_params['loc'][..., 0, :] for k, v in z_infer.items()}
+                if isinstance(zs_infer, Categorical):
+                    orig_zs, para_zs = orig_zs[..., 0], para_zs[..., 0]
+                else:
+                    orig_zs, para_zs = orig_zs[..., 0, :], para_zs[..., 0, :]
 
                 # generate source and target reconstructions with the latent variable swap
                 # Inputs: 1) original sentence to be reconstructed,
@@ -530,7 +550,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 para_mod.extend([p.split() for p in para_mod_i])
                 rec.extend([r.split() for r in rec_i])
                 # for o, r, p, pm, om in zip(orig_i, rec_i, para_i, para_mod_i, orig_mod_i):
-                #     print(o, '|||',  r, '|||',   p, '|||',   pm, '|||',   om)
+                #     print(r==om, o, '|||',  r, '|||',   p, '|||',   pm, '|||',   om)
             # for o, r, pm, om in zip(orig, rec, para_mod, orig_mod):
             #     print([' '.join(o[0]), '|||',  ' '.join(r), '|||',  ' '.join(pm), '|||',  ' '.join(om)])
             # Calculate the 3 bleu scores
@@ -731,7 +751,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
             z_input = {'z{}'.format(i+1): z_s.unsqueeze(1) for i, z_s in enumerate(zs_samples)}
             if has_struct:
-                zs_params['zs'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zst_gen.post_params.items()}
+                zs_params['zs'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zst_gen.post_params.items()
+                                   if k != 'temperature'}
                 z_input['zs'] = zst_sample.unsqueeze(1)
             if has_zg:
                 zs_params['zg'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zg_gen.post_params.items()}
@@ -877,7 +898,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 sort_idx[-1], v[sort_idx[-1]] - v[sort_idx[-2]], v[sort_idx[-1]]
         idx_names = ['z{}'.format(i+1) for i in range(sum(self.h_params.n_latents))]
 
-        return pd.DataFrame(enc_att_scores,index=idx_names), enc_max_score, enc_disent_score, enc_disent_vars
+        return pd.DataFrame(enc_att_scores, index=idx_names), enc_max_score, enc_disent_score, enc_disent_vars
 
     def get_sentence_statistics2(self, orig, sen, orig_relations, alt_relations, orig_temp, alt_temp):
         orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
@@ -973,6 +994,125 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             lab_wise_disent[lab] = diff
         return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
 
+    def _get_perturbation_tma(self, n_samples=2000, n_alterations=1, batch_size=100):
+        stats = []
+        has_struct = 'zs' in self.gen_bn.name_to_v
+        assert has_struct
+        alter_lvs = [list(range(sum(self.h_params.n_latents))), [sum(self.h_params.n_latents)]]
+        n_lvs = sum(self.h_params.n_latents) + 1
+        # Generating n_samples sentences
+        text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                              sample_w=False, vary_z=True, complete=None)
+        for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
+            text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                                       sample_w=False, vary_z=True, complete=None)
+            text.extend(text_i)
+            for k in samples.keys():
+                samples[k] = torch.cat([samples[k], samples_i[k]])
+        for i in range(int(n_samples / batch_size)):
+            for alvs in tqdm(alter_lvs, desc="Processing sample {}".format(str(i))):
+                # Altering the sentences
+                alt_text, _ = self._get_alternative_sentences(
+                    prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
+                                      for k, v in samples.items()},
+                    params=None, var_z_ids=alvs, n_samples=n_alterations,
+                    gen_len=self.h_params.max_len - 1, complete=None)
+                # Getting alteration statistics
+                orig_texts = [text[(i * batch_size) + k % batch_size] for k in range(n_alterations * batch_size)]
+                tma2 = template_match(orig_texts, alt_text, 2)
+                tma3 = template_match(orig_texts, alt_text, 3)
+                altered_var = 'zc' if alvs[0] != (n_lvs-1) else 'zs'
+                for k in range(n_alterations * batch_size):
+                    stats.append([orig_texts[k], alt_text[k], altered_var, tma2[k], tma3[k]])
+
+        header = ['original', 'altered', 'alteration_id', 'tma2', 'tma3']
+        df = pd.DataFrame(stats, columns=header)
+        var_wise_scores = df.groupby('alteration_id').mean()[['tma2', 'tma3']]
+        return var_wise_scores
+
+    def get_swap_tma(self, n_samples=2000, batch_size=50, beam_size=2):
+        with torch.no_grad():
+            has_struct = 'zs' in self.gen_bn.name_to_v
+            assert has_struct
+            # Generating n_samples sentences
+            text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                                  sample_w=False, vary_z=True, complete=None)
+            for _ in tqdm(range(int(n_samples / batch_size) - 1), desc="Generating original sentences"):
+                text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                                          sample_w=False, vary_z=True, complete=None)
+                text.extend(text_i)
+                for k in samples.keys():
+                    samples[k] = torch.cat([samples[k], samples_i[k]])
+            source_sents, target_sents = text[:int(n_samples / 2)], text[int(n_samples / 2):]
+            source_lvs, target_lvs = {k: v[:int(n_samples / 2)] for k, v in samples.items()}, \
+                                     {k: v[int(n_samples / 2):] for k, v in samples.items()}
+            result_sents = []
+            inv_result_sents = []
+            go_symbol = torch.ones((1, 1)).long() * self.index[self.generated_v].stoi['<go>']
+            go_symbol = go_symbol.to(self.h_params.device)
+            temp = 1.
+            for i in tqdm(range(int(n_samples / (2 * batch_size))),
+                          desc="Getting Model Swap TMA"):
+                z_input = {'zs': source_lvs['zs'][i * batch_size:(i + 1) * batch_size].unsqueeze(1),
+                           **{'z{}'.format(i + 1): target_lvs['z{}'.format(i + 1)][
+                                                   i * batch_size:(i + 1) * batch_size].unsqueeze(1)
+                              for i in range(len(self.h_params.n_latents))}}
+                inv_z_input = {'zs': target_lvs['zs'][i * batch_size:(i + 1) * batch_size].unsqueeze(1),
+                               **{'z{}'.format(i + 1): source_lvs['z{}'.format(i + 1)][
+                                                       i * batch_size:(i + 1) * batch_size].unsqueeze(1)
+                                  for i in range(len(self.h_params.n_latents))}}
+                x_prev = go_symbol.repeat((batch_size, 1))
+                x_prev = self.generate_from_z2(z_input, x_prev, mask_unk=False, beam_size=beam_size)
+                if beam_size > 1:
+                    x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
+                result_sents.extend(self.decode_to_text2(x_prev, self.h_params.vocab_size,
+                                                         self.index[self.generated_v]))
+                x_prev = go_symbol.repeat((batch_size, 1))
+                x_prev = self.generate_from_z2(inv_z_input, x_prev, mask_unk=False, beam_size=beam_size)
+                if beam_size > 1:
+                    x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
+                inv_result_sents.extend(self.decode_to_text2(x_prev, self.h_params.vocab_size,
+                                                             self.index[self.generated_v]))
+            test_name = self.h_params.test_name.split("\\")[-1].split("/")[-1]
+            dump_location = os.path.join(".data",
+                                         "{}_tempdump.tsv".format(test_name))
+            with open(dump_location, 'w', encoding="UTF-8") as f:
+                for s, t, r, i in zip(source_sents, target_sents, result_sents,
+                                      inv_result_sents):
+                    f.write('\t'.join([s, t, r, i]) + '\n')
+
+            print("Calculating zs tma...")
+            zs_tma2, zs_tma3 = np.mean(template_match(source_sents, result_sents, 2)) * 100, \
+                               np.mean(template_match(source_sents, result_sents, 3)) * 100
+            print("Calculating zc tma...")
+            zc_tma2, zc_tma3 = np.mean(template_match(source_sents, inv_result_sents, 2)) * 100, \
+                               np.mean(template_match(source_sents, inv_result_sents, 3)) * 100
+            print("Calculating copy tma...")
+            copy_tma2, copy_tma3 = np.mean(template_match(source_sents, target_sents, 2)) * 100, \
+                                   np.mean(template_match(source_sents, target_sents, 3)) * 100
+
+            print("Calculating bleu scores...")
+            zs_bleu = bleu_score(predictions=[s.split() for s in source_sents],
+                                 references=[[s.split()] for s in result_sents])['bleu'] * 100
+            zc_bleu = bleu_score(predictions=[s.split() for s in source_sents],
+                                 references=[[s.split()] for s in inv_result_sents])['bleu'] * 100
+            copy_bleu = bleu_score(predictions=[s.split() for s in source_sents],
+                                   references=[[s.split()] for s in target_sents])['bleu'] * 100
+
+            self.writer.add_scalar('test/zs_tma2', zs_tma2, self.step)
+            self.writer.add_scalar('test/zs_tma3', zs_tma3, self.step)
+            self.writer.add_scalar('test/zs_bleu ', zs_bleu, self.step)
+            self.writer.add_scalar('test/zc_tma2', zc_tma2, self.step)
+            self.writer.add_scalar('test/zc_tma3', zc_tma3, self.step)
+            self.writer.add_scalar('test/zc_bleu ', zc_bleu, self.step)
+            self.writer.add_scalar('test/copy_tma2', copy_tma2, self.step)
+            self.writer.add_scalar('test/copy_tma3', copy_tma3, self.step)
+            self.writer.add_scalar('test/copy_bleu ', copy_bleu, self.step)
+            scores = {"tma2": {"zs": zs_tma2, "zc": zc_tma2, "copy": copy_tma2},
+                      "tma3": {"zs": zs_tma3, "zc": zc_tma3, "copy": copy_tma3},
+                      "bleu": {"zs": zs_bleu, "zc": zc_bleu, "copy": copy_bleu}}
+            return scores
+
     def get_disentanglement_summaries2(self, data_iter, n_samples=2000):
         with torch.no_grad():
             if self.h_params.graph_generator != get_vanilla_graph:
@@ -1007,7 +1147,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         loss_obj = self.losses[0]
         zs = [(self.infer_bn.name_to_v['z{}'.format(i+1)], self.gen_bn.name_to_v['z{}'.format(i+1)])
               for i in range(len(self.h_params.n_latents))]
-        if "zs" in self.gen_bn.name_to_v:
+        if "zs" in self.gen_bn.name_to_v and isinstance(self.infer_bn.name_to_v['zs'], Gaussian):
+            # Mutual information still hasn't been implemented for non Gaussian Latent variables
             zs += [(self.infer_bn.name_to_v['zs'], self.gen_bn.name_to_v['zs'])]
         if "zg" in self.gen_bn.name_to_v:
             zs += [(self.infer_bn.name_to_v['zg'], self.gen_bn.name_to_v['zg'])]
@@ -1025,7 +1166,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 mi += sum([z[0].get_mi(z[1]) for z in zs])
                 self.gen_bn.clear_values(), self.infer_bn.clear_values()
         self.writer.add_scalar('test/MI', (mi/nsamples), self.step)
-        return (kl/nsamples).cpu().detach().item(), (kl_var/nsamples).sqrt().cpu().detach().item(), \
+        return (kl/nsamples).cpu().detach().item(), np.sqrt(kl_var/nsamples), \
                - (rec/nsamples).cpu().detach().item(), (mi/nsamples).cpu().detach().item()
 
     def generate_from_z(self, z_input, x_prev, gen_len=None, only_z_sampling=True, temp=1.0, mask_unk=True):
@@ -1056,15 +1197,15 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         ended = [False]*x_prev.shape[0]
         seq_scores = torch.tensor([[0.0]*x_prev.shape[0]]*beam_size).to(x_prev.device)
         if beam_size > 1:
-            z_input = {k: v.unsqueeze(0).expand(beam_size, v.shape[0], 1, v.shape[-1])
-                                                  for k, v in z_input.items()}
+            z_input = {k: v.unsqueeze(0).expand(beam_size, v.shape[0], 1, *v.shape[2:])
+                       for k, v in z_input.items()}
             x_prev = x_prev.unsqueeze(0).expand(beam_size, *x_prev.shape)
             unk_mask = unk_mask.unsqueeze(0).expand(beam_size, *unk_mask.shape)
         for i in range(gen_len or self.h_params.max_len):
             if beam_size == 1:
-                z_i = {k: v.expand(v.shape[0], i + 1, v.shape[-1]) for k, v in z_input.items()}
+                z_i = {k: v.expand(v.shape[0], i + 1, *v.shape[2:]) for k, v in z_input.items()}
             else:
-                z_i = {k: v.expand(beam_size, v.shape[1], i + 1, v.shape[-1]) for k, v in z_input.items()}
+                z_i = {k: v.expand(beam_size, v.shape[1], i + 1, *v.shape[3:]) for k, v in z_input.items()}
             self.gen_bn({'x_prev': x_prev, **z_i}, target=self.gen_bn.name_to_v['x'])
             unk_mask_i = unk_mask.expand(*unk_mask.shape[:-2], i + 1, unk_mask.shape[-1])
             if only_z_sampling:
@@ -1098,6 +1239,153 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         if beam_size > 1:
             x_prev = x_prev.view(x_prev.shape[0]*x_prev.shape[1], x_prev.shape[2])
         return x_prev
+
+    def embed_sents(self, sents):
+        with torch.no_grad():
+            zs_infer, z_infer, x_gen = self.infer_bn.name_to_v['zs'], \
+                                       {'z{}'.format(i + 1): self.infer_bn.name_to_v['z{}'.format(i + 1)]
+                                        for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
+
+            bsz, max_len = len(sents), max([len(s) for s in sents])
+            stoi = self.index[self.generated_v].stoi
+            inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
+            for i, sen in enumerate(sents):
+                for j, tok in enumerate(sen):
+                    inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
+
+            self.infer_bn({'x': inputs})
+            orig_zs, orig_z = zs_infer.rep(zs_infer.infer(zs_infer.post_params))[..., 0, :], \
+                              torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1)
+
+            return orig_zs, orig_z
+
+    # def get_sent_eval(self):
+    #     def prepare(params, samples):
+    #         pass
+    #
+    #     def batcher_zs(params, batch):
+    #         batch = [' '.join(sent) if sent != [] else '.' for sent in batch]
+    #         embeddings = self.embed_sents(batch)[0]
+    #         return embeddings.detach().cpu().clone()
+    #
+    #
+    #     def batcher_zc(params, batch):
+    #         batch = [' '.join(sent) if sent != [] else '.' for sent in batch]
+    #         embeddings = self.embed_sents(batch)[1]
+    #         return embeddings.detach().cpu().clone()
+    #
+    #     # Set params for SentEval
+    #     print("Performing evaluation with zs")
+    #     task_path = os.path.join("disentanglement_qkv", "senteval", "data")
+    #     params = {'task_path': task_path, 'usepytorch': True, 'kfold': 10}
+    #     params['classifier'] = {'nhid': 50, 'optim': 'adam', 'batch_size': 64, 'tenacity': 5, 'epoch_size': 4}
+    #     se = SE(params, batcher_zs, prepare)
+    #
+    #     transfer_tasks = [#'STS12', 'STS13', 'STS14', 'STS15', 'STS16', 'STSBenchmark',
+    #                       'BigramShift', 'Depth', 'TopConstituents']
+    #
+    #     results_zs = se.eval(transfer_tasks)
+    #
+    #     print("Performing evaluation with zc")
+    #     task_path = os.path.join("disentanglement_qkv", "senteval", "data")
+    #     params = {'task_path': task_path, 'usepytorch': True, 'kfold': 10}
+    #     params['classifier'] = {'nhid': 50, 'optim': 'adam', 'batch_size': 64, 'tenacity': 5, 'epoch_size': 4}
+    #     se = SE(params, batcher_zc, prepare)
+    #
+    #     transfer_tasks = [#'STS12', 'STS13', 'STS14', 'STS15', 'STS16', 'STSBenchmark',
+    #                       'BigramShift', 'Depth', 'TopConstituents']
+    #
+    #     results_zc = se.eval(transfer_tasks)
+    #     return results_zs, results_zc
+
+    def _get_syn_disent_encoder_hard(self, split="valid", batch_size=100):
+        pair_fn = {"valid": ".data\\paranmt2\\dev_input.txt",
+                   "test": ".data\\paranmt2\\test_input.txt"}[split]
+        ref_fn = {"valid": ".data\\paranmt2\\dev_ref.txt",
+                  "test": ".data\\paranmt2\\test_ref.txt"}[split]
+        t1, t2, t3 = [], [], []
+        with open(pair_fn, encoding="UTF-8") as f:
+            for i, l in enumerate(f):
+                if "\t" in l:
+                    t1.append(l.split("\t")[0])
+                    t2.append(l.split("\t")[1][:-1])
+        with open(ref_fn, encoding="UTF-8") as f:
+            for i, l in enumerate(f):
+                if len(l):
+                    t3.append(l[:-1])
+
+        ezs1, ezc1, ezs2, ezc2, ezs3, ezc3 = None, None, None, None, None, None
+        for i in range(int(len(t1) / batch_size)):
+            ezs1i, ezc1i = self.embed_sents(t1[i * batch_size:(i + 1) * batch_size])
+            ezs2i, ezc2i = self.embed_sents(t2[i * batch_size:(i + 1) * batch_size])
+            ezs3i, ezc3i = self.embed_sents(t3[i * batch_size:(i + 1) * batch_size])
+            if ezs1 is None:
+                ezs1, ezc1 = ezs1i, ezc1i
+                ezs2, ezc2 = ezs2i, ezc2i
+                ezs3, ezc3 = ezs3i, ezc3i
+            else:
+                ezs1, ezc1 = torch.cat([ezs1, ezs1i]), torch.cat([ezc1, ezc1i])
+                ezs2, ezc2 = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i])
+                ezs3, ezc3 = torch.cat([ezs3, ezs3i]), torch.cat([ezc3, ezc3i])
+
+        s13sims, s23sims = torch.cosine_similarity(ezs1, ezs3), torch.cosine_similarity(ezs2, ezs3)
+        c13sims, c23sims = torch.cosine_similarity(ezc1, ezc3), torch.cosine_similarity(ezc2, ezc3)
+
+        zs_acc = np.mean(s13sims.cpu().detach().numpy() > s23sims.cpu().detach().numpy())
+        zc_acc = np.mean(c13sims.cpu().detach().numpy() > c23sims.cpu().detach().numpy())
+        print("Paraphrase detection: with zs {}, with zc {}".format(zs_acc, zc_acc))
+        self.writer.add_scalar('test/hard_zs_enc_acc', 1-zs_acc, self.step)
+        self.writer.add_scalar('test/hard_zc_enc_acc', zc_acc, self.step)
+        return 1 - zs_acc, zc_acc
+
+    def _get_syn_disent_encoder_easy(self, split="valid", batch_size=100):
+        template_file = {"valid": ".data\\paranmt2\\dev_input.txt",
+                         "test": ".data\\paranmt2\\test_input.txt"}[split]
+        paraphrase_file = {"valid": ".data\\paranmt2\\dev.txt",
+                           "test": ".data\\paranmt2\\test.txt"}[split]
+        file_names = {"template": template_file, "paraphrase": paraphrase_file}
+        accuracies = {"template": {}, "paraphrase": {}}
+        for task, file_n in file_names.items():
+            t1, t2 = [], []
+            with open(file_n, encoding="UTF-8") as f:
+                for i, l in enumerate(f):
+                    if "\t" in l:
+                        t1.append(l.split("\t")[0])
+                        t2.append(l.split("\t")[1])
+
+            ezs1, ezc1, ezs2, ezc2 = None, None, None, None
+            for i in range(int(len(t1) / batch_size)):
+                ezs1i, ezc1i = self.embed_sents(t1[i * batch_size:(i + 1) * batch_size])
+                ezs2i, ezc2i = self.embed_sents(t2[i * batch_size:(i + 1) * batch_size])
+                if ezs1 is None:
+                    ezs1, ezc1 = ezs1i, ezc1i
+                    ezs2, ezc2 = ezs2i, ezc2i
+                else:
+                    ezs1, ezc1 = torch.cat([ezs1, ezs1i]), torch.cat([ezc1, ezc1i])
+                    ezs2, ezc2 = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i])
+            rep_n = 100
+            perm_idx = torch.randperm(ezs1.shape[0] * rep_n)
+            ezs1, ezc1 = my_repeat(ezs1, rep_n), my_repeat(ezc1, rep_n)
+            ezs2, ezc2 = my_repeat(ezs2, rep_n), my_repeat(ezc2, rep_n)
+            ezs3, ezc3 = ezs1[perm_idx], ezc1[perm_idx]
+
+            s12sims, s13sims = torch.cosine_similarity(ezs1, ezs2), torch.cosine_similarity(ezs1, ezs3)
+            c12sims, c13sims = torch.cosine_similarity(ezc1, ezc2), torch.cosine_similarity(ezc1, ezc3)
+            syn_emb_sc = np.mean(s12sims.cpu().detach().numpy() > s13sims.cpu().detach().numpy())
+            cont_emb_sc = np.mean(c12sims.cpu().detach().numpy() > c13sims.cpu().detach().numpy())
+            accuracies[task] = {"zs": syn_emb_sc, "zc": cont_emb_sc}
+        print("Paraphrase results 1 : ", accuracies)
+        self.writer.add_scalar('test/zs_enc_para_acc', accuracies["paraphrase"]["zs"], self.step)
+        self.writer.add_scalar('test/zc_enc_para_acc', accuracies["paraphrase"]["zc"], self.step)
+        self.writer.add_scalar('test/zs_enc_temp_acc', accuracies["template"]["zs"], self.step)
+        self.writer.add_scalar('test/zc_enc_temp_acc', accuracies["template"]["zc"], self.step)
+        return accuracies
+
+    def get_syn_disent_encoder(self, split="valid", batch_size=100):
+        easy_scores = self._get_syn_disent_encoder_easy(split=split, batch_size=batch_size)
+        hard_zs_score, hard_zs_score = self._get_syn_disent_encoder_hard(split=split, batch_size=batch_size)
+        scores = {**easy_scores, "hard": {"zs": hard_zs_score, "zc": hard_zs_score}}
+        return scores
 
 
 class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metaclass=abc.ABCMeta):
@@ -1250,23 +1538,23 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
 
 
 # =========================================== DISENTANGLEMENT UTILITIES ================================================
-def batch_sent_relations(sents):
-    target = [{'sentence': sent} for sent in sents]
-    preds = predictor.predict_batch_json(target)
-    sent_dicts = []
-    for pred in preds:
-        sent_dict = []
-        for el in pred['verbs']:
-            sent_dict.append({})
-            for v_i in el['description'].split('[')[1:]:
-                in_bracket = v_i.split(']')[0]
-                try:
-                    arg_l, arg_str = in_bracket.split(':')
-                    sent_dict[-1][arg_l] = arg_str
-                except ValueError as e:
-                    print('this raised an anomaly:', el)
-        sent_dicts.append(sent_dict)
-    return sent_dicts
+# def batch_sent_relations(sents):
+#     target = [{'sentence': sent} for sent in sents]
+#     preds = predictor.predict_batch_json(target)
+#     sent_dicts = []
+#     for pred in preds:
+#         sent_dict = []
+#         for el in pred['verbs']:
+#             sent_dict.append({})
+#             for v_i in el['description'].split('[')[1:]:
+#                 in_bracket = v_i.split(']')[0]
+#                 try:
+#                     arg_l, arg_str = in_bracket.split(':')
+#                     sent_dict[-1][arg_l] = arg_str
+#                 except ValueError as e:
+#                     print('this raised an anomaly:', el)
+#         sent_dicts.append(sent_dict)
+#     return sent_dicts
 
 
 def get_sentence_statistics(orig, sen, orig_relations=None, relations=None):
@@ -1379,3 +1667,50 @@ def truncated_template(sents, depth=0):
             templates.append({'lex': ' ', 'syn': ' '})
     return templates
 
+
+def truncate_tree(tree, lv):
+    tok_i = 0
+    curr_lv = 0
+    tree_toks = tree.split()
+    while tok_i != len(tree_toks):
+        if tree_toks[tok_i].startswith('('):
+            curr_lv += 1
+        else:
+            closed_lvs = int(tree_toks[tok_i].count(')'))
+            if curr_lv - closed_lvs <= lv:
+                tree_toks[tok_i] = ')'*(closed_lvs - (curr_lv-lv))
+            curr_lv -= closed_lvs
+        if lv >= curr_lv and tree_toks[tok_i]!='':
+            tok_i += 1
+        else:
+            tree_toks.pop(tok_i)
+    return ' '.join(tree_toks)
+
+
+def get_lin_parse_tree(sens):
+    tree_parses = const_parser.predict(sens, lang='en', verbose=False)
+    lin_parses = []
+    for p in tree_parses:
+        lin_p = repr(p)
+        if lin_p.startswith("(TOP"):
+            lin_p = lin_p[5:-1]
+        lin_parses.append(lin_p)
+    return lin_parses
+
+
+def template_match(l1, l2, lv, verbose=0):
+    # docs1, docs2 = nlp.pipe(l1), nlp.pipe(l2)
+    # temps1 = [truncate_tree(list(doc.sents)[0]._.parse_string, lv) for doc in docs1]
+    # temps2 = [truncate_tree(list(doc.sents)[0]._.parse_string, lv) for doc in docs2]
+    docs1, docs2 = get_lin_parse_tree(l1), get_lin_parse_tree(l2)
+    temps1 = [truncate_tree(doc, lv) for doc in docs1]
+    temps2 = [truncate_tree(doc, lv) for doc in docs2]
+    if verbose:
+        for l, t in zip(l1+l2, temps1+temps2):
+            print(l, "-->", t)
+        print("+++++++++++++++++++++++++")
+    return [int(t1 == t2) for t1, t2 in zip(temps1, temps2)]
+
+
+def my_repeat(tens, n):
+    return tens.unsqueeze(0).expand(n, *tens.shape).reshape(tens.shape[0]*n, *tens.shape[1:])
