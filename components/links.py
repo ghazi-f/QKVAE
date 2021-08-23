@@ -896,7 +896,8 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
-                 key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None):
+                 key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
+                 simple_zs_use=True):
         super(ConditionalCoattentiveQKVTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
@@ -904,29 +905,29 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         self.mem_ids = nn.Embedding(n_mems, mem_size).weight
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
-        self.n_keys = n_keys
+        self.simple_zs_use = simple_zs_use
+        self.n_keys = n_mems if simple_zs_use else n_keys
         self.memory_to_hidden = nn.Linear(self.mem_size*2, output_size)
-        if output_size < self.mem_size*n_mems: # to minimize this layer's size
-            self.key_to_hidden = nn.Sequential(nn.Linear(self.mem_size*n_mems, output_size),
-                                               nn.Linear(output_size, output_size * n_keys))
+        self.old = old_ver
+        if self.old:
+            self.key_to_hidden = nn.Linear(self.mem_size, output_size * self.n_keys)
         else:
-            self.key_to_hidden = nn.Linear(self.mem_size*n_mems, output_size * n_keys)
-        # if minimal_enc:
-        #     self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
-        # else:
-        #     self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
-        #                                                                         dropout=dropout, activation='gelu',
-        #                                                                         n_mems=n_mems), depth)
+            if output_size < self.mem_size*n_mems: # to minimize this layer's size
+                self.key_to_hidden = nn.Sequential(nn.Linear(self.mem_size*n_mems, output_size),
+                                                   nn.Linear(output_size, output_size * self.n_keys))
+            else:
+                self.key_to_hidden = nn.Linear(self.mem_size*n_mems, output_size * self.n_keys)
 
-        self.key_enc = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
-                                                                  dropout=dropout, activation='gelu'), depth)
+        if self.simple_zs_use:
+            self.key_inputs = nn.Embedding(n_mems, output_size).weight
+            self.key_enc = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
+                                                                      dropout=dropout, activation='gelu'), depth)
         self.transformer_dec = QKVTransformerDecoder(
             QKVTransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size, dropout=dropout,
                                        activation='gelu'), depth)
         assert (memory is None and key is None) or (memory is not None and key is not None), "if you specify memory" \
                                                                                              " variables, also specify" \
                                                                                              " key variables"
-        self.key_inputs = nn.Embedding(n_mems, output_size).weight
         self.memory, self.key, self.targets = memory, key, targets
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
@@ -955,7 +956,10 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
             mem_ids = mem_ids.unsqueeze(0)
         memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
-        key = key.view((*key.shape[:-1], 1, self.mem_size*self.n_mems))
+        if self.old:
+            key = key.view((*key.shape[:-1], 1, self.mem_size))
+        else:
+            key = key.view((*key.shape[:-1], 1, self.mem_size*self.n_mems))
         key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
@@ -973,9 +977,10 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         memory = memory.transpose(-2, 0)
         # memory = self.transformer_enc(memory)
         key = key.transpose(-2, 0)
-        key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
-                                                         self.key_inputs.shape[1])
-        key = self.key_enc(tgt=key_inputs, memory=key)
+        if self.simple_zs_use:
+            key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
+                                                             self.key_inputs.shape[1])
+            key = self.key_enc(tgt=key_inputs, memory=key)
 
         # This conditioned is not checked by the transformer module architecture
         assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
