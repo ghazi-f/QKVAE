@@ -977,7 +977,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         memory = memory.transpose(-2, 0)
         # memory = self.transformer_enc(memory)
         key = key.transpose(-2, 0)
-        if self.simple_zs_use:
+        if not self.simple_zs_use:
             key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
                                                              self.key_inputs.shape[1])
             key = self.key_enc(tgt=key_inputs, memory=key)
