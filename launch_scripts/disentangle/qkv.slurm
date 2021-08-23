@@ -134,6 +134,112 @@
 # --data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
 # done
 
-srun python qkv_train.py --test_name "Disentanglement/ParaMinLen4" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.01 --n_latents 16 \
---data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
-done
+#srun python qkv_train.py --test_name "Disentanglement/ParaMinLen4" --kl_beta 0.5 --kl_beta_zs 0.01 --kl_beta_zg 0.01 --n_latents 16 \
+#--data paranmt --n_epochs 20 --graph HQKV --max_elbo_choice 6 --n_keys 16 --max_len 20 --anneal_kl_type sigmoid
+#done
+
+
+# ========= Pre-Final Launches =========
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/ParaQKV_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data paranmt\
+# --n_epochs 5 --graph QKV --max_elbo_choice 6 --max_len 40 --init_len 12 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/YelpQKV_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+#--n_epochs 20 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/ParaQKV2_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data paranmt\
+# --n_epochs 5 --graph QKV --max_elbo_choice 6 --max_len 40 --init_len 12 --kl_beta_zs 0.1 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/YelpQKV2_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+#--n_epochs 20 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.1 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/ParaHQKV_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data paranmt\
+# --n_epochs 5 --graph HQKV --max_elbo_choice 6 --max_len 40 --init_len 12 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/YelpHQKV_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+#--n_epochs 20 --graph HQKV --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/ParaDisc_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data paranmt\
+# --n_epochs 5 --graph HQKVDiscZs --max_elbo_choice 6 --max_len 40 --init_len 12 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done
+
+
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/YelpDisc_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+#--n_epochs 20 --graph HQKVDiscZs --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done

@@ -16,11 +16,12 @@ from components.criteria import *
 parser = argparse.ArgumentParser()
 from torch.nn import MultiheadAttention
 # Training and Optimization
-k, kz, klstm = 2 , 4, 2
+k, kz, klstm = 2, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt'], type=str)
 parser.add_argument("--csv_out", default='disentqkv.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
+parser.add_argument("--init_len", default=None, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=20, type=int)
@@ -81,13 +82,13 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/ParaMinLen"
+    flags.test_name = "nliLM/ParaDisc1"
     flags.data = "paranmt"
     flags.n_latents = [16]
     flags.n_keys = 16
-    flags.graph ="HQKV"  # "Vanilla"
+    flags.graph ="QKV"  # "Vanilla"
     # flags.losses = "LagVAE"
-    flags.kl_beta = 0.3
+    flags.kl_beta = 0.4
     flags.kl_beta_zg = 0.1
     flags.kl_beta_zs = 0.01
     # flags.encoder_h = 768
@@ -96,7 +97,7 @@ if False:
     # flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 6000, 500
     # flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 6000, 500
     flags.word_dropout = 0.4
-    flags.anneal_kl_type = "sigmoid"
+    # flags.anneal_kl_type = "sigmoid"
     # flags.encoder_l = 4
     # flags.decoder_l = 4
 
@@ -112,7 +113,6 @@ if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
     flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
 
 
-
 OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.AdamW}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)}}[flags.optimizer]
@@ -121,7 +121,8 @@ OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100
 GRAPH = {"Vanilla": get_vanilla_graph,
          "IndepInfer": get_structured_auto_regressive_indep_graph,
          "QKV": get_qkv_graph2,
-         "HQKV": get_hqkv_graph}[flags.graph]
+         "HQKV": get_hqkv_graph,
+         "HQKVDiscZs": get_hqkv_graph_discrete_zs}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
@@ -130,7 +131,6 @@ if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
 Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "paranmt": ParaNMTCuratedData}[flags.data]
-INIT_LEN = 12
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -183,15 +183,14 @@ def main():
         model.cuda(DEVICE)
 
     # Redefining examples lengths:
-    data.redefine_max_len(INIT_LEN)
-    h_params.max_len = INIT_LEN
+    if flags.init_len is not None:
+        data.redefine_max_len(flags.init_len)
+        h_params.max_len = flags.init_len
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
     total_unsupervised_val_samples = len(data.val_iter)*(BATCH_SIZE/data.divide_bs)
     print("Unsupervised training examples: ", total_unsupervised_train_samples)
     print("Unsupervised val examples: ", total_unsupervised_val_samples)
-    current_time = time()
-    #print(model)
     number_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("Number of parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     number_parameters = sum(p.numel() for p in model.infer_bn.parameters() if p.requires_grad)
@@ -200,21 +199,20 @@ def main():
     print("Generation parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     number_parameters = sum(p.numel() for p in model.word_embeddings.parameters() if p.requires_grad)
     print("Embedding parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
-    min_perp = 1e20
-    wait_count = 0
+
+    current_time = time()
     loss = torch.tensor(1e20)
     mean_loss = 0
-    stabilize_epochs = 0
-    prev_mi = 0
     # model.eval()
     # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
     # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
     # model.get_disentanglement_summaries2(data.val_iter, 200)
+    # model.step = 8000
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
+        # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
-            #if i >3500: break # limiting epoch iters
             if training_batch.text.shape[1] < 2: continue
 
             if model.step == h_params.anneal_kl[0]:
@@ -227,6 +225,7 @@ def main():
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
             loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]})
 
+            # ---------------------- In-training metric calculations ---------------------------------------------------
             mean_loss += loss
             if i % 30 == 0:
                 mean_loss /= 30
@@ -245,24 +244,23 @@ def main():
                     model({'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]})
                 model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
+            # ----------------------------------------------------------------------------------------------------------
                 model.train()
-            # if model.step >= 7000:
-            #     h_params.max_elbo = [flags.max_elbo_choice, flags.max_elbo2]
             current_time = time()
+        # ============================= EPOCH-WISE EVAL ================================================================
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0]:  # and ((data.n_epochs % 3) == 0):
             model.eval()
             pp_ub = model.get_perplexity(data.val_iter)
             print("perplexity is {} ".format(pp_ub))
-            if flags.data == "yelp":
-                max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
-                print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
-            if flags.data == "paranmt":
-                orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter)
-                print("orig_mod_bleu: {}, para_mod_bleu: {}, rec_bleu: {} ".format(orig_mod_bleu, para_mod_bleu, rec_bleu))
-            # else:
-            # dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
-            # print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
+            # if flags.data == "yelp":
+            #     max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
+            #     print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
+            # if flags.data == "paranmt":
+            #     orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter)
+            #     print("orig_mod_bleu: {}, para_mod_bleu: {}, rec_bleu: {} ".format(orig_mod_bleu, para_mod_bleu, rec_bleu))
+
+            print("=========== Old disentanglement scores ========================")
             val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
                 = model.get_disentanglement_summaries2(data.val_iter, 200)
             print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
@@ -271,6 +269,12 @@ def main():
             print("Decoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_dec_lab_wise_disent,
                                                                            sum(val_dec_lab_wise_disent.values()),
                                                                                       val_decoder_Ndisent_vars))
+
+            print("=========== New syntax disentanglement scores ========================")
+            val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
+            decoder_syn_disent_scores = model.get_swap_tma(n_samples=200, batch_size=50, beam_size=2)
+            print("Encoder Syntax Disentanglement Scores: ", val_encoder_syn_disent_scores)
+            print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
 
             # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
@@ -282,19 +286,9 @@ def main():
             #     model.aggressive = False
             # prev_mi = val_mi
 
-            # if pp_ub < min_perp:
-            #     print('Saving The model ..')
-            #     min_perp = pp_ub
-            #     model.save()
-            #     wait_count = 0
-            # else:
-            #     wait_count += 1
             if flags.save_all:
                 print('Saving The model ..')
                 model.save()
-
-            # if wait_count == flags.wait_epochs*2:
-            #     break
 
             model.train()
         data.reinit_iterator('valid')
@@ -302,23 +296,33 @@ def main():
     print("================= Finished training : Getting Scores on test set ============")
     model.eval()
 
+    print("================= Old Disentanglement Scores ============")
     val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
         = model.get_disentanglement_summaries2(data.val_iter)
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
-                                                                   sum(val_enc_lab_wise_disent.values()),
+                                                                              sum(val_enc_lab_wise_disent.values()),
                                                                               val_encoder_Ndisent_vars))
     print("Decoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_dec_lab_wise_disent,
-                                                                   sum(val_dec_lab_wise_disent.values()),
+                                                                              sum(val_dec_lab_wise_disent.values()),
                                                                               val_decoder_Ndisent_vars))
     test_dec_lab_wise_disent, test_enc_lab_wise_disent, test_decoder_Ndisent_vars, test_encoder_Ndisent_vars\
         = model.get_disentanglement_summaries2(data.test_iter)
     data.reinit_iterator('test')
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_enc_lab_wise_disent,
-                                                                   sum(test_enc_lab_wise_disent.values()),
+                                                                              sum(test_enc_lab_wise_disent.values()),
                                                                               test_encoder_Ndisent_vars))
     print("Decoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_dec_lab_wise_disent,
-                                                                   sum(test_dec_lab_wise_disent.values()),
+                                                                              sum(test_dec_lab_wise_disent.values()),
                                                                               test_decoder_Ndisent_vars))
+    print("=========== New syntax disentanglement scores ========================")
+    val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
+    test_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="test")
+    decoder_syn_disent_scores = model.get_swap_tma()
+    print("Encoder Syntax Disentanglement Scores: ", val_encoder_syn_disent_scores)
+    print("Encoder Syntax Disentanglement Scores: ", test_encoder_syn_disent_scores)
+    print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
+
+    print("=========== General VAE Language Modeling Metrics ========================")
     pp_ub = model.get_perplexity(data.val_iter)
     test_pp_ub = model.get_perplexity(data.test_iter)
     print("Perplexity: {}".format(test_pp_ub))
@@ -326,9 +330,11 @@ def main():
     test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
     relations = ['subj', 'verb', 'dobj', 'pobj']
     temps = ['syntemp', 'lextemp']
+    enc_tasks, dec_tasks = ["template", "paraphrase"], ["tma2", "tma3", "bleu"]
+    enc_vars, dec_vars = ["zs", "zc"], ["zs", "zc", "copy"]
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
-            f.write('\t'.join(['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents', 'n_keys',
+            label_line = ['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents', 'n_keys',
                                'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
                               'dev_tot_en_disent', 'dev_dec_disent_subj', 'dev_dec_disent_verb', 'dev_dec_disent_dobj',
                               'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
@@ -339,9 +345,17 @@ def main():
                               'test_dec_disent_syntemp', 'test_dec_disent_lextemp',
                               'test_dec_disent_pobj', 'test_enc_disent_subj', 'test_enc_disent_verb', 'test_enc_disent_dobj',
                               'test_enc_disent_pobj', 'test_rec_error', 'test_decoder_Ndisent_vars', 'test_encoder_Ndisent_vars',
-                              'dev_mi', 'test_mi'])+'\n')
+                              'dev_mi', 'test_mi']
+            for t in enc_tasks:
+                for v in enc_vars:
+                    label_line.append("_".join([v, t, "dev", "score"]))
+                    label_line.append("_".join([v, t, "test", "score"]))
+            for t in dec_tasks:
+                for v in dec_vars:
+                    label_line.append("_".join([v, t, "score"]))
+            f.write('\t'.join(label_line)+'\n')
     with open(flags.csv_out, 'a') as f:
-        f.write('\t'.join([flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
+        value_line = [flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
                            str(flags.kl_beta), str(flags.n_latents), str(flags.n_keys),
                            str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum(val_dec_lab_wise_disent.values())),
                            str(sum(val_enc_lab_wise_disent.values())),
@@ -353,8 +367,15 @@ def main():
                            *[str(test_dec_lab_wise_disent[k]) for k in relations+temps],
                            *[str(test_enc_lab_wise_disent[k]) for k in relations], str(test_rec),
                            str(test_decoder_Ndisent_vars), str(test_encoder_Ndisent_vars), str(val_mi), str(test_mi)
-                         ])+'\n')
-
+                      ]
+        for t in enc_tasks:
+            for v in enc_vars:
+                value_line.append(str(val_encoder_syn_disent_scores[t][v]))
+                value_line.append(str(test_encoder_syn_disent_scores[t][v]))
+        for t in dec_tasks:
+            for v in dec_vars:
+                value_line.append(str(decoder_syn_disent_scores[t][v]))
+        f.write('\t'.join(value_line)+'\n')
 
     print("Finished training !")
 
