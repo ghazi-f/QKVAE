@@ -959,7 +959,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         if self.old:
             key = key.view((*key.shape[:-1], 1, self.mem_size))
         else:
-            key = key.view((*key.shape[:-1], 1, self.mem_size*self.n_mems))
+            key = key.view((*key.shape[:-1], self.mem_size*self.n_mems))
         key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
