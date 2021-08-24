@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpHQKV
+#SBATCH --job-name=YelpDisc
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpHQKV.txt
-#SBATCH --error=./YelpHQKV.err
+#SBATCH --output=./YelpDisc.txt
+#SBATCH --error=./YelpDisc.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -206,17 +206,17 @@
 #done
 
 
-for NL in 4 8 16
-do
-for BETA in 0.3 0.4 0.5
-do
-for ITER in 1 2 3
-do
-srun python qkv_train.py --test_name "Disentanglement/YelpHQKV_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
- --n_epochs 20 --graph HQKV --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
-done
-done
-done
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/YelpHQKV_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+# --n_epochs 20 --graph HQKV --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+#done
+#done
+#done
 
 
 #for NL in 4 8 16
@@ -232,14 +232,14 @@ done
 #done
 
 
-#for NL in 4 8 16
-#do
-#for BETA in 0.3 0.4 0.5
-#do
-#for ITER in 1 2 3
-#do
-#srun python qkv_train.py --test_name "Disentanglement/YelpDisc_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
-# --n_epochs 20 --graph HQKVDiscZs --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
-#done
-#done
-#done
+for NL in 4 8 16
+do
+for BETA in 0.3 0.4 0.5
+do
+for ITER in 1 2 3
+do
+srun python qkv_train.py --test_name "Disentanglement/YelpDisc_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+ --n_epochs 20 --graph HQKVDiscZs --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+done
+done
+done
