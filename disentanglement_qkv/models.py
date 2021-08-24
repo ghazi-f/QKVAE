@@ -295,7 +295,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             if has_struct:
                 z_input['zs'] = torch.cat([zst_samples_1, zst_samples_2]).unsqueeze(1)
             if has_zg:
-                z_input['zg'] = torch.cat([orig_zg_sample1, orig_zg_sample2]).unsqueeze(1)
+                z_input['zg'] = torch.cat([orig_zg_sample1.repeat(n_samples+1, 1),
+                                           orig_zg_sample2.repeat(n_samples+1, 1)]).unsqueeze(1)
                 # z_input['zg'] = orig_zg_sample.repeat(2*n_samples+2, 1).unsqueeze(1)
 
             # Normal Autoregressive generation
