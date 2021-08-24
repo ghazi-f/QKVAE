@@ -86,7 +86,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         except ValueError as e:
             print(self.name)
             print({k: v.shape for k, v in x_params.items()})
-            print({k: v.shape for k, v in x_params.items()})
+            print({k: v for k, v in x_params.items()})
             raise e
         # Applying STL
         if self.stl:
