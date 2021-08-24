@@ -239,7 +239,7 @@ do
 for ITER in 1 2 3
 do
 srun python qkv_train.py --test_name "Disentanglement/YelpDisc_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
---n_epochs 20 --graph HQKVDiscZs --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
+ --n_epochs 20 --graph HQKVDiscZs --max_elbo_choice 6 --kl_beta_zs 0.01 --kl_beta_zg 0.1
 done
 done
 done
