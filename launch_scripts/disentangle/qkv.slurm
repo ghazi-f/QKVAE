@@ -180,17 +180,17 @@
 #done
 
 
-for NL in 4 8 16
-do
-for BETA in 0.3 0.4 0.5
-do
-for ITER in 1 2 3
-do
-srun python qkv_train.py --test_name "Disentanglement/YelpQKV2_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
---n_epochs 20 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.1 --kl_beta_zg 0.1
-done
-done
-done
+#for NL in 4 8 16
+#do
+#for BETA in 0.3 0.4 0.5
+#do
+#for ITER in 1 2 3
+#do
+#srun python qkv_train.py --test_name "Disentanglement/YelpQKV2_beta$BETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+#--n_epochs 20 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.1 --kl_beta_zg 0.1
+#done
+#done
+#done
 
 
 for NL in 4 8 16
