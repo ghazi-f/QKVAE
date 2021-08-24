@@ -1299,10 +1299,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     #     return results_zs, results_zc
 
     def _get_syn_disent_encoder_hard(self, split="valid", batch_size=100):
-        pair_fn = {"valid": ".data\\paranmt2\\dev_input.txt",
-                   "test": ".data\\paranmt2\\test_input.txt"}[split]
-        ref_fn = {"valid": ".data\\paranmt2\\dev_ref.txt",
-                  "test": ".data\\paranmt2\\test_ref.txt"}[split]
+        pair_fn = {"valid": os.path.join(".data", "paranmt2", "dev_input.txt"),
+                   "test": os.path.join(".data", "paranmt2", "test_input.txt")}[split]
+        ref_fn = {"valid": os.path.join(".data", "paranmt2", "dev_ref.txt"),
+                  "test": os.path.join(".data", "paranmt2", "test_ref.txt")}[split]
         t1, t2, t3 = [], [], []
         with open(pair_fn, encoding="UTF-8") as f:
             for i, l in enumerate(f):
@@ -1339,10 +1339,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return 1 - zs_acc, zc_acc
 
     def _get_syn_disent_encoder_easy(self, split="valid", batch_size=100):
-        template_file = {"valid": ".data\\paranmt2\\dev_input.txt",
-                         "test": ".data\\paranmt2\\test_input.txt"}[split]
-        paraphrase_file = {"valid": ".data\\paranmt2\\dev.txt",
-                           "test": ".data\\paranmt2\\test.txt"}[split]
+        template_file = {"valid": os.path.join(".data", "paranmt2", "dev_input.txt"),
+                         "test": os.path.join(".data", "paranmt2", "test_input.txt")}[split]
+        paraphrase_file = {"valid": os.path.join(".data", "paranmt2", "dev.txt"),
+                           "test": os.path.join(".data", "paranmt2", "test.txt")}[split]
         file_names = {"template": template_file, "paraphrase": paraphrase_file}
         accuracies = {"template": {}, "paraphrase": {}}
         for task, file_n in file_names.items():
