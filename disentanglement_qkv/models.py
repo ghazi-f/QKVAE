@@ -1699,10 +1699,12 @@ def get_lin_parse_tree(sens):
     return lin_parses
 
 
-def template_match(l1, l2, lv, verbose=0):
-    # docs1, docs2 = nlp.pipe(l1), nlp.pipe(l2)
-    # temps1 = [truncate_tree(list(doc.sents)[0]._.parse_string, lv) for doc in docs1]
-    # temps2 = [truncate_tree(list(doc.sents)[0]._.parse_string, lv) for doc in docs2]
+def template_match(l1, l2, lv, verbose=0, filter_empty=True):
+    if filter_empty:
+        not_empty1 = [any([c != " " for c in li1]) for li1 in l1]
+        not_empty2 = [any([c != " " for c in li2]) for li2 in l2]
+        l1 = [li1 for li1, ne1, ne2 in zip(l1, not_empty1, not_empty2) if ne1 and ne2]
+        l2 = [li2 for li2, ne1, ne2 in zip(l2, not_empty1, not_empty2) if ne1 and ne2]
     docs1, docs2 = get_lin_parse_tree(l1), get_lin_parse_tree(l2)
     temps1 = [truncate_tree(doc, lv) for doc in docs1]
     temps2 = [truncate_tree(doc, lv) for doc in docs2]
