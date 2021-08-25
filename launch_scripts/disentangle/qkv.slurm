@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ParaHQKV1
+#SBATCH --job-name=ParaHQKV2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./ParaHQKV1.txt
-#SBATCH --error=./ParaHQKV1.err
+#SBATCH --output=./ParaHQKV2.txt
+#SBATCH --error=./ParaHQKV2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -178,7 +178,7 @@ for ITER in 1 2 3
 do
 for NL in 4 8 16
 do
-for BETA in 0.5 #0.6 0.7
+for BETA in 0.6 0.7 #
 do
 for ZSBETA in 0.1 0.3
 do
