@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpHQKV1
+#SBATCH --job-name=YelpHQKV2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpHQKV1.txt
-#SBATCH --error=./YelpHQKV1.err
+#SBATCH --output=./YelpHQKV2.txt
+#SBATCH --error=./YelpHQKV2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -194,7 +194,7 @@ for ITER in 1 2 3
 do
 for NL in 4 8 16
 do
-for BETA in 0.5 #0.6 0.7
+for BETA in 0.6 0.7 #0.5
 do
 for ZSBETA in 0.1 0.3
 do
