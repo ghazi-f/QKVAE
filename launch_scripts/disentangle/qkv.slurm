@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpHQKV2
+#SBATCH --job-name=YelpHQKV
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpHQKV2.txt
-#SBATCH --error=./YelpHQKV2.err
+#SBATCH --output=./YelpHQKV.txt
+#SBATCH --error=./YelpHQKV.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -190,17 +190,32 @@
 #done
 
 
-for ITER in 1 2 3
-do
-for NL in 4 8 16
-do
-for BETA in 0.6 0.7 #0.5
-do
-for ZSBETA in 0.1 0.3
-do
-srun python qkv_train.py --test_name "Disentanglement2/YelpHQKV_beta$BETA.$ZSBETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
- --n_epochs 20 --graph HQKV --max_elbo_choice 6 --kl_beta_zs $ZSBETA --kl_beta_zg 0.1
-done
-done
-done
-done
+#for ITER in 1 2 3
+#do
+#for NL in 4 8 16
+#do
+#for BETA in 0.6 0.7 #0.5
+#do
+#for ZSBETA in 0.1 0.3
+#do
+#srun python qkv_train.py --test_name "Disentanglement2/YelpHQKV_beta$BETA.$ZSBETA.$ITER.$NL" --kl_beta $BETA --n_latents $NL --data yelp\
+# --n_epochs 20 --graph HQKV --max_elbo_choice 6 --kl_beta_zs $ZSBETA --kl_beta_zg 0.1
+#done
+#done
+#done
+#done
+
+# ========= Long Launches =========
+# Para
+#srun python qkv_train.py --test_name "Disentanglement2/ParaHQKV_beta0.5.0.3.1.16" --kl_beta 0.5 --n_latents 16 --data paranmt\
+# --n_epochs 200 --graph HQKV --max_elbo_choice 6 --max_len 40 --init_len 12 --kl_beta_zs 0.3 --kl_beta_zg 0.1
+
+#srun python qkv_train.py --test_name "Disentanglement2/ParaQKV_beta0.5.0.3.1.16" --kl_beta 0.5 --n_latents 16 --data paranmt\
+# --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --init_len 12 --kl_beta_zs 0.3 --kl_beta_zg 0.1
+
+# Yelp
+srun python qkv_train.py --test_name "Disentanglement2/YelpHQKV_beta0.5.0.3.1.16" --kl_beta 0.5 --n_latents 16 --data yelp\
+ --n_epochs 200 --graph HQKV --max_elbo_choice 6 --kl_beta_zs 0.3 --kl_beta_zg 0.1
+
+#srun python qkv_train.py --test_name "Disentanglement2/YelpQKV_beta0.5.0.3.1.16" --kl_beta 0.5 --n_latents 16 --data yelp\
+# --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.3 --kl_beta_zg 0.1

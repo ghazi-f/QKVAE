@@ -918,7 +918,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
             else:
                 self.key_to_hidden = nn.Linear(self.mem_size*n_mems, output_size * self.n_keys)
 
-        if self.simple_zs_use:
+        if not self.simple_zs_use:
             self.key_inputs = nn.Embedding(n_mems, output_size).weight
             self.key_enc = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
