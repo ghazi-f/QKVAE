@@ -361,7 +361,7 @@ def get_hqkv_graph_old(h_params, word_embeddings):
                                                                  key=['zs'], nheads=4, bidirectional=False,
                                                                  mem_size=int(z_sizes[0]/h_params.n_latents[0]),
                                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys,
-                                                                 old_ver=True)
+                                                                 old_ver=True, simple_zs_use=False)
     z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
                                           h_params.decoder_l, Gaussian.parameter_activations, nheads=4, sequence=None,
                                           memory=[z_gens[i].name], n_mems=h_params.n_latents[i],
