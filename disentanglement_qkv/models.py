@@ -1251,7 +1251,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             stoi = self.index[self.generated_v].stoi
             inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
             for i, sen in enumerate(sents):
-                for j, tok in enumerate(sen):
+                for j, tok in enumerate(sen.split()): # This must be changed for model that use more advanced tokenizers
                     inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
 
             self.infer_bn({'x': inputs})
@@ -1329,8 +1329,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 ezs2, ezc2 = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i])
                 ezs3, ezc3 = torch.cat([ezs3, ezs3i]), torch.cat([ezc3, ezc3i])
 
-        s13sims, s23sims = torch.cosine_similarity(ezs1, ezs3), torch.cosine_similarity(ezs2, ezs3)
-        c13sims, c23sims = torch.cosine_similarity(ezc1, ezc3), torch.cosine_similarity(ezc2, ezc3)
+        s13sims, s23sims = l2_sim(ezs1, ezs3), l2_sim(ezs2, ezs3)
+        c13sims, c23sims = l2_sim(ezc1, ezc3), l2_sim(ezc2, ezc3)
 
         zs_acc = np.mean(s13sims.cpu().detach().numpy() > s23sims.cpu().detach().numpy())
         zc_acc = np.mean(c13sims.cpu().detach().numpy() > c23sims.cpu().detach().numpy())
@@ -1370,8 +1370,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             ezs2, ezc2 = my_repeat(ezs2, rep_n), my_repeat(ezc2, rep_n)
             ezs3, ezc3 = ezs1[perm_idx], ezc1[perm_idx]
 
-            s12sims, s13sims = torch.cosine_similarity(ezs1, ezs2), torch.cosine_similarity(ezs1, ezs3)
-            c12sims, c13sims = torch.cosine_similarity(ezc1, ezc2), torch.cosine_similarity(ezc1, ezc3)
+            s12sims, s13sims = l2_sim(ezs1, ezs2), l2_sim(ezs1, ezs3)
+            c12sims, c13sims = l2_sim(ezc1, ezc2), l2_sim(ezc1, ezc3)
             syn_emb_sc = np.mean(s12sims.cpu().detach().numpy() > s13sims.cpu().detach().numpy())
             cont_emb_sc = np.mean(c12sims.cpu().detach().numpy() > c13sims.cpu().detach().numpy())
             accuracies[task] = {"zs": syn_emb_sc, "zc": cont_emb_sc}
@@ -1717,3 +1717,9 @@ def template_match(l1, l2, lv, verbose=0, filter_empty=True):
 
 def my_repeat(tens, n):
     return tens.unsqueeze(0).expand(n, *tens.shape).reshape(tens.shape[0]*n, *tens.shape[1:])
+
+
+def l2_sim(a, b):
+    dist = (a-b).square().sum(-1).sqrt()
+    sim = 1/(1+dist)
+    return sim
