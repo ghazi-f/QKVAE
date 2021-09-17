@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpQKV
+#SBATCH --job-name=YelpQKV2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpQKV.txt
-#SBATCH --error=./YelpKV.err
+#SBATCH --output=./YelpQKV2.txt
+#SBATCH --error=./YelpKV2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -220,8 +220,8 @@
 #srun python qkv_train.py --test_name "Disentanglement2/YelpHQKV_beta0.6.0.3.1.16" --kl_beta 0.6 --n_latents 16 --data yelp\
 # --n_epochs 200 --graph HQKV --max_elbo_choice 6 --kl_beta_zs 0.3 --kl_beta_zg 0.1
 
-srun python qkv_train.py --test_name "Disentanglement2/YelpQKV_beta0.6.0.3.1.16" --kl_beta 0.6 --n_latents 16 --data yelp\
- --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.3 --kl_beta_zg 0.1
-
-#srun python qkv_train.py --test_name "Disentanglement2/YelpQKV_beta0.6.0.3.1.32" --kl_beta 0.6 --n_latents 32 --data yelp\
+#srun python qkv_train.py --test_name "Disentanglement2/YelpQKV_beta0.6.0.3.1.16" --kl_beta 0.6 --n_latents 16 --data yelp\
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.3 --kl_beta_zg 0.1
+
+srun python qkv_train.py --test_name "Disentanglement2/YelpQKV_beta0.6.0.3.1.32" --kl_beta 0.6 --n_latents 32 --data yelp\
+ --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.3 --kl_beta_zg 0.1
