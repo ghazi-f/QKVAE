@@ -915,7 +915,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
             nn.Sequential(*([nn.Linear(self.mem_size, output_size * self.n_keys),
                              nn.GELU()] * depth)[:-1])
             k2h_layers = []
-            for _ in depth:
+            for _ in range(depth):
                 if output_size < self.mem_size * n_mems:  # to minimize this layer's size
                     k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size))
                     k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys))
