@@ -912,11 +912,19 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         if self.old:
             self.key_to_hidden = nn.Linear(self.mem_size, output_size * self.n_keys)
         else:
-            if output_size < self.mem_size*n_mems: # to minimize this layer's size
-                self.key_to_hidden = nn.Sequential(nn.Linear(self.mem_size*n_mems, output_size),
-                                                   nn.Linear(output_size, output_size * self.n_keys))
-            else:
-                self.key_to_hidden = nn.Linear(self.mem_size*n_mems, output_size * self.n_keys)
+            nn.Sequential(*([nn.Linear(self.mem_size, output_size * self.n_keys),
+                             nn.GELU()] * depth)[:-1])
+            k2h_layers = []
+            for _ in depth:
+                if output_size < self.mem_size * n_mems:  # to minimize this layer's size
+                    k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size))
+                    k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys))
+                    k2h_layers.append(nn.GELU())
+                else:
+                    k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size * self.n_keys))
+                    k2h_layers.append(nn.GELU())
+
+            self.key_to_hidden = nn.Sequential(*k2h_layers[:-1])
 
         if not self.simple_zs_use:
             self.key_inputs = nn.Embedding(n_mems, output_size).weight
