@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=DisOnto
+#SBATCH --job-name=SNLIReg1
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentNLIDeep.txt
-#SBATCH --error=./disentNLIDeep.err
+#SBATCH --output=./disentNLIReg1.txt
+#SBATCH --error=./disentNLIReg1.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
 # ================= FINAL EXP GROUP ==============================
 # Experiments on the SNLI Dataset
-#for BETA in 0.4 0.3
-#do
-#for ITER in 1 2 3 4 5
-#do
-#srun python disentangle_train.py --test_name "Disentanglement/FSNLIRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
-#done
-#done
+for BETA in 0.4 #0.3
+do
+for ITER in 1 2 3 4 5
+do
+srun python disentangle_train.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer
+done
+done
 
 
 ## Experiments on the SNLI Dataset
@@ -24,7 +24,7 @@
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/FSNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer
 #done
 #done
 
@@ -34,10 +34,10 @@
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/FSNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
-#srun python disentangle_train.py --test_name "Disentanglement/FSNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
-#srun python disentangle_train.py --test_name "Disentanglement/FSNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
-#srun python disentangle_train.py --test_name "Disentanglement/FSNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
 #done
 #done
 
