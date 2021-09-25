@@ -21,8 +21,8 @@ import itertools
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 
 import spacy_udpipe
-nlp = spacy_udpipe.load("en")
-# nlp = spacy.load("en_core_web_sm")
+# nlp = spacy_udpipe.load("en")
+nlp = spacy.load("en_core_web_sm")
 
 #predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/openie-model.2020.03.26.tar.gz")
 

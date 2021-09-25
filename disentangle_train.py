@@ -19,7 +19,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
-parser.add_argument("--csv_out", default='disentUD2.csv', type=str)
+parser.add_argument("--csv_out", default='disentICLR.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -48,7 +48,7 @@ parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"],
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "Discrete", "IndepInfer", "Normal", "NormalConGen",
                                                           "NormalSimplePrior", "Normal2",  "NormalLSTM"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
-parser.add_argument("--testing_iw_samples", default=5, type=int)
+parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
@@ -172,7 +172,8 @@ def main():
     prev_mi = 0
     # model.eval()
     # model.get_disentanglement_summaries2(data.test_iter, 200)
-    while data.train_iter is not None and False: # TODO: Remove this False !!
+    # print(model.get_perplexity(data.val_iter))
+    while data.train_iter is not None :# and False: # TODO: Remove this False !!
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
 
@@ -211,7 +212,7 @@ def main():
         data.reinit_iterator('valid')
         if model.step >= h_params.anneal_kl[0]:  # and ((data.n_epochs % 3) == 0):
             model.eval()
-            pp_ub = model.get_perplexity(data.val_iter)
+            pp_ub = 0.0  # model.get_perplexity(data.val_iter)
             print("perplexity is {} ".format(pp_ub))
             if flags.data == "yelp":
                 max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
@@ -220,7 +221,7 @@ def main():
             # dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
             # print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
             val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
-                = model.get_disentanglement_summaries_all(data.val_iter, 200)
+                = model.get_disentanglement_summaries2(data.val_iter, 200)
             print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                            sum(val_enc_lab_wise_disent.values()),
                                                                                       val_encoder_Ndisent_vars))
@@ -258,7 +259,7 @@ def main():
     model.eval()
 
     val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
-        = model.get_disentanglement_summaries_all(data.val_iter, n_samples=100000)
+        = model.get_disentanglement_summaries2(data.val_iter, n_samples=2000)
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                    sum(val_enc_lab_wise_disent.values()),
                                                                               val_encoder_Ndisent_vars))
@@ -266,7 +267,7 @@ def main():
                                                                    sum(val_dec_lab_wise_disent.values()),
                                                                               val_decoder_Ndisent_vars))
     test_dec_lab_wise_disent, test_enc_lab_wise_disent, test_decoder_Ndisent_vars, test_encoder_Ndisent_vars\
-        = model.get_disentanglement_summaries_all(data.test_iter, n_samples=100000)
+        = model.get_disentanglement_summaries2(data.test_iter, n_samples=2000)
     data.reinit_iterator('test')
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_enc_lab_wise_disent,
                                                                    sum(test_enc_lab_wise_disent.values()),
@@ -279,7 +280,8 @@ def main():
     print("Perplexity: {}".format(test_pp_ub))
     dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
-    relations = ["nsubj", "verb", "obj", "iobj"]#['subj', 'verb', 'dobj', 'pobj']
+    # relations = ["nsubj", "verb", "obj", "iobj"]
+    relations = ['subj', 'verb', 'dobj', 'pobj']
     temps = ['syntemp', 'lextemp']
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
