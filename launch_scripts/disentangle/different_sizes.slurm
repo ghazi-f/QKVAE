@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SNLIWide1
+#SBATCH --job-name=SNLIWide2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentNLIWide1.txt
-#SBATCH --error=./disentNLIWide1.err
+#SBATCH --output=./disentNLIWide2.txt
+#SBATCH --error=./disentNLIWide2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -20,7 +20,7 @@
 
 
 ## Experiments on the SNLI Dataset
-for BETA in  0.4 #0.3
+for BETA in  0.3 #0.4
 do
 for ITER in 1 2 3 4 5
 do
