@@ -870,6 +870,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         var_wise_scores_struct = df.groupby('alteration_id').mean()[['subj_struct', 'verb_struct',
                                                                      'dobj_struct', 'pobj_struct']]
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
+        # renormalizing
+        struct_array = np.array(var_wise_scores_struct)
+        struct_array = 1-np.concatenate([struct_array, np.zeros((sum(self.h_params.n_latents), 2))], axis=1)
+        var_wise_scores = var_wise_scores/struct_array
+
         disent_score = 0
         lab_wise_disent = {}
         dec_disent_vars = {}
