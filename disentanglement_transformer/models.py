@@ -822,7 +822,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return diffs, same_struct, \
                syn_temp_diff, lex_temp_diff
 
-    def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100):
+    def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100, delta_drop=False):
         stats = []
         # Generating n_samples sentences
         text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
@@ -865,15 +865,20 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                   'subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct', 'same_struct', 'syntemp_diff',
                   'lextemp_diff']
         df = pd.DataFrame(stats, columns=header)
+        if not delta_drop:
+            for diff_lab, struct_lab in zip(['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff'],
+                                            ['subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct']):
+                df[diff_lab] = [d or s for d, s in zip(df[diff_lab], df[struct_lab])]
         var_wise_scores = df.groupby('alteration_id').mean()[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
                                                               'syntemp_diff', 'lextemp_diff']]
         var_wise_scores_struct = df.groupby('alteration_id').mean()[['subj_struct', 'verb_struct',
                                                                      'dobj_struct', 'pobj_struct']]
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
-        # renormalizing
-        struct_array = np.array(var_wise_scores_struct)
-        struct_array = 1-np.concatenate([struct_array, np.zeros((sum(self.h_params.n_latents), 2))], axis=1)
-        var_wise_scores = var_wise_scores/struct_array
+        if delta_drop:
+            # renormalizing
+            struct_array = np.array(var_wise_scores_struct)
+            struct_array = 1-np.concatenate([struct_array, np.zeros((sum(self.h_params.n_latents), 2))], axis=1)
+            var_wise_scores = var_wise_scores/struct_array
 
         disent_score = 0
         lab_wise_disent = {}

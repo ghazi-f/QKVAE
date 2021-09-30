@@ -19,7 +19,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
-parser.add_argument("--csv_out", default='disentICLR2.csv', type=str)
+parser.add_argument("--csv_out", default='disentICLRNoDrop.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -170,8 +170,8 @@ def main():
     mean_loss = 0
     stabilize_epochs = 0
     prev_mi = 0
-    model.eval()
-    model.get_disentanglement_summaries2(data.test_iter, 200)
+    # model.eval()
+    # print(model.get_disentanglement_summaries2(data.test_iter, 200))
     # print(model.get_perplexity(data.val_iter))
     while data.train_iter is not None  and False: # TODO: Remove this False !!
         for i, training_batch in enumerate(data.train_iter):
