@@ -891,7 +891,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             for j in range(1, real_indices.shape[1]):
                    real_indices[i, j] = real_indices[i, j-1] +(1 if text[i][j].startswith('Ġ')
                                                                  or text[i][j].startswith('<') else 0)
-        real_argmaxes = torch.zeros_like(maxes)
+        real_argmaxes = torch.zeros_like(torch.tensor(maxes))
         for i in range(real_argmaxes.shape[0]):
             real_argmaxes[i] = real_indices[i, maxes[i]]
         return real_argmaxes
