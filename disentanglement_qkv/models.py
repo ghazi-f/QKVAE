@@ -854,11 +854,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
         ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = True, True
-        ConditionalCoattentiveTransformerLink2.get_att = True
+        ConditionalCoattentiveTransformerLink2.get_att, QKVBartTransformerLink.get_att = True, True
+        CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = True, True
         self.infer_bn({'x': text_in})
         CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
         ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = False, False
-        ConditionalCoattentiveTransformerLink2.get_att = False
+        ConditionalCoattentiveTransformerLink2.get_att, QKVBartTransformerLink.get_att = False, False
+        CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = False, False
         all_att_weights = []
         for i in range(len(self.h_params.n_latents)):
             trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
