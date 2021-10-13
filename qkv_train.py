@@ -8,7 +8,8 @@ import torch
 from torch import optim
 import numpy as np
 
-from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData
+from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
+    BARTParaNMT
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -46,6 +47,9 @@ parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
 parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false')
 parser.set_defaults(minimal_enc=False)
+parser.add_argument('--use_bart', dest='use_bart', action='store_true')
+parser.add_argument('--no-use_bart', dest='use_bart', action='store_false')
+parser.set_defaults(use_bart=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "HQKV", "HQKVDiscZs"],
                     type=str)
@@ -64,7 +68,7 @@ parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
-parser.add_argument("--max_elbo_choice", default=10, type=int)
+parser.add_argument("--max_elbo_choice", default=6, type=int)
 parser.add_argument("--kl_beta", default=0.3, type=float)
 parser.add_argument("--kl_beta_zs", default=0.1, type=float)
 parser.add_argument("--kl_beta_zg", default=0.1, type=float)
@@ -79,11 +83,13 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
-    flags.batch_size = 128
+if True:
+    # flags.optimizer="sgd"
+    flags.use_bart = True
+    flags.batch_size = 32
     flags.grad_accu = 1
     flags.max_len = 20
-    flags.test_name = "nliLM/ParaDisc1"
+    flags.test_name = "nliLM/TestBart"
     flags.data = "paranmt"
     flags.n_latents = [16]
     flags.n_keys = 16
@@ -108,22 +114,29 @@ if False:
     # flags.encoder_h = 256
     # flags.decoder_h = 256
 
+if flags.use_bart:
+    flags.z_size = 768
+    flags.decoder_h = 768
+    flags.encoder_h = 768
+    flags.embedding_dim = 768
+
+
 if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
     flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
     flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
     flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
 
 
-OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.AdamW}[flags.optimizer]
+OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)}}[flags.optimizer]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
          "IndepInfer": get_structured_auto_regressive_indep_graph,
-         "QKV": get_qkv_graph2,
-         "HQKV": get_hqkv_graph,
-         "HQKVDiscZs": get_hqkv_graph_discrete_zs}[flags.graph]
+         "QKV": get_qkv_graphBART if flags.use_bart else get_qkv_graph2,
+         "HQKV": get_qkv_graphBART if flags.use_bart else get_hqkv_graph,
+         "HQKVDiscZs": get_qkv_graphBART if flags.use_bart else get_hqkv_graph_discrete_zs}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
@@ -131,7 +144,9 @@ if flags.graph == "Vanilla":
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "paranmt": ParaNMTCuratedData}[flags.data]
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData,
+        "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
+        "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -176,10 +191,10 @@ def main():
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
     print("Loss Type: ", flags.losses)
     if flags.losses == 'LagVAE':
-        model = LaggingDisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data,
+        model = LaggingDisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data,
                                                      enc_iter=data.enc_train_iter)
     else:
-        model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=flags.data)
+        model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
@@ -214,6 +229,7 @@ def main():
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
+            print("Training iter ", i)
             if training_batch.text.shape[1] < 2: continue
 
             if model.step == h_params.anneal_kl[0]:

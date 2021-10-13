@@ -7,10 +7,12 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
+from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp
 from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
-    ConditionalCoattentiveQKVTransformerLink, CoattentiveTransformerLink2, ConditionalCoattentiveTransformerLink2
+    ConditionalCoattentiveQKVTransformerLink, CoattentiveTransformerLink2, ConditionalCoattentiveTransformerLink2, \
+    CoattentiveBARTTransformerLink, ConditionalCoattentiveBARTTransformerLink, QKVBartTransformerLink, BartModel
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
@@ -28,6 +30,8 @@ import itertools
 from datasets import load_metric
 from supar import Parser
 
+BART_GRAPHS = [] #TODO: fill_in graphs
+
 const_parser = Parser.load('crf-con-en')
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 bleu_score = load_metric("bleu").compute
@@ -44,14 +48,18 @@ nlp = spacy.load("en_core_web_sm")
 class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
         self.dataset = dataset
+        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp]])
         super(DisentanglementTransformerVAE, self).__init__()
 
         self.h_params = h_params
-        self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
-        nn.init.uniform_(self.word_embeddings.weight, -1., 1.)
-        if wvs is not None:
-            self.word_embeddings.weight.data.copy_(wvs)
-            #self.word_embeddings.weight.requires_grad = False
+        if self.uses_bart:
+            self.word_embeddings = BartModel.from_pretrained('facebook/bart-base').shared
+        else:
+            self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
+            nn.init.uniform_(self.word_embeddings.weight, -1., 1.)
+            if wvs is not None:
+                self.word_embeddings.weight.data.copy_(wvs)
+                #self.word_embeddings.weight.requires_grad = False
 
         # Getting vertices
         vertices, _, self.generated_v = h_params.graph_generator(h_params, self.word_embeddings)
@@ -124,6 +132,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         if not self.h_params.contiguous_lm:
             self.infer_last_states, self.gen_last_states = None, None
 
+        self.infer_bn.clear_values(), self.gen_bn.clear_values()
+        torch.cuda.empty_cache()
         if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
             # Applying gradients and gradient clipping if accumulation is over
             torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
@@ -328,17 +338,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             x_hat_params = torch.argmax(x_hat_params, dim=-1)
         assert x_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(x_hat_params.shape)
         if not gen:
-            text = ' |||| '.join([' '.join([self.index[self.generated_v].itos[w]
-                                            for w in sen]).replace('!', '<eos>').replace('.', '<eos>')
-                                 .replace('?', '<eos>')#.split('<eos>')[0]
-                                  for sen in x_hat_params]).replace('<pad>', '_').replace('_unk', '<?>')\
+            text = ' |||| '.join([self.decode_indices(sen) for sen in x_hat_params]).replace('<pad>', '_').replace('_unk', '<?>')\
                 .replace('<eos>', '\n').replace(' ğ', '')
         else:
-            samples = [' '.join([self.index[self.generated_v].itos[w]
-                                 for w in sen]).replace('!', '<eos>').replace('.', '<eos>').replace('?', '<eos>')
-                           .split('<eos>')[0].replace('<go>', '').replace('</go>', '')
-                       for sen in x_hat_params]
-            if self.dataset == 'yelp':
+            samples = [self.decode_indices(sen) for sen in x_hat_params]
+            if isinstance(self.dataset, BinaryYelp):
                 samples = [sen.split('<eos>')[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
@@ -364,13 +368,18 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             x_hat_params = torch.argmax(x_hat_params, dim=-1)
         assert x_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(x_hat_params.shape)
 
-        samples = [' '.join([vocab_index.itos[w]
-                             for w in sen]).replace('!', '<eos>').replace('.', '<eos>').replace('?', '<eos>')
-                       .split('<eos>')[0].replace('<go>', '').replace('</go>', '').replace(' ğ', '')
-                       .replace('<pad>', '_').replace('_unk', '<?>')
-                   for sen in x_hat_params]
+        samples = [self.decode_indices(sen) for sen in x_hat_params]
 
         return samples
+
+    def decode_indices(self, sen):
+        if self.uses_bart:
+            return self.dataset.tokenizer.decode(sen)
+        else:
+            return (' '.join([self.index[self.generated_v].itos[w]
+                             for w in sen]).replace('!', '<eos>').replace('.', '<eos>').replace('?', '<eos>')
+                    .split('<eos>')[0].replace('<go>', '').replace('</go>', '').replace(' ğ', '')
+                       .replace('<pad>', '_').replace('_unk', '<?>'))
 
     def get_perplexity(self, iterator):
         with torch.no_grad():
@@ -835,9 +844,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def get_att_and_rel_idx(self, text_in):
         max_len = text_in.shape[-1]
-        text_sents = [' '.join([self.index[self.generated_v].itos[w]
-                                for w in s]).replace(' <pad>', '').replace(' <eos>', '')
-                      for s in text_in]
+        text_sents = [self.decode_indices(s) for s in text_in]
         # Getting relations' positions
         rel_idx = [out['idx'] for out in shallow_dependencies(text_sents)]
         # Getting layer wise attention values
@@ -863,7 +870,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 att_out = torch.cat([soft_att_vals[:, rank,
                                      :max_len], soft_att_vals[:, rank, max_len:].sum(-1).unsqueeze(-1)]
                                     , -1)
-                if lv_layer == 2:  # TODO: update this part for structured inference networks
+                if lv_layer == 2:
                     att_out[..., -1] *= 0
                 var_att_weights.append(att_out.cpu().detach().numpy())
             att_weights.append(var_att_weights)
@@ -872,10 +879,24 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         att_maxes = att_vals.argmax(-1).tolist()
         return rel_idx, att_maxes
 
+    def _get_real_sent_argmaxes(self, sents, maxes):
+        text = [[self.index[self.generated_v].itos[w] for w in sen] for sen in sents]
+        real_indices = torch.zeros_like(sents)
+        for i in range(real_indices.shape[0]):
+            for j in range(1, real_indices.shape[1]):
+                   real_indices[i, j] = real_indices[i, j-1] +(1 if text[i][j].startswith('Ġ')
+                                                                 or text[i][j].startswith('<') else 0)
+        real_argmaxes = torch.zeros_like(maxes)
+        for i in range(real_argmaxes.shape[0]):
+            real_argmaxes[i] = real_indices[i, maxes[i]]
+        return real_argmaxes
+
     def get_encoder_disentanglement_score(self, data_iter):
         rel_idx, att_maxes = [], []
         for i, batch in enumerate(tqdm(data_iter, desc="Getting model relationship accuracy")):
             rel_idx_i, att_maxes_i = self.get_att_and_rel_idx(batch.text[..., 1:])
+            if self.uses_bart:
+                att_maxes_i = self._get_real_sent_argmaxes(batch.text[..., 1:], att_maxes_i)
             rel_idx.extend(rel_idx_i)
             att_maxes.extend(att_maxes_i)
 
@@ -970,6 +991,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         var_wise_scores_struct = df.groupby('alteration_id').mean()[['subj_struct', 'verb_struct',
                                                                      'dobj_struct', 'pobj_struct']]
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
+        # renormalizing
+        struct_array = np.array(var_wise_scores_struct)
+        struct_array = 1-np.concatenate([struct_array, np.zeros((sum(self.h_params.n_latents), 2))], axis=1)
+        var_wise_scores = var_wise_scores/struct_array
+
         disent_score = 0
         lab_wise_disent = {}
         dec_disent_vars = {}
@@ -1536,7 +1562,6 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
             print("Loaded model at step", self.step)
         else:
             print("Save file doesn't exist, the model will be trained from scratch.")
-
 
 # =========================================== DISENTANGLEMENT UTILITIES ================================================
 # def batch_sent_relations(sents):
