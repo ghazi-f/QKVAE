@@ -49,6 +49,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
         self.dataset = dataset
         self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp]])
+        self.go_symbol = "<s>" if self.uses_bart else "<go>"
+        self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
+
         super(DisentanglementTransformerVAE, self).__init__()
 
         self.h_params = h_params
@@ -226,7 +229,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             summary_triplets.append(
                 ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits']))
             )
-
+            self.dataset
             has_struct = 'zs' in self.gen_bn.name_to_v
             if has_struct:
                 zst_gen = self.gen_bn.name_to_v['zs']
@@ -236,7 +239,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 zg_gen = self.gen_bn.name_to_v['zg']
             n_samples = sum(self.h_params.n_latents) + (1 if has_struct else 0)
             repeats = 2
-            go_symbol = torch.ones([n_samples*repeats + 2]).long() * self.index[self.generated_v].stoi['<go>']
+            go_symbol = torch.ones([n_samples*repeats + 2]).long() * self.index[self.generated_v].stoi[self.go_symbol]
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
             x_prev = go_symbol
             temp = 1.0
@@ -339,11 +342,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         assert x_hat_params.ndim == 2, "Mis-shaped generated sequence: {}".format(x_hat_params.shape)
         if not gen:
             text = ' |||| '.join([self.decode_indices(sen) for sen in x_hat_params]).replace('<pad>', '_').replace('_unk', '<?>')\
-                .replace('<eos>', '\n').replace(' ğ', '')
+                .replace(self.eos_symbol, '\n').replace(' ğ', '')
         else:
             samples = [self.decode_indices(sen) for sen in x_hat_params]
             if isinstance(self.dataset, BinaryYelp):
-                samples = [sen.split('<eos>')[0] for sen in samples]
+                samples = [sen.split(self.eos_symbol)[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
                       [('orig' if i == 0 else 'zs' if i == len(first_sample)-1 else str(i) if sample == first_sample[0]
@@ -377,8 +380,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             return self.dataset.tokenizer.decode(sen)
         else:
             return (' '.join([self.index[self.generated_v].itos[w]
-                             for w in sen]).replace('!', '<eos>').replace('.', '<eos>').replace('?', '<eos>')
-                    .split('<eos>')[0].replace('<go>', '').replace('</go>', '').replace(' ğ', '')
+                             for w in sen]).replace('!', self.eos_symbol).replace('.', self.eos_symbol).replace('?', self.eos_symbol)
+                    .split(self.eos_symbol)[0].replace(self.go_symbol, '').replace('</go>', '').replace(' ğ', '')
                        .replace('<pad>', '_').replace('_unk', '<?>'))
 
     def get_perplexity(self, iterator):
@@ -512,7 +515,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                           {'z{}'.format(i+1):self.infer_bn.name_to_v['z{}'.format(i+1)]
                                            for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
 
-            go_symbol = torch.ones((1, 1)).long() * self.index[self.generated_v].stoi['<go>']
+            go_symbol = torch.ones((1, 1)).long() * self.index[self.generated_v].stoi[self.go_symbol]
             go_symbol = go_symbol.to(self.h_params.device)
             temp = 1.
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Paraphrase Bleu stats")):
@@ -638,7 +641,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         n_orig_sentences = prev_latent_vals['z1'].shape[0]
         go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
-                    self.index[self.generated_v].stoi['<go>']
+                    self.index[self.generated_v].stoi[self.go_symbol]
         go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
         x_prev = go_symbol
         if complete is not None:
@@ -721,7 +724,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         while n_samples > 0:
             trys += 1
             go_symbol = torch.ones([n_samples]).long() * \
-                        self.index[self.generated_v].stoi['<go>']
+                        self.index[self.generated_v].stoi[self.go_symbol]
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
             x_prev = go_symbol
             if complete is not None:
@@ -1075,7 +1078,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                      {k: v[int(n_samples / 2):] for k, v in samples.items()}
             result_sents = []
             inv_result_sents = []
-            go_symbol = torch.ones((1, 1)).long() * self.index[self.generated_v].stoi['<go>']
+            go_symbol = torch.ones((1, 1)).long() * self.index[self.generated_v].stoi[self.go_symbol]
             go_symbol = go_symbol.to(self.h_params.device)
             temp = 1.
             for i in tqdm(range(int(n_samples / (2 * batch_size))),
@@ -1217,7 +1220,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def generate_from_z2(self, z_input, x_prev, gen_len=None, only_z_sampling=True, temp=1.0, mask_unk=True,
                          beam_size=1):
         eos_idx = (self.index[self.generated_v].stoi["?"], self.index[self.generated_v].stoi["!"],
-                   self.index[self.generated_v].stoi["."], self.index[self.generated_v].stoi["<eos>"])
+                   self.index[self.generated_v].stoi["."], self.index[self.generated_v].stoi[self.eos_symbol])
         unk_mask = torch.ones(x_prev.shape[0], 1, self.h_params.vocab_size).long().to(self.h_params.device)
         if mask_unk:
             unk_mask[..., self.index[self.generated_v].stoi['<unk>']] = 0

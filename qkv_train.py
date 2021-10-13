@@ -26,8 +26,8 @@ parser.add_argument("--init_len", default=None, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=20, type=int)
-parser.add_argument("--test_freq", default=32, type=int)
-parser.add_argument("--complete_test_freq", default=160, type=int)
+parser.add_argument("--test_freq", default=2, type=int)
+parser.add_argument("--complete_test_freq", default=2, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=128, type=int)#################"
@@ -188,7 +188,7 @@ def main():
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type)
     val_iterator = iter(data.val_iter)
-    print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
+    print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
     print("Loss Type: ", flags.losses)
     if flags.losses == 'LagVAE':
         model = LaggingDisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data,
@@ -229,7 +229,7 @@ def main():
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
-            print("Training iter ", i)
+            print("Training iter ", i, flush=True)
             if training_batch.text.shape[1] < 2: continue
 
             if model.step == h_params.anneal_kl[0]:
