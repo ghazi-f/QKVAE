@@ -6,6 +6,7 @@ import os
 from torch import device
 import torch
 from torch import optim
+from transformers import Adafactor
 import numpy as np
 
 from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
@@ -26,8 +27,8 @@ parser.add_argument("--init_len", default=None, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=20, type=int)
-parser.add_argument("--test_freq", default=2, type=int)
-parser.add_argument("--complete_test_freq", default=2, type=int)
+parser.add_argument("--test_freq", default=32, type=int)
+parser.add_argument("--complete_test_freq", default=128, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=128, type=int)#################"
@@ -86,7 +87,7 @@ flags = parser.parse_args()
 if True:
     # flags.optimizer="sgd"
     flags.use_bart = True
-    flags.batch_size = 32
+    flags.batch_size = 64
     flags.grad_accu = 1
     flags.max_len = 20
     flags.test_name = "nliLM/TestBart"
@@ -127,9 +128,12 @@ if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
     flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
 
 
-OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam}[flags.optimizer]
+if flags.use_bart and flags.optimizer == "adam": flags.optimizer = "adafactor"
+OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
-              'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)}}[flags.optimizer]
+              'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
+              'adafactor': {'lr': flags.lr, 'relative_step': False,
+                            'weight_decay': flags.l2_reg}}[flags.optimizer]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
@@ -230,6 +234,9 @@ def main():
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
             print("Training iter ", i, flush=True)
+            for loss in model.losses:
+                print(type(loss), ":")
+                print(loss._prepared_metrics)
             if training_batch.text.shape[1] < 2: continue
 
             if model.step == h_params.anneal_kl[0]:
