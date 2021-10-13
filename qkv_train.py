@@ -27,7 +27,7 @@ parser.add_argument("--init_len", default=None, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=20, type=int)
-parser.add_argument("--test_freq", default=32, type=int)
+parser.add_argument("--test_freq", default=16, type=int)
 parser.add_argument("--complete_test_freq", default=128, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
@@ -233,10 +233,7 @@ def main():
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
-            print("Training iter ", i, flush=True)
-            for loss in model.losses:
-                print(type(loss), ":")
-                print(loss._prepared_metrics)
+            # print("Training iter ", i, flush=True)
             if training_batch.text.shape[1] < 2: continue
 
             if model.step == h_params.anneal_kl[0]:
@@ -253,7 +250,7 @@ def main():
             mean_loss += loss
             if i % 30 == 0:
                 mean_loss /= 30
-                print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time))
+                print("step:{}, loss:{}, seconds/step:{}".format(model.step, mean_loss, time()-current_time), flush=True)
                 mean_loss = 0
             if int(model.step / (len(LOSSES))) % TEST_FREQ == TEST_FREQ-1:
                 model.eval()
@@ -266,6 +263,9 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     model({'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]})
+                    for loss in model.losses:
+                        print(type(loss), ":")
+                        print(loss._prepared_metrics, flush=True)
                 model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
             # ----------------------------------------------------------------------------------------------------------
