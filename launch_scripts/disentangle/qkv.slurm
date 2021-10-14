@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpBART4
+#SBATCH --job-name=ParaBART1
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpBART4.txt
-#SBATCH --error=./YelpBART4.err
+#SBATCH --output=./ParaBART1.txt
+#SBATCH --error=./ParaBART1.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -228,8 +228,8 @@
 
 # ========= BART Launches =========
 # Para
-#srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.6.0.3.1.16" --kl_beta 0.6 --n_latents 16 --data paranmt\
-# --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
+srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.6.0.3.1.16" --kl_beta 0.6 --n_latents 16 --data paranmt\
+ --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
 #srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.5.0.3.1.16" --kl_beta 0.5 --n_latents 16 --data paranmt\
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
 #srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.4.0.3.1.16" --kl_beta 0.4 --n_latents 16 --data paranmt\
@@ -244,5 +244,5 @@
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.3 --max_len 40 --use_bart --batch_size 64
 #srun python qkv_train.py --test_name "Disentanglement2/YelpQKVBART_beta0.4.0.3.1.16" --kl_beta 0.4 --n_latents 16 --data yelp\
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.3 --max_len 40 --use_bart --batch_size 64
-srun python qkv_train.py --test_name "Disentanglement2/YelpQKVBART_beta0.6.0.1.1.16" --kl_beta 0.6 --n_latents 16 --data yelp\
- --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.1 --max_len 40 --use_bart --batch_size 64
+#srun python qkv_train.py --test_name "Disentanglement2/YelpQKVBART_beta0.6.0.1.1.16" --kl_beta 0.6 --n_latents 16 --data yelp\
+# --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.1 --max_len 40 --use_bart --batch_size 64
