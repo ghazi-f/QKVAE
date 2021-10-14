@@ -84,7 +84,7 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if True:
+if False:
     # flags.optimizer="sgd"
     flags.use_bart = True
     flags.batch_size = 64
