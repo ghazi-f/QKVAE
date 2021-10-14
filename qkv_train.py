@@ -84,14 +84,14 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     # flags.optimizer="sgd"
     flags.use_bart = True
     flags.batch_size = 64
     flags.grad_accu = 1
     flags.max_len = 20
     flags.test_name = "nliLM/TestBart"
-    flags.data = "paranmt"
+    flags.data = "yelp"
     flags.n_latents = [16]
     flags.n_keys = 16
     flags.graph ="QKV"  # "Vanilla"
@@ -175,7 +175,8 @@ if flags.grad_accu > 1:
 
 def main():
     data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, pretrained=flags.pretrained_embeddings)
-    h_params = HParams(len(data.vocab.itos), len(data.tags.itos) if flags.data == 'yelp' else None, MAX_LEN, BATCH_SIZE, N_EPOCHS,
+    h_params = HParams(len(data.vocab.itos), len(data.tags.itos) if (flags.data == 'yelp' and not flags.use_bart)
+                       else None, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                        device=DEVICE, vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
