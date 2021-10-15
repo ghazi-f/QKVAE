@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ParaBART1
+#SBATCH --job-name=ParaBART2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./ParaBART1.txt
-#SBATCH --error=./ParaBART1.err
+#SBATCH --output=./ParaBART2.txt
+#SBATCH --error=./ParaBART2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -228,10 +228,10 @@
 
 # ========= BART Launches =========
 # Para
-srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.3.0.3.1.16" --kl_beta 0.3 --n_latents 16 --data paranmt\
- --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
-#srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.2.0.3.1.16" --kl_beta 0.2 --n_latents 16 --data paranmt\
+#srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.3.0.3.1.16" --kl_beta 0.3 --n_latents 16 --data paranmt\
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
+srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.2.0.3.1.16" --kl_beta 0.2 --n_latents 16 --data paranmt\
+ --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
 #srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBART_beta0.1.0.3.1.16" --kl_beta 0.1 --n_latents 16 --data paranmt\
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
 
