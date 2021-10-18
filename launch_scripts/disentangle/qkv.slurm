@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ParaHBART
+#SBATCH --job-name=YelpHBART
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./ParaHBART.txt
-#SBATCH --error=./ParaHBART.err
+#SBATCH --output=./YelpHBART.txt
+#SBATCH --error=./YelpHBART.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -241,6 +241,6 @@ srun python qkv_train.py --test_name "Disentanglement2/ParaHQKVBART_beta0.5.0.5.
 #srun python qkv_train.py --test_name "Disentanglement2/YelpQKVBART_beta0.5.0.5.1.16" --kl_beta 0.5 --n_latents 16 --data yelp\
 #  --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.5 --max_len 40 --use_bart --batch_size 64 --anneal_kl1 70000 \
 # --zs_anneal_kl1 70000 --zg_anneal_kl1 70000
-#srun python qkv_train.py --test_name "Disentanglement2/YelpHQKVBART_beta0.5.0.5.1.16" --kl_beta 0.5 --n_latents 16 --data yelp\
-#  --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.5 --max_len 40 --use_bart --batch_size 64 --anneal_kl1 70000 \
-# --zs_anneal_kl1 70000 --zg_anneal_kl1 70000 --kl_beta_zg 0.5
+srun python qkv_train.py --test_name "Disentanglement2/YelpHQKVBART_beta0.5.0.5.1.16" --kl_beta 0.5 --n_latents 16 --data yelp\
+  --n_epochs 200 --graph QKV --max_elbo_choice 6 --kl_beta_zs 0.5 --max_len 40 --use_bart --batch_size 64 --anneal_kl1 70000 \
+ --zs_anneal_kl1 70000 --zg_anneal_kl1 70000 --kl_beta_zg 0.5
