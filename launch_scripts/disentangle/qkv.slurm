@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpHBART
+#SBATCH --job-name=YelpBART
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpHBART.txt
-#SBATCH --error=./YelpHBART.err
+#SBATCH --output=./YelpBART.txt
+#SBATCH --error=./YelpBART.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
