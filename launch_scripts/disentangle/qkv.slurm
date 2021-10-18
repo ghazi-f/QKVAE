@@ -232,9 +232,9 @@
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.5 --use_bart --batch_size 64 --anneal_kl1 70000 \
 # --zs_anneal_kl1 70000 --zg_anneal_kl1 70000
 
-srun python qkv_train.py --test_name "Disentanglement2/ParaHQKVBART_beta0.5.0.5.1.16" --kl_beta 0.5 --n_latents 16 --data paranmt\
- --n_epochs 200 --graph HQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.5 --use_bart --batch_size 64 --anneal_kl1 70000 \
- --zs_anneal_kl1 70000 --zg_anneal_kl1 70000 --kl_beta_zg 0.5
+#srun python qkv_train.py --test_name "Disentanglement2/ParaHQKVBART_beta0.5.0.5.1.16" --kl_beta 0.5 --n_latents 16 --data paranmt\
+# --n_epochs 200 --graph HQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.5 --use_bart --batch_size 64 --anneal_kl1 70000 \
+# --zs_anneal_kl1 70000 --zg_anneal_kl1 70000 --kl_beta_zg 0.5
 
 
 # Yelp
