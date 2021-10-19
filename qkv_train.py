@@ -94,7 +94,7 @@ if False:
     flags.data = "yelp"
     flags.n_latents = [16]
     flags.n_keys = 16
-    flags.graph ="QKV"  # "Vanilla"
+    flags.graph ="HQKV"  # "Vanilla"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.4
     flags.kl_beta_zg = 0.1
@@ -137,10 +137,10 @@ OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
-         "IndepInfer": get_structured_auto_regressive_indep_graph,
+         "IndepInfer": get_BARTADVAE if flags.use_bart else get_structured_auto_regressive_indep_graph,
          "QKV": get_qkv_graphBART if flags.use_bart else get_qkv_graph2,
-         "HQKV": get_qkv_graphBART if flags.use_bart else get_hqkv_graph,
-         "HQKVDiscZs": get_qkv_graphBART if flags.use_bart else get_hqkv_graph_discrete_zs}[flags.graph]
+         "HQKV": get_hqkv_graphBART if flags.use_bart else get_hqkv_graph,
+         "HQKVDiscZs": get_hqkv_graph_discrete_zsBART if flags.use_bart else get_hqkv_graph_discrete_zs}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
