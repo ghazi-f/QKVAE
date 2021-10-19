@@ -8,7 +8,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import NLIGenData2, OntoGenData, HuggingYelp2
+from data_prep import NLIGenData2, OntoGenData, HuggingYelp2, HuggingYelpReg
 from disentanglement_transformer.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_transformer.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer.graphs import *
@@ -18,7 +18,7 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp"], type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", "yelp_reg"], type=str)
 parser.add_argument("--csv_out", default='disentICLRL1.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
@@ -73,8 +73,9 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
-    # flags.data = "yelp"
+    # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
+    flags.test_name = "nliLM/yelp_reg_test"
+    flags.data = "yelp_reg"
     flags.n_latents = [4]
     flags.graph ="IndepInfer"  # "Vanilla"
     # flags.losses = "LagVAE"
@@ -100,7 +101,8 @@ if flags.graph == "Vanilla":
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2}[flags.data]
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2,
+        "yelp_reg": HuggingYelpReg}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
