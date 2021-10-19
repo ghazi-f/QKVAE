@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SNLIVAE1
+#SBATCH --job-name=SNLIVAE2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentNLIVAE1.txt
-#SBATCH --error=./disentNLIVAE1.err
+#SBATCH --output=./disentNLIVAE2.txt
+#SBATCH --error=./disentNLIVAE2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -67,10 +67,10 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-#srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
-#srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
-srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
-srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
+srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
+srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
+#srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
+#srun python disentangle_train.py --test_name "Disentanglement/YELP2VanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp_reg --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
 done
 done
 
