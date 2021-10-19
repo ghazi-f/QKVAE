@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
-from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp
+from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2
 from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
@@ -345,7 +345,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 .replace(self.eos_symbol, '\n').replace(' ğ', '')
         else:
             samples = [self.decode_indices(sen) for sen in x_hat_params]
-            if isinstance(self.dataset, BinaryYelp):
+            if not isinstance(self.dataset, NLIGenData2):
                 samples = [sen.split(self.eos_symbol)[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
@@ -1364,12 +1364,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         s13sims, s23sims = l2_sim(ezs1, ezs3), l2_sim(ezs2, ezs3)
         c13sims, c23sims = l2_sim(ezc1, ezc3), l2_sim(ezc2, ezc3)
 
-        zs_acc = np.mean(s13sims.cpu().detach().numpy() > s23sims.cpu().detach().numpy())
+        zs_acc = np.mean(s13sims.cpu().detach().numpy() < s23sims.cpu().detach().numpy())
         zc_acc = np.mean(c13sims.cpu().detach().numpy() > c23sims.cpu().detach().numpy())
-        print("Paraphrase detection: with zs {}, with zc {}".format(zs_acc, zc_acc))
-        self.writer.add_scalar('test/hard_zs_enc_acc', 1-zs_acc, self.step)
+        print("Paraphrase detection: with zs {}, with zc {}".format(1-zs_acc, zc_acc))
+        self.writer.add_scalar('test/hard_zs_enc_acc', zs_acc, self.step)
         self.writer.add_scalar('test/hard_zc_enc_acc', zc_acc, self.step)
-        return 1 - zs_acc, zc_acc
+        return zs_acc, zc_acc
 
     def _get_syn_disent_encoder_easy(self, split="valid", batch_size=100):
         template_file = {"valid": os.path.join(".data", "paranmt2", "dev_input.txt"),
