@@ -229,7 +229,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             summary_triplets.append(
                 ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits']))
             )
-            self.dataset
+
             has_struct = 'zs' in self.gen_bn.name_to_v
             if has_struct:
                 zst_gen = self.gen_bn.name_to_v['zs']
