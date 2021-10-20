@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
-from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2
+from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2, BARTNLI
 from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
@@ -48,7 +48,7 @@ nlp = spacy.load("en_core_web_sm")
 class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
         self.dataset = dataset
-        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp]])
+        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
 
@@ -74,6 +74,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         self.gen_bn = BayesNet(vertices['gen'])
         self.gen_last_states = None
         self.gen_last_states_test = None
+
+        self.has_struct = 'zs' in self.gen_bn.name_to_v
+        self.linked_zs = 'zs' in [k.name for k in self.gen_bn.parent.keys()]
+        self.has_zg = 'zg' in self.gen_bn.name_to_v
 
         # Setting up categorical variable indexes
         self.index = {self.generated_v: vocab_index}
@@ -230,14 +234,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 ('text', '/reconstructions', self.decode_to_text(self.generated_v.post_params['logits']))
             )
 
-            has_struct = 'zs' in self.gen_bn.name_to_v
-            if has_struct:
+            if self.has_struct:
                 zst_gen = self.gen_bn.name_to_v['zs']
             z_gen = self.gen_bn.name_to_v['z1']
-            has_zg = 'zg' in self.gen_bn.name_to_v
-            if has_zg:
+            if self.has_zg:
                 zg_gen = self.gen_bn.name_to_v['zg']
-            n_samples = sum(self.h_params.n_latents) + (1 if has_struct else 0)
+            n_samples = sum(self.h_params.n_latents) + (1 if self.has_struct else 0)
             repeats = 2
             go_symbol = torch.ones([n_samples*repeats + 2]).long() * self.index[self.generated_v].stoi[self.go_symbol]
             go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
@@ -246,11 +248,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             only_z_sampling = True
             gen_len = self.h_params.max_len * (3 if self.h_params.contiguous_lm else 1)
             # When z_gen and z_s have standard normal priors
-            if not has_zg:
+            if not self.has_zg:
                 # Getting original 2 sentences
                 orig_z_sample_1 = z_gen.prior_sample((1,))[0]
                 orig_z_sample_2 = z_gen.prior_sample((1,))[0]
-                if has_struct:
+                if self.has_struct and not self.linked_zs:
                     orig_zst_sample_1 = zst_gen.prior_sample((1,))[0]
                     orig_zst_sample_2 = zst_gen.prior_sample((1,))[0]
             else:
@@ -259,28 +261,32 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 self.gen_bn({'zg': orig_zg_sample1.unsqueeze(1),
                              'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
                 orig_z_sample_1 = self.gen_bn.name_to_v['z1'].post_samples.squeeze(1)
-                if has_struct:
+                if self.has_struct:
                     orig_zst_sample_1 = self.gen_bn.name_to_v['zs'].post_samples.squeeze(1)
                 self.gen_bn({'zg': orig_zg_sample2.unsqueeze(1),
                              'x_prev': torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
                 orig_z_sample_2 = self.gen_bn.name_to_v['z1'].post_samples.squeeze(1)
-                if has_struct:
+                if self.has_struct:
                     orig_zst_sample_2 = self.gen_bn.name_to_v['zs'].post_samples.squeeze(1)
 
             child_zs = [self.gen_bn.name_to_v['z{}'.format(i)] for i in range(2, len(self.h_params.n_latents)+1)]
             self.gen_bn({'z1': orig_z_sample_1.unsqueeze(1),
-                         **({'zs': orig_zst_sample_1.unsqueeze(1)} if has_struct else {}),
-                         **({'zg': orig_zg_sample1.unsqueeze(1)} if has_zg else {}),
+                         **({'zs': orig_zst_sample_1.unsqueeze(1)} if self.has_struct and not self.linked_zs else {}),
+                         **({'zg': orig_zg_sample1.unsqueeze(1)} if self.has_zg else {}),
                          'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
             orig_child_zs_1 = [z.post_samples.squeeze(1) for z in child_zs]
-            if has_struct:
+            if self.linked_zs:
+                orig_zst_sample_1 = zst_gen.post_samples.squeeze(1)
+            if self.has_struct:
                 orig_zst_1 = orig_zst_sample_1
             self.gen_bn({'z1': orig_z_sample_2.unsqueeze(1),
-                         **({'zs': orig_zst_sample_2.unsqueeze(1)} if has_struct else {}),
-                         **({'zg': orig_zg_sample2.unsqueeze(1)} if has_zg else {}),
+                         **({'zs': orig_zst_sample_2.unsqueeze(1)} if self.has_struct and not self.linked_zs else {}),
+                         **({'zg': orig_zg_sample2.unsqueeze(1)} if self.has_zg else {}),
                          'x_prev':torch.zeros((1, 1, self.generated_v.size)).to(self.h_params.device)})
             orig_child_zs_2 = [z.post_samples.squeeze(1) for z in child_zs]
-            if has_struct:
+            if self.linked_zs:
+                orig_zst_sample_2 = zst_gen.post_samples.squeeze(1)
+            if self.has_struct:
                 orig_zst_2 = orig_zst_sample_2
             # Creating latent variable duplicates
             orig_zs_samples_1 = [orig_z_sample_1] + orig_child_zs_1
@@ -289,7 +295,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                             for orig_s in orig_zs_samples_1]
             zs_samples_2 = [orig_s.repeat(n_samples+1, 1)
                             for orig_s in orig_zs_samples_2]
-            if has_struct:
+            if self.has_struct:
                 zst_samples_1 = torch.cat([orig_zst_1.repeat(n_samples, 1), orig_zst_2.repeat(1, 1)])
                 zst_samples_2 = torch.cat([orig_zst_2.repeat(n_samples, 1), orig_zst_1.repeat(1, 1)])
             # Swapping latent variable values
@@ -305,9 +311,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             # Getting output
             z_input = {'z{}'.format(i+1): torch.cat([z_s_i_1, z_s_i_2]).unsqueeze(1)
                        for i, (z_s_i_1, z_s_i_2) in enumerate(zip(zs_samples_1, zs_samples_2))}
-            if has_struct:
+            if self.has_struct:
                 z_input['zs'] = torch.cat([zst_samples_1, zst_samples_2]).unsqueeze(1)
-            if has_zg:
+            if self.has_zg:
                 z_input['zg'] = torch.cat([orig_zg_sample1.repeat(n_samples+1, 1),
                                            orig_zg_sample2.repeat(n_samples+1, 1)]).unsqueeze(1)
                 # z_input['zg'] = orig_zg_sample.repeat(2*n_samples+2, 1).unsqueeze(1)
@@ -377,7 +383,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def decode_indices(self, sen):
         if self.uses_bart:
-            return self.dataset.tokenizer.decode(sen)
+            return self.dataset.tokenizer.decode(sen).split(self.eos_symbol)[0].replace(self.go_symbol, '')
         else:
             return (' '.join([self.index[self.generated_v].itos[w]
                              for w in sen]).replace('!', self.eos_symbol).replace('.', self.eos_symbol).replace('?', self.eos_symbol)
@@ -388,8 +394,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             neg_log_perplexity_lb = 0
             total_samples = 0
-            force_iw = ['zg'] if 'zg' in self.gen_bn.name_to_v else \
-                (['z1'] + (['zs'] if 'zs' in self.gen_bn.name_to_v else []))
+            force_iw = ['zg'] if self.has_zg else \
+                (['z1'] + (['zs'] if self.has_struct and not self.linked_zs else []))
             iwlbo = IWLBo(self, 1)
 
             self.gen_bn.clear_values(), self.infer_bn.clear_values()
@@ -636,8 +642,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def _get_alternative_sentences(self, prev_latent_vals, params, var_z_ids, n_samples, gen_len, complete=None):
         h_params = self.h_params
-        has_struct = 'zs' in self.gen_bn.name_to_v
-        has_zg = 'zg' in self.gen_bn.name_to_v
 
         n_orig_sentences = prev_latent_vals['z1'].shape[0]
         go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
@@ -656,30 +660,33 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         gen_input = {**{'z{}'.format(i+1): orig_zs[i].unsqueeze(1) for i in range(len(orig_zs))},
                      'x_prev': torch.zeros((n_samples * n_orig_sentences, 1, self.generated_v.size)).to(
                          self.h_params.device)}
-        if has_struct:
+        if self.has_struct:
             orig_zst = prev_latent_vals['zs'].repeat(n_samples, 1)
             zst = self.gen_bn.name_to_v['zs']
             gen_input['zs'] = orig_zst.unsqueeze(1)
-        if has_zg:
+        if self.has_zg:
             orig_zg = prev_latent_vals['zg'].repeat(n_samples, 1)
             zg = self.gen_bn.name_to_v['zg']
             gen_input['zg'] = zg.prior_sample((n_samples * n_orig_sentences,))[0]
             # gen_input['zg'] = orig_zg.unsqueeze(1)
         self.gen_bn(gen_input)
-        if has_zg:
+        if self.has_zg:
             z1_sample = zs[0].posterior_sample(self.gen_bn.name_to_v['z1'].post_params)[0].squeeze(1)
-            if has_struct:
+            if self.has_struct:
                 zst_sample = zst.posterior_sample(self.gen_bn.name_to_v['zs'].post_params)[0].squeeze(1)
         else:
             z1_sample = zs[0].prior_sample((n_samples * n_orig_sentences,))[0]
-            if has_struct:
-                zst_sample = zst.prior_sample((n_samples * n_orig_sentences,))[0]
+            if self.has_struct:
+                if self.linked_zs:
+                    zst_sample = zst.posterior_sample(self.gen_bn.name_to_v['zs'].post_params)[0].squeeze(1)
+                else:
+                    zst_sample = zst.prior_sample((n_samples * n_orig_sentences,))[0]
         zs_sample = [z1_sample] +\
                     [z.post_samples.squeeze(1) for z in zs[1:]]
 
         for id in var_z_ids:
             # id == sum(h_params.n_latents) means its zst
-            if id == sum(h_params.n_latents) and has_struct:
+            if id == sum(h_params.n_latents) and self.has_struct:
                 orig_zst = zst_sample
             else:
                 assert id < sum(h_params.n_latents)
@@ -691,9 +698,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 destination[:, start:end] = source[:, start:end]
 
         z_input = {'z{}'.format(i+1): orig_zs[i].unsqueeze(1) for i in range(len(orig_zs))}
-        if has_struct:
+        if self.has_struct:
             z_input['zs'] = orig_zst.unsqueeze(1)
-        if has_zg:
+        if self.has_zg:
             z_input['zg'] = orig_zg.unsqueeze(1)
 
         # Normal Autoregressive generation
@@ -707,17 +714,15 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
         samples = {'z{}'.format(i+1): zs_sample[i].tolist() for i in range(len(orig_zs))}
-        if has_struct:
+        if self.has_struct:
             samples['zs'] = zst_sample.tolist()
-        if has_zg:
+        if self.has_zg:
             samples['zg'] = orig_zg.tolist()
         return text, samples
 
     def get_sentences(self, n_samples, gen_len=16, sample_w=False, vary_z=True, complete=None, contains=None,
                       max_tries=100):
         n_latents = self.h_params.n_latents
-        has_struct = 'zs' in self.gen_bn.name_to_v
-        has_zg = 'zg' in self.gen_bn.name_to_v
         final_text, final_samples, final_params = [], {'z{}'.format(i+1): [] for i in range(len(n_latents))},\
                                                       {'z{}'.format(i+1): None for i in range(1, len(n_latents))}
         trys = 0
@@ -734,19 +739,19 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 gen_len = gen_len - len(complete.split(' '))
             temp = 1.
             z_gen = self.gen_bn.name_to_v['z1']
-            if has_struct:
+            if self.has_struct:
                 zst_gen = self.gen_bn.name_to_v['zs']
-            if has_zg:
+            if self.has_zg:
                 zg_gen = self.gen_bn.name_to_v['zg']
                 zg_sample = zg_gen.prior_sample((n_samples,))[0]
                 self.gen_bn({'zg': zg_sample.unsqueeze(1),
                              'x_prev':torch.zeros((n_samples, 1, self.generated_v.size)).to(self.h_params.device)})
                 z_sample = self.gen_bn.name_to_v['z1'].post_samples.squeeze(1)
-                if has_struct:
+                if self.has_struct:
                     zst_sample = self.gen_bn.name_to_v['zs'].post_samples.squeeze(1)
             else:
                 z_sample = z_gen.prior_sample((n_samples,))[0]
-                if has_struct:
+                if self.has_struct and not self.linked_zs:
                     zst_sample = zst_gen.prior_sample((n_samples,))[0]
 
             child_zs = [self.gen_bn.name_to_v['z{}'.format(i)] for i in range(2, len(self.h_params.n_latents) + 1)]
@@ -754,20 +759,22 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             # Structured Z case
             gen_input = {'z1': z_sample.unsqueeze(1),
                         'x_prev': torch.zeros((n_samples, 1, self.generated_v.size)).to(self.h_params.device)}
-            if has_struct:
+            if self.has_struct and not self.linked_zs:
                 gen_input['zs'] = zst_sample.unsqueeze(1)
-            if has_zg:
+            if self.has_zg:
                 gen_input['zg'] = zg_sample.unsqueeze(1)
             self.gen_bn(gen_input)
             zs_samples = [z_sample] + [z.post_samples.squeeze(1) for z in child_zs]
+            if self.linked_zs:
+                zst_sample = self.gen_bn.name_to_v['zs'].post_samples.squeeze(1)
             zs_params = {z.name: z.post_params for z in child_zs}
 
             z_input = {'z{}'.format(i+1): z_s.unsqueeze(1) for i, z_s in enumerate(zs_samples)}
-            if has_struct:
+            if self.has_struct:
                 zs_params['zs'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zst_gen.post_params.items()
                                    if k != 'temperature'}
                 z_input['zs'] = zst_sample.unsqueeze(1)
-            if has_zg:
+            if self.has_zg:
                 zs_params['zg'] = {k: v.squeeze(1).repeat(n_samples, 1) for k, v in zg_gen.post_params.items()}
                 z_input['zg'] = zg_sample.unsqueeze(1)
 
@@ -786,13 +793,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
             if contains is None:
                 sample_dic = {'z{}'.format(i+1): z_s for i, z_s in enumerate(zs_samples)}
-                if has_struct:
+                if self.has_struct:
                     sample_dic['zs'] = zst_sample
-                if has_zg:
+                if self.has_zg:
                     sample_dic['zg'] = zg_sample
                 return text, sample_dic, zs_params
             else:
-                if has_struct:
+                if self.has_struct:
                     raise NotImplementedError("key word based sampling still not implemented for qkv graph")
                 for i in range(n_samples):
                     if any([w in text[i].split(' ') for w in contains]):
@@ -952,8 +959,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                sample_w=False, vary_z=True, complete=None)
         orig_rels = shallow_dependencies(text)
         orig_temps = truncated_template(text)
-        has_struct = 'zs' in self.gen_bn.name_to_v
-        n_lvs = sum(self.h_params.n_latents) +(1 if has_struct else 0)
+        n_lvs = sum(self.h_params.n_latents) +(1 if self.has_struct else 0)
         for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
             text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
                                                        sample_w=False, vary_z=True, complete=None)
@@ -1029,8 +1035,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def _get_perturbation_tma(self, n_samples=2000, n_alterations=1, batch_size=100):
         stats = []
-        has_struct = 'zs' in self.gen_bn.name_to_v
-        assert has_struct
+        assert self.has_struct
         alter_lvs = [list(range(sum(self.h_params.n_latents))), [sum(self.h_params.n_latents)]]
         n_lvs = sum(self.h_params.n_latents) + 1
         # Generating n_samples sentences
@@ -1065,8 +1070,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def get_swap_tma(self, n_samples=2000, batch_size=50, beam_size=2):
         with torch.no_grad():
-            has_struct = 'zs' in self.gen_bn.name_to_v
-            assert has_struct
+            assert self.has_struct
             # Generating n_samples sentences
             text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
                                                   sample_w=False, vary_z=True, complete=None)

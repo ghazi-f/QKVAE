@@ -10,7 +10,7 @@ from transformers import Adafactor
 import numpy as np
 
 from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
-    BARTParaNMT
+    BARTParaNMT, BARTNLI
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -27,8 +27,8 @@ parser.add_argument("--init_len", default=None, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
 parser.add_argument("--n_epochs", default=20, type=int)
-parser.add_argument("--test_freq", default=16, type=int)
-parser.add_argument("--complete_test_freq", default=128, type=int)
+parser.add_argument("--test_freq", default=32, type=int)
+parser.add_argument("--complete_test_freq", default=160, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=128, type=int)#################"
@@ -52,7 +52,7 @@ parser.add_argument('--use_bart', dest='use_bart', action='store_true')
 parser.add_argument('--no-use_bart', dest='use_bart', action='store_false')
 parser.set_defaults(use_bart=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
-parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "HQKV", "HQKVDiscZs"],
+parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs"],
                     type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
@@ -87,14 +87,14 @@ flags = parser.parse_args()
 if False:
     # flags.optimizer="sgd"
     flags.use_bart = True
-    flags.batch_size = 64
+    flags.batch_size = 32
     flags.grad_accu = 1
-    flags.max_len = 20
+    flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
     flags.data = "yelp"
     flags.n_latents = [16]
     flags.n_keys = 16
-    flags.graph ="HQKV"  # "Vanilla"
+    flags.graph ="SQKV"  # "Vanilla"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.4
     flags.kl_beta_zg = 0.1
@@ -139,6 +139,7 @@ OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100
 GRAPH = {"Vanilla": get_vanilla_graph,
          "IndepInfer": get_BARTADVAE if flags.use_bart else get_structured_auto_regressive_indep_graph,
          "QKV": get_qkv_graphBART if flags.use_bart else get_qkv_graph2,
+         "SQKV": get_min_struct_qkv_graphBART if flags.use_bart else None,
          "HQKV": get_hqkv_graphBART if flags.use_bart else get_hqkv_graph,
          "HQKVDiscZs": get_hqkv_graph_discrete_zsBART if flags.use_bart else get_hqkv_graph_discrete_zs}[flags.graph]
 if flags.graph == "NormalLSTM":
@@ -148,7 +149,7 @@ if flags.graph == "Vanilla":
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData,
+Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
         "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
         "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData}[flags.data]
 MAX_LEN = flags.max_len
@@ -225,10 +226,10 @@ def main():
     loss = torch.tensor(1e20)
     mean_loss = 0
     # model.eval()
-    # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
-    # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
-    # model.get_disentanglement_summaries2(data.val_iter, 200)
+    # # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
+    # # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
     # model.step = 8000
+    # model.get_disentanglement_summaries2(data.val_iter, 200)
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
@@ -296,8 +297,16 @@ def main():
                                                                                       val_decoder_Ndisent_vars))
 
             print("=========== New syntax disentanglement scores ========================")
-            val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
-            decoder_syn_disent_scores = model.get_swap_tma(n_samples=200, batch_size=50, beam_size=2)
+            if flags.graph not in ("Vanilla", "IndepInfer"):
+                val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
+                decoder_syn_disent_scores = model.get_swap_tma(n_samples=200, batch_size=50, beam_size=2)
+            else:
+                val_encoder_syn_disent_scores, decoder_syn_disent_scores = {"template": {"zs": 0, "zc": 0},
+                                                                            "paraphrase": {"zs": 0, "zc": 0},
+                                                                            "hard": {"zs": 0, "zc": 0}}, \
+                                                                           {"tma2": {"zs": 0, "zc": 0, "copy": 0},
+                                                                            "tma3": {"zs": 0, "zc": 0, "copy": 0},
+                                                                            "bleu": {"zs": 0, "zc": 0, "copy": 0}}
             print("Encoder Syntax Disentanglement Scores: ", val_encoder_syn_disent_scores)
             print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
 
@@ -340,9 +349,18 @@ def main():
                                                                               sum(test_dec_lab_wise_disent.values()),
                                                                               test_decoder_Ndisent_vars))
     print("=========== New syntax disentanglement scores ========================")
-    val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
-    test_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="test")
-    decoder_syn_disent_scores = model.get_swap_tma()
+    if flags.graph not in ("Vanilla", "IndepInfer"):
+        val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
+        test_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="test")
+        decoder_syn_disent_scores = model.get_swap_tma()
+    else:
+        val_encoder_syn_disent_scores, test_encoder_syn_disent_scores, \
+        decoder_syn_disent_scores = {"template": {"zs": 0, "zc": 0}, "paraphrase": {"zs": 0, "zc": 0},
+                                     "hard": {"zs": 0, "zc": 0}}, \
+                                    {"template": {"zs": 0, "zc": 0}, "paraphrase": {"zs": 0, "zc": 0},
+                                     "hard": {"zs": 0, "zc": 0}}, \
+                                       {"tma2": {"zs": 0, "zc": 0, "copy": 0}, "tma3": {"zs": 0, "zc": 0, "copy": 0},
+                                        "bleu": {"zs": 0, "zc": 0, "copy": 0}}
     print("Encoder Syntax Disentanglement Scores: ", val_encoder_syn_disent_scores)
     print("Encoder Syntax Disentanglement Scores: ", test_encoder_syn_disent_scores)
     print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
