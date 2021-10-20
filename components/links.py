@@ -794,11 +794,11 @@ class ConditionalCoattentiveBARTTransformerLink(NamedLink):
         targets = self.input_to_hidden(targets)
 
         # This conditioned is not checked by the transformer module architecture
-        assert all([ms == ts for ms, ts in zip(memory.shape[0:], targets.shape[0:])])
+        # assert all([ms == ts for ms, ts in zip(memory.shape[0:], targets.shape[0:])])
         outputs = self.transformer(inputs_embeds=memory, decoder_inputs_embeds=targets, output_attentions=self.get_att)
         if self.get_att:
             self.att_vals = [att.mean(1) for att in outputs.cross_attentions]
-        outputs = outputs.last_hidden_states
+        outputs = outputs.last_hidden_state
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
                     self.params.items()}
