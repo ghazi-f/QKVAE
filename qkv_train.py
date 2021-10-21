@@ -225,6 +225,7 @@ def main():
     current_time = time()
     loss = torch.tensor(1e20)
     mean_loss = 0
+    model.beam_size = 4
     # model.eval()
     # # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
     # # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
@@ -299,7 +300,7 @@ def main():
             print("=========== New syntax disentanglement scores ========================")
             if flags.graph not in ("Vanilla", "IndepInfer"):
                 val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
-                decoder_syn_disent_scores = model.get_swap_tma(n_samples=200, batch_size=50, beam_size=2)
+                decoder_syn_disent_scores = model.get_swap_tma(n_samples=200, batch_size=50)
             else:
                 val_encoder_syn_disent_scores, decoder_syn_disent_scores = {"template": {"zs": 0, "zc": 0},
                                                                             "paraphrase": {"zs": 0, "zc": 0},

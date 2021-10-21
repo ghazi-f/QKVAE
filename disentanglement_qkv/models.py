@@ -51,6 +51,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
+        self.beam_size = 1
 
         super(DisentanglementTransformerVAE, self).__init__()
 
@@ -704,13 +705,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             z_input['zg'] = orig_zg.unsqueeze(1)
 
         # Normal Autoregressive generation
-        for i in range(gen_len):
-            self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
-                                             for k, v in z_input.items()}})
-            samples_i = self.generated_v.post_params['logits']
-
-            x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
-                               dim=-1)
+        # for i in range(gen_len):
+        #     self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
+        #                                      for k, v in z_input.items()}})
+        #     samples_i = self.generated_v.post_params['logits']
+        #
+        #     x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
+        #                        dim=-1)
+        x_prev = self.generate_from_z2(z_input, x_prev, beam_size=self.beam_size)
 
         text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
         samples = {'z{}'.format(i+1): zs_sample[i].tolist() for i in range(len(orig_zs))}
@@ -721,7 +723,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return text, samples
 
     def get_sentences(self, n_samples, gen_len=16, sample_w=False, vary_z=True, complete=None, contains=None,
-                      max_tries=100):
+                      max_tries=100, beam_size=None):
         n_latents = self.h_params.n_latents
         final_text, final_samples, final_params = [], {'z{}'.format(i+1): [] for i in range(len(n_latents))},\
                                                       {'z{}'.format(i+1): None for i in range(1, len(n_latents))}
@@ -779,16 +781,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 z_input['zg'] = zg_sample.unsqueeze(1)
 
             # Normal Autoregressive generation
-            for i in range(gen_len):
-                self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
-                                                 for k, v in z_input.items()}})
-                if not sample_w:
-                    samples_i = self.generated_v.post_params['logits']
-                else:
-                    samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'] / temp,
-                                                          temperature=1).rsample()
-                x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
-                                   dim=-1)
+            # for i in range(gen_len):
+            #     self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i + 1, v.shape[-1])
+            #                                      for k, v in z_input.items()}})
+            #     if not sample_w:
+            #         samples_i = self.generated_v.post_params['logits']
+            #     else:
+            #         samples_i = self.generated_v.posterior(logits=self.generated_v.post_params['logits'] / temp,
+            #                                               temperature=1).rsample()
+            #     x_prev = torch.cat([x_prev, torch.argmax(samples_i, dim=-1)[..., -1].unsqueeze(-1)],
+            #                        dim=-1)
+            x_prev = self.generate_from_z2(z_input, x_prev, beam_size=beam_size or self.beam_size)
 
             text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
             if contains is None:
@@ -1068,15 +1071,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         var_wise_scores = df.groupby('alteration_id').mean()[['tma2', 'tma3']]
         return var_wise_scores
 
-    def get_swap_tma(self, n_samples=2000, batch_size=50, beam_size=2):
+    def get_swap_tma(self, n_samples=2000, batch_size=50, beam_size=None):
+        beam_size = beam_size or self.beam_size
         with torch.no_grad():
             assert self.has_struct
             # Generating n_samples sentences
             text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
-                                                  sample_w=False, vary_z=True, complete=None)
+                                                  sample_w=False, vary_z=True, complete=None, beam_size=beam_size)
             for _ in tqdm(range(int(n_samples / batch_size) - 1), desc="Generating original sentences"):
                 text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
-                                                          sample_w=False, vary_z=True, complete=None)
+                                                          sample_w=False, vary_z=True, complete=None,
+                                                          beam_size=beam_size)
                 text.extend(text_i)
                 for k in samples.keys():
                     samples[k] = torch.cat([samples[k], samples_i[k]])
@@ -1100,14 +1105,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                   for i in range(len(self.h_params.n_latents))}}
                 x_prev = go_symbol.repeat((batch_size, 1))
                 x_prev = self.generate_from_z2(z_input, x_prev, mask_unk=False, beam_size=beam_size)
-                if beam_size > 1:
-                    x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
                 result_sents.extend(self.decode_to_text2(x_prev, self.h_params.vocab_size,
                                                          self.index[self.generated_v]))
                 x_prev = go_symbol.repeat((batch_size, 1))
                 x_prev = self.generate_from_z2(inv_z_input, x_prev, mask_unk=False, beam_size=beam_size)
-                if beam_size > 1:
-                    x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
                 inv_result_sents.extend(self.decode_to_text2(x_prev, self.h_params.vocab_size,
                                                              self.index[self.generated_v]))
             test_name = self.h_params.test_name.split("\\")[-1].split("/")[-1]
@@ -1225,9 +1226,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return x_prev
 
     def generate_from_z2(self, z_input, x_prev, gen_len=None, only_z_sampling=True, temp=1.0, mask_unk=True,
-                         beam_size=1):
+                         beam_size=1, keep_beam=False):
         eos_idx = (self.index[self.generated_v].stoi["?"], self.index[self.generated_v].stoi["!"],
-                   self.index[self.generated_v].stoi["."], self.index[self.generated_v].stoi[self.eos_symbol])
+                   self.index[self.generated_v].stoi["."], self.index[self.generated_v].stoi[self.eos_symbol]) \
+                    if not self.uses_bart else (self.index[self.generated_v].stoi[self.eos_symbol],)
         unk_mask = torch.ones(x_prev.shape[0], 1, self.h_params.vocab_size).long().to(self.h_params.device)
         if mask_unk:
             unk_mask[..., self.index[self.generated_v].stoi['<unk>']] = 0
@@ -1275,6 +1277,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 x_prev = next_xprev
         if beam_size > 1:
             x_prev = x_prev.view(x_prev.shape[0]*x_prev.shape[1], x_prev.shape[2])
+        if not keep_beam and beam_size > 1:
+            x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
         return x_prev
 
     def embed_sents(self, sents):
