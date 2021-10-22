@@ -300,7 +300,7 @@ def main():
             print("=========== New syntax disentanglement scores ========================")
             if flags.graph not in ("Vanilla", "IndepInfer"):
                 val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
-                decoder_syn_disent_scores = model.get_swap_tma(n_samples=200, batch_size=50)
+                decoder_syn_disent_scores = model.get_swap_tma(n_samples=200)
             else:
                 val_encoder_syn_disent_scores, decoder_syn_disent_scores = {"template": {"zs": 0, "zc": 0},
                                                                             "paraphrase": {"zs": 0, "zc": 0},

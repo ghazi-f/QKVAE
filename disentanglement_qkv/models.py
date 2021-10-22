@@ -1157,8 +1157,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
                     self.get_encoder_disentanglement_score(data_iter)
                 self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
-                for k in enc_lab_wise_disent.keys():
-                    self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
+                # for k in enc_lab_wise_disent.keys():
+                #     self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
                 enc_heatmap = get_hm_array2(enc_var_wise_scores)#, "enc_heatmap_yelp.eps")
                 if enc_heatmap is not None:
                     self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
@@ -1170,8 +1170,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores, dec_disent_vars\
                 = self._get_stat_data_frame2(n_samples=n_samples)
             self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
-            for k in dec_lab_wise_disent.keys():
-                self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
+            # for k in dec_lab_wise_disent.keys():
+            #     self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
             dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
             if dec_heatmap is not None:
                 self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
