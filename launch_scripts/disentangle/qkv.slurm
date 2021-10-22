@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=YelpSBART
+#SBATCH --job-name=Yelp2SBART
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./YelpSBART.txt
-#SBATCH --error=./YelpSBART.err
+#SBATCH --output=./Yelp2SBART.txt
+#SBATCH --error=./Yelp2SBART.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -249,5 +249,8 @@
 #srun python qkv_train.py --test_name "Disentanglement2/YelpHQKVBART_beta0.3.0.2.1.16" --kl_beta 0.3 --n_latents 16 --data yelp\
 #  --n_epochs 200 --graph HQKV --max_elbo_choice 6 --kl_beta_zs 0.2 --max_len 40 --use_bart --batch_size 64 --kl_beta_zg 0.2
 
-srun python qkv_train.py --test_name "Disentanglement2/YelpSQKVBART_beta0.3.0.3.1.16" --kl_beta 0.3 --n_latents 16 --data yelp\
+#srun python qkv_train.py --test_name "Disentanglement2/YelpSQKVBART_beta0.3.0.3.1.16" --kl_beta 0.3 --n_latents 16 --data yelp\
+#  --n_epochs 200 --graph SQKV --max_elbo_choice 6 --kl_beta_zs 0.3 --max_len 40 --use_bart --batch_size 64
+
+srun python qkv_train.py --test_name "Disentanglement2/YelpSQKVBART_beta0.3.0.3.1.8" --kl_beta 0.3 --n_latents 8 --data yelp\
   --n_epochs 200 --graph SQKV --max_elbo_choice 6 --kl_beta_zs 0.3 --max_len 40 --use_bart --batch_size 64
