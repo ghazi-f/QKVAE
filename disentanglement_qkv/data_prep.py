@@ -22,7 +22,7 @@ import datasets as hdatasets
 
 # ========================================== BATCH ITERATING ENDPOINTS =================================================
 VOCAB_LIMIT = 10000
-
+TEST_DIVIDE_BS = 8
 
 class HuggingYelp2:
 
@@ -98,7 +98,7 @@ class BARTNLI:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.divide_bs = 4
+        self.divide_bs = TEST_DIVIDE_BS
 
         np.random.seed(42)
         # Loading Data
@@ -190,7 +190,7 @@ class BARTYelp:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.divide_bs = 4
+        self.divide_bs = TEST_DIVIDE_BS
 
         np.random.seed(42)
         # Loading Data
@@ -284,7 +284,7 @@ class BARTParaNMT:
         self.batch_size = batch_size
         self.n_epochs = 0
         self.max_epochs = max_epochs
-        self.divide_bs = 4
+        self.divide_bs = TEST_DIVIDE_BS
 
         np.random.seed(42)
         # Loading Data
