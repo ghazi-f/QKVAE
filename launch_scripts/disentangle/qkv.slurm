@@ -237,7 +237,7 @@
 # --n_epochs 200 --graph HQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.2 --use_bart --batch_size 64 --kl_beta_zg 0.2
 
 srun python qkv_train.py --test_name "Disentanglement2/ParaSQKVBART_beta0.1.0.1.1.16" --kl_beta 0.1 --n_latents 16 --data paranmt\
- --n_epochs 200 --graph SQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.1# --use_bart --batch_size 64
+ --n_epochs 200 --graph SQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.1 --use_bart --batch_size 64
 
 #srun python qkv_train.py --test_name "Disentanglement2/ParaSQKVBART_beta0.4.0.3.1.8" --kl_beta 0.4 --n_latents 8 --data paranmt\
 # --n_epochs 200 --graph SQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64
