@@ -760,7 +760,7 @@ class ConditionalCoattentiveBARTTransformerLink(NamedLink):
         output_size = self.transformer.config.d_model
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
-        self.mem_size = mem_size or int(output_size/n_mems)
+        self.mem_size = mem_size or int(input_size/n_mems)
         self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
 
         self.memory, self.targets = memory, targets
@@ -835,7 +835,7 @@ class QKVBartTransformerLink(NamedLink):
 
         # output_size = int(output_size/n_mems)
         self.mem_ids = nn.Embedding(n_mems, mem_size).weight
-        self.mem_size = mem_size or int(output_size/n_mems)
+        self.mem_size = mem_size or int(input_size/n_mems)
         self.simple_zs_use = simple_zs_use
         self.n_keys = n_mems if simple_zs_use else n_keys
         self.memory_to_hidden = nn.Linear(self.mem_size*2, output_size)

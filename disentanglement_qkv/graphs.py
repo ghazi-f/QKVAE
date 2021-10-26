@@ -423,7 +423,7 @@ def get_BARTADVAE(h_params, word_embeddings):
     # Generation
     x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=(i == 0)) for i in range(n_lvls)]
-    zs_xprev_to_x = ConditionalCoattentiveBARTTransformerLink(xin_size, zout_size, xout_size,h_params.decoder_l,
+    zs_xprev_to_x = ConditionalCoattentiveBARTTransformerLink(zin_size, h_params.decoder_h, xout_size,h_params.decoder_l,
                                                               Categorical.parameter_activations, word_embeddings,
                                                               highway=h_params.highway, sbn=None,
                                                               dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
@@ -482,7 +482,7 @@ def get_qkv_graphBART(h_params, word_embeddings):
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=(i == 0)) for i in range(n_lvls)]
     zst_gen = ZStGen(h_params)
 
-    zst_zs_xprev_to_x = QKVBartTransformerLink(xin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+    zst_zs_xprev_to_x = QKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
                                                                  Categorical.parameter_activations, word_embeddings,
                                                                  highway=h_params.highway, sbn=None,
                                                                  dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
@@ -545,7 +545,7 @@ def get_min_struct_qkv_graphBART(h_params, word_embeddings):
     x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=True) for i in range(n_lvls)]
     zst_gen = ZStGen(h_params, allow_prior=False)
-    zst_zs_xprev_to_x = QKVBartTransformerLink(xin_size, zout_size, xout_size, h_params.decoder_l,
+    zst_zs_xprev_to_x = QKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
                                                Categorical.parameter_activations, word_embeddings,
                                                highway=h_params.highway, sbn=None,
                                                dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
@@ -607,7 +607,7 @@ def get_hqkv_graphBART(h_params, word_embeddings):
     x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=False) for i in range(n_lvls)]
     zst_gen, zg_gen = ZStGen(h_params, allow_prior=False), ZGGen(h_params, allow_prior=True)
-    zst_zs_xprev_to_x = QKVBartTransformerLink(xin_size, zout_size, xout_size, h_params.decoder_l,
+    zst_zs_xprev_to_x = QKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
                                                Categorical.parameter_activations, word_embeddings,
                                                highway=h_params.highway, sbn=None,
                                                dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
@@ -676,7 +676,7 @@ def get_hqkv_graph_discrete_zsBART(h_params, word_embeddings):
     x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=False) for i in range(n_lvls)]
     zst_gen, zg_gen = ZStDiscGen(h_params, zs_emb, allow_prior=False), ZGGen(h_params, allow_prior=True)
-    zst_zs_xprev_to_x = QKVBartTransformerLink(xin_size, zout_size, xout_size, h_params.decoder_l,
+    zst_zs_xprev_to_x = QKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
                                                                  Categorical.parameter_activations, word_embeddings,
                                                                  highway=h_params.highway, sbn=None,
                                                                  dropout=h_params.dropout, n_mems=sum(h_params.n_latents),

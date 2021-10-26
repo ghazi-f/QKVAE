@@ -87,7 +87,7 @@ flags = parser.parse_args()
 if False:
     # flags.optimizer="sgd"
     flags.use_bart = True
-    flags.batch_size = 32
+    flags.batch_size = 10
     flags.grad_accu = 1
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
@@ -95,6 +95,7 @@ if False:
     flags.n_latents = [16]
     flags.n_keys = 16
     flags.graph ="SQKV"  # "Vanilla"
+    flags.z_size = 192
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.4
     flags.kl_beta_zg = 0.1
@@ -116,7 +117,7 @@ if False:
     # flags.decoder_h = 256
 
 if flags.use_bart:
-    flags.z_size = 768
+    # flags.z_size = 768
     flags.decoder_h = 768
     flags.encoder_h = 768
     flags.embedding_dim = 768
