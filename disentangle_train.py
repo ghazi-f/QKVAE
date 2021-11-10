@@ -46,7 +46,8 @@ parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false'
 parser.set_defaults(minimal_enc=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "Discrete", "IndepInfer", "Normal", "NormalConGen",
-                                                          "NormalSimplePrior", "Normal2",  "NormalLSTM"], type=str)
+                                                          "NormalSimplePrior", "Normal2",  "NormalLSTM", "VanillaTr"],
+                    type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=20, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
@@ -70,23 +71,25 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.batch_size = 128
+    flags.batch_size = 32
     flags.grad_accu = 1
     flags.max_len = 17
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
-    flags.test_name = "nliLM/yelp_reg_test"
-    flags.data = "yelp_reg"
+    flags.test_name = "nliLM/VanillaTrTes"
+    flags.data = "nli"
     flags.n_latents = [4]
-    flags.graph ="IndepInfer"  # "Vanilla"
+    flags.graph = "VanillaTr"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.3
-    # flags.z_size = 16
+
+    flags.z_size = 16
     # flags.encoder_h = 256
     # flags.decoder_h = 256
 
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
+         "VanillaTr": get_vanilla_Transformer_graph,
          "Discrete": get_discrete_auto_regressive_graph,
          "IndepInfer": get_structured_auto_regressive_indep_graph,
          "Normal": get_structured_auto_regressive_graph,
@@ -96,7 +99,7 @@ GRAPH = {"Vanilla": get_vanilla_graph,
          "NormalSimplePrior": get_structured_auto_regressive_simple_prior}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
-if flags.graph == "Vanilla":
+if flags.graph in ("Vanilla", "VanillaTr"):
     flags.n_latents = [flags.z_size]
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0

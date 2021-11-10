@@ -6,7 +6,7 @@ from tqdm import tqdm
 import pandas as pd
 
 from disentanglement_transformer.h_params import *
-from disentanglement_transformer.graphs import get_vanilla_graph
+from disentanglement_transformer.graphs import get_vanilla_graph, get_vanilla_Transformer_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
@@ -982,7 +982,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def get_disentanglement_summaries_all(self, data_iter, n_samples=2000, roles=None):
         roles = roles if roles is not None else ["nsubj", "verb", "obj", "iobj"]
         with torch.no_grad():
-            if self.h_params.graph_generator != get_vanilla_graph:
+            if self.h_params.graph_generator not in (get_vanilla_graph, get_vanilla_Transformer_graph):
                 enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
                     self.get_encoder_disentanglement_score_all(data_iter, roles)
                 self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
@@ -1008,7 +1008,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def get_disentanglement_summaries2(self, data_iter, n_samples=2000):
         with torch.no_grad():
-            if self.h_params.graph_generator != get_vanilla_graph:
+            if self.h_params.graph_generator not in (get_vanilla_graph, get_vanilla_Transformer_graph):
                 enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
                     self.get_encoder_disentanglement_score(data_iter)
                 self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)

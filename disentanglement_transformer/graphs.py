@@ -4,7 +4,7 @@ from itertools import chain
 import torch.nn as nn
 
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, LastStateMLPLink, \
-    LSTMLink, ConditionalCoattentiveTransformerLink2
+    LSTMLink, ConditionalCoattentiveTransformerLink2, PoolingTransformerLink, TokenConditionedTransformerLink
 from disentanglement_transformer.variables import *
 
 
@@ -496,3 +496,23 @@ def get_vanilla_graph(h_params, word_embeddings):
     return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_to_z, z_inf])]),
             'gen':   nn.ModuleList([nn.ModuleList([xprev_gen, z_xprev_to_x, x_gen]),
                                    nn.ModuleList([z_gen, z_xprev_to_x, x_gen])])}, None, x_gen
+
+
+def get_vanilla_Transformer_graph(h_params, word_embeddings):
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    # Generation
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gen = ZGeni(h_params, None, 0, allow_prior=True)
+    z_xprev_to_x = TokenConditionedTransformerLink(xin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+                                                   Categorical.parameter_activations, dropout=h_params.dropout,
+                                                   sequence=['x_prev'], memory=['z1'], mem_size=zin_size)
+
+    # Inference
+    x_inf, z_inf = XInfer(h_params, word_embeddings, has_rep=False), ZInferi(h_params, None, 0)
+    x_to_z = PoolingTransformerLink(xin_size, h_params.encoder_h, zout_size, h_params.encoder_l,
+                                    Gaussian.parameter_activations, dropout=h_params.dropout, bidirectional=True)
+
+    return {'infer': nn.ModuleList([nn.ModuleList([x_inf, x_to_z, z_inf])]),
+            'gen':   nn.ModuleList([nn.ModuleList([xprev_gen, z_xprev_to_x, x_gen]),
+                                    nn.ModuleList([z_gen, z_xprev_to_x, x_gen])])}, None, x_gen
