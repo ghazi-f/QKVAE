@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SNLIWide
+#SBATCH --job-name=SNLIWids
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentNLIWide.txt
-#SBATCH --error=./disentNLIWide.err
+#SBATCH --output=./disentNLIWids.txt
+#SBATCH --error=./disentNLIWids.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -44,22 +44,22 @@
 # ================= REBUTTAL EXP GROUP ==============================
 
 # Experiments on the SNLI Dataset with 16 LV
-for BETA in  0.3 0.4
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train.py --test_name "Disentanglement/SNLIWider_beta$BETA.$ITER" --kl_beta $BETA --n_latents 16 --data nli --n_epochs 20 --graph IndepInfer
-done
-done
-
-# Experiments on the SNLI Dataset with 32 LV
 #for BETA in  0.3 0.4
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/SNLIWidest_beta$BETA.$ITER" --kl_beta $BETA --n_latents 32# --data nli --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIWider_beta$BETA.$ITER" --kl_beta $BETA --n_latents 16 --data nli --n_epochs 20 --graph IndepInfer
 #done
 #done
+
+# Experiments on the SNLI Dataset with 32 LV
+for BETA in  0.3 0.4
+do
+for ITER in 1 2 3 4 5
+do
+srun python disentangle_train.py --test_name "Disentanglement/SNLIWidest_beta$BETA.$ITER" --kl_beta $BETA --n_latents 32# --data nli --n_epochs 20 --graph IndepInfer
+done
+done
 
 # ================= REG YELP EXP GROUP ==============================
 # Experiments on the SNLI Dataset # Trying with the new Yelp Data
