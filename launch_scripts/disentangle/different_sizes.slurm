@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SNLITr1
+#SBATCH --job-name=SNLITr2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentNLITr1.txt
-#SBATCH --error=./disentNLITr1.err
+#SBATCH --output=./disentNLITr2.txt
+#SBATCH --error=./disentNLITr2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -67,8 +67,8 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph VanillaTr --z_size 32
-#srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph VanillaTr --z_size 16
+#srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph VanillaTr --z_size 32
+srun python disentangle_train.py --test_name "Disentanglement/SNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph VanillaTr --z_size 16
 done
 done
 
