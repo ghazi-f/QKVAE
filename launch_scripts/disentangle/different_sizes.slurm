@@ -53,7 +53,7 @@
 #done
 
 # Experiments on the SNLI Dataset with 32 LV
-for BETA in  0.3 0.4
+for BETA in  0.4 #0.3
 do
 for ITER in 1 2 3 4 5
 do
