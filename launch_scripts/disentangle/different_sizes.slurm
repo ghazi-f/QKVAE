@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SNLIYelp4
+#SBATCH --job-name=SNLIYelp5
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentNLIYelp4.txt
-#SBATCH --error=./disentNLIYelp4.err
+#SBATCH --output=./disentNLIYelp5.txt
+#SBATCH --error=./disentNLIYelp5.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -86,7 +86,7 @@
 # Experiments on the Yelp Dataset with Vanilla Transformer Baseline
 for BETA in 0.4 0.3
 do
-for ITER in 4 #1 2 3 4 5
+for ITER in 5 #1 2 3 4 5
 do
 srun python disentangle_train.py --test_name "Disentanglement/YelpVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph VanillaTr --z_size 32
 srun python disentangle_train.py --test_name "Disentanglement/YelpVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph VanillaTr --z_size 16
