@@ -84,7 +84,7 @@
 
 
 # Experiments on the Yelp Dataset with Vanilla Transformer Baseline
-for BETA in 0.4 0.3
+for BETA in 0.3 # 0.4 0.3
 do
 for ITER in 5 #1 2 3 4 5
 do
