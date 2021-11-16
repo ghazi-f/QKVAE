@@ -44,6 +44,9 @@ parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
 parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false')
 parser.set_defaults(minimal_enc=False)
+parser.add_argument('--no_sa', dest='no_sa', action='store_true')
+parser.add_argument('--no-no_sa', dest='no_sa', action='store_false')
+parser.set_defaults(no_sa=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "Discrete", "IndepInfer", "Normal", "NormalConGen",
                                                           "NormalSimplePrior", "Normal2",  "NormalLSTM", "VanillaTr"],
@@ -75,10 +78,10 @@ if False:
     flags.grad_accu = 1
     flags.max_len = 17
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
-    flags.test_name = "nliLM/VanillaTrTes"
+    flags.test_name = "nliLM/No_sa_test"
     flags.data = "nli"
     flags.n_latents = [4]
-    flags.graph = "VanillaTr"
+    flags.graph = "IndepInfer"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.3
 
@@ -135,7 +138,7 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
-                       is_weighted=[], graph_generator=GRAPH,
+                       is_weighted=[], graph_generator=GRAPH, no_sa=flags.no_sa,
                        z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,

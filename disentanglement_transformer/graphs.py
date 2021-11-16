@@ -466,7 +466,7 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
                                               z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations, nheads=4,
                                               sequence=['x'], memory=None,
                                               n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
-                                              highway=h_params.highway, dropout=h_params.dropout,
+                                              highway=h_params.highway, dropout=h_params.dropout, no_sa=h_params.no_sa,
                                               n_targets=h_params.n_latents[i]) for i in range(n_lvls)]
     infer_edges = [nn.ModuleList([x_inf, z_posti, z_infi]) for z_posti, z_infi in zip(z_posterior, z_infs)]
     # for retrocompatibility:

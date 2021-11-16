@@ -31,6 +31,7 @@ class DefaultHParams:
                  pos_l=2,
                  decoder_h=32,
                  decoder_l=2,
+                 no_sa=False,
                  losses=None,
                  loss_params=None,
                  piwo=False,
@@ -98,6 +99,7 @@ class DefaultHParams:
 
         self.n_latents = n_latents
         self.graph_generator = graph_generator
+        self.no_sa = no_sa
         self.highway = highway
         self.markovian = markovian
 

@@ -555,7 +555,7 @@ class CoattentiveTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_targets=20, nheads=2,
-                 sequence=None, memory=None, n_mems=None, mem_size=None):
+                 sequence=None, memory=None, n_mems=None, mem_size=None, no_sa=False):
         super(CoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
                                                          highway, dropout=dropout, batchnorm=batchnorm,
                                                          residual=residual)
@@ -574,6 +574,12 @@ class CoattentiveTransformerLink(NamedLink):
                                                                       dropout=dropout, activation='gelu'), depth)
         self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
+        if no_sa:
+            for layer in self.transformer_dec.layers:
+                layer.self_attn = IdentitySAPatch()
+
+        for layer in self.transformer_dec.layers:
+            print(layer.self_attn)
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
 
@@ -1705,3 +1711,12 @@ def load_BART_kv_hacks(bart_decoder, k, v):
 def clear_BART_kv_hacks(bart_decoder):
     for layer in bart_decoder.layers:
         layer.encoder_attn.clear_kv_hack()
+
+
+class IdentitySAPatch(nn.Module):
+    def __init__(self):
+        super(IdentitySAPatch, self).__init__()
+
+    def forward(self, tgt1, tgt2, tgt3, attn_mask=None, key_padding_mask=None):
+                return tgt1, None
+
