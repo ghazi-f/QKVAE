@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=WidNSA2
+#SBATCH --job-name=WidNSA
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentWidNSA2.txt
-#SBATCH --error=./disentWidNSA2.err
+#SBATCH --output=./disentWidNSA.txt
+#SBATCH --error=./disentWidNSA.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -54,7 +54,7 @@
 
 
 # No self-attention experiments on the SNLI Dataset
-for BETA in  0.4 #0.3 0.4
+for BETA in  0.3 0.4
 do
 for ITER in 1 2 3 4 5
 do

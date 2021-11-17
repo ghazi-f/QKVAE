@@ -822,7 +822,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return diffs, same_struct, \
                syn_temp_diff, lex_temp_diff
 
-    def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100, delta_drop=False):
+
+    def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100, delta_drop=True):
         stats = []
         # Generating n_samples sentences
         text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
