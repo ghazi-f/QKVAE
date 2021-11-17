@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=RegDE
+#SBATCH --job-name=Tr1DE
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentRegDE.txt
-#SBATCH --error=./disentRegDE.err
+#SBATCH --output=./disentTr1DE.txt
+#SBATCH --error=./disentTr1DE.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -126,23 +126,23 @@
 
 
 # Experiments on the DE SNLI Dataset
-for BETA in  0.3 0.4
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train.py --test_name "Disentanglement/DESNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
-done
-done
-
-# Experiments on the DE SNLI Dataset with Vanilla Transformer Baseline
-#for BETA in 0.4 0.3
+#for BETA in  0.3 0.4
 #do
 #for ITER in 1 2 3 4 5
 #do
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
+#done
+#done
+
+# Experiments on the DE SNLI Dataset with Vanilla Transformer Baseline
+for BETA in 0.4 0.3
+do
+for ITER in 1 2 3 4 5
+do
 #srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 32
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 16
-#done
-#done
+srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 16
+done
+done
 
 # Experiments on the DE SNLI Dataset
 #for BETA in 0.4 0.3
