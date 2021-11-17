@@ -120,7 +120,7 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-srun python disentangle_train.py --test_name "Disentanglement/DESNLIRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data de_nli --max_len 32 --n_epochs 20 --graph IndepInfer
+srun python disentangle_train.py --test_name "Disentanglement/DESNLIRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
 done
 done
 
@@ -130,7 +130,7 @@ done
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data de_nli --max_len 32 --n_epochs 20 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
 #done
 #done
 
@@ -139,8 +139,8 @@ done
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph VanillaTr --z_size 32
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph VanillaTr --z_size 16
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 32
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 16
 #done
 #done
 
@@ -149,10 +149,10 @@ done
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
 #done
 #done
 
