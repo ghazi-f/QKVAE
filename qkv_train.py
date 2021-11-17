@@ -84,10 +84,10 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     # flags.optimizer="sgd"
     flags.use_bart = True
-    flags.batch_size = 10
+    flags.batch_size = 20
     flags.grad_accu = 1
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
@@ -96,7 +96,7 @@ if False:
     flags.n_keys = 16
     flags.graph ="SQKV"  # "Vanilla"
     flags.z_size = 192
-    # flags.losses = "LagVAE"
+    flags.losses = "LagVAE"
     flags.kl_beta = 0.4
     flags.kl_beta_zg = 0.1
     flags.kl_beta_zs = 0.01
@@ -150,6 +150,9 @@ if flags.graph == "Vanilla":
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
+    flags.kl_beta = 1.0
+    flags.kl_beta_zs = 1.0
+    flags.kl_beta_zg = 1.0
 Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
         "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
         "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData}[flags.data]

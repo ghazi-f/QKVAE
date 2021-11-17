@@ -1442,7 +1442,8 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
         self.optimizer = None
         self.aggressive = True
         self.inf_optimizer = h_params.optimizer(self.infer_bn.parameters(), **h_params.optimizer_kwargs)
-        self.gen_optimizer = h_params.optimizer(self.gen_bn.parameters(), **h_params.optimizer_kwargs)#SGD(self.gen_bn.parameters(), lr=1.)
+        self.gen_optimizer = h_params.optimizer(self.gen_bn.parameters(), **h_params.optimizer_kwargs)
+        # self.gen_optimizer = SGD(self.gen_bn.parameters(), lr=1.)
 
         # Loading previous checkpoint if auto_load is set to True
         if autoload:
@@ -1535,27 +1536,6 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
         total_loss = sum(losses_uns)
 
         return total_loss
-
-    def _dump_train_viz(self):
-        # Dumping gradient norm
-        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps - 1):
-            z_gen = [var for var in self.gen_bn.variables if var.name == 'z1'][0]
-            for module, name in zip([self, self.infer_bn, self.gen_bn,
-                                     self.gen_bn.approximator[z_gen] if z_gen in self.gen_bn.approximator else None],
-                                    ['overall', 'inference', 'generation', 'prior']):
-                if module is None: continue
-                grad_norm = 0
-                for p in module.parameters():
-                    if p.grad is not None:
-                        param_norm = p.grad.data.norm(2)
-                        grad_norm += param_norm.item() ** 2
-                grad_norm = grad_norm ** (1. / 2)
-                self.writer.add_scalar('train' + '/' + '_'.join([name, 'grad_norm']), grad_norm, self.step)
-
-        # Getting the interesting metrics: this model's loss and some other stuff that would be useful for diagnosis
-        for loss in self.losses:
-            for name, metric in loss.metrics().items():
-                self.writer.add_scalar('train' + name, metric, self.step)
 
     def save(self):
         root = ''
