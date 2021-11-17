@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ParasSBART
+#SBATCH --job-name=PaLagBART
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./ParasSBART.txt
-#SBATCH --error=./ParasSBART.err
+#SBATCH --output=./PaLagBART.txt
+#SBATCH --error=./PaLagBART.err
 #SBATCH --time=100:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
