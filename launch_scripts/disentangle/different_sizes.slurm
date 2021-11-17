@@ -116,23 +116,23 @@
 # ================= German EXP GROUP ==============================
 
 # Experiments on the DE SNLI Dataset
-for BETA in 0.4 0.3
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train.py --test_name "Disentanglement/DESNLIRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
-done
-done
-
-
-# Experiments on the DE SNLI Dataset
-#for BETA in  0.3 0.4
+#for BETA in 0.4 0.3
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
 #done
 #done
+
+
+# Experiments on the DE SNLI Dataset
+for BETA in  0.3 0.4
+do
+for ITER in 1 2 3 4 5
+do
+srun python disentangle_train.py --test_name "Disentanglement/DESNLIWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data de_nli --max_len 32 --n_epochs 200 --graph IndepInfer
+done
+done
 
 # Experiments on the DE SNLI Dataset with Vanilla Transformer Baseline
 #for BETA in 0.4 0.3
