@@ -578,8 +578,6 @@ class CoattentiveTransformerLink(NamedLink):
             for layer in self.transformer_dec.layers:
                 layer.self_attn = IdentitySAPatch()
 
-        for layer in self.transformer_dec.layers:
-            print(layer.self_attn)
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
 
