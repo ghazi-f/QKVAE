@@ -8,7 +8,7 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import NLIGenData2, OntoGenData, HuggingYelp2, HuggingYelpReg
+from data_prep import NLIGenData2, OntoGenData, HuggingYelp2, HuggingYelpReg, GermanNLIGenData2
 from disentanglement_transformer.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_transformer.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer.graphs import *
@@ -18,8 +18,8 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", "yelp_reg"], type=str)
-parser.add_argument("--csv_out", default='disentICLRNoSA3.csv', type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", "yelp_reg", "de_nli"], type=str)
+parser.add_argument("--csv_out", default='disentICLRDE.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
@@ -74,18 +74,18 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
-    flags.batch_size = 32
+    flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     flags.test_name = "nliLM/No_sa_test"
-    flags.data = "nli"
+    flags.data = "de_nli"
     flags.n_latents = [4]
     flags.graph = "IndepInfer"
     # flags.losses = "LagVAE"
     flags.kl_beta = 0.3
 
-    flags.z_size = 16
+    # flags.z_size = 16
     # flags.encoder_h = 256
     # flags.decoder_h = 256
 
@@ -108,7 +108,7 @@ if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
 Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2,
-        "yelp_reg": HuggingYelpReg}[flags.data]
+        "yelp_reg": HuggingYelpReg, "de_nli": GermanNLIGenData2}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -181,7 +181,7 @@ def main():
     # model.eval()
     # print(model.get_disentanglement_summaries2(data.test_iter, 200))
     # print(model.get_perplexity(data.val_iter))
-    while data.train_iter is not None and False:  # Add False for eval mode
+    while data.train_iter is not None:  # Add False for eval mode
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue
 
@@ -289,21 +289,21 @@ def main():
     dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
     # relations = ["nsubj", "verb", "obj", "iobj"]
-    relations = ['subj', 'verb', 'dobj', 'pobj']
+    relations = ['subj', 'verb', 'dobj', 'pobj'] if flags.data != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
     temps = ['syntemp', 'lextemp']
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
             f.write('\t'.join(['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents',
                                'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
-                              'dev_tot_en_disent', 'dev_dec_disent_subj', 'dev_dec_disent_verb', 'dev_dec_disent_dobj',
-                              'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
-                              'dev_dec_disent_pobj', 'dev_enc_disent_subj', 'dev_enc_disent_verb', 'dev_enc_disent_dobj',
-                              'dev_enc_disent_pobj', 'dev_rec_error', 'dev_decoder_Ndisent_vars', 'dev_encoder_Ndisent_vars',
+                              'dev_tot_en_disent', *['dev_dec_disent_'+r for r in relations],
+                               'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
+                               *['dev_enc_disent_' + r for r in relations],
+                                'dev_rec_error', 'dev_decoder_Ndisent_vars', 'dev_encoder_Ndisent_vars',
                               'test_kl', 'test_kl_std', 'test_ppl', 'test_tot_dec_disent',
-                              'test_tot_en_disent', 'test_dec_disent_subj', 'test_dec_disent_verb', 'test_dec_disent_dobj',
-                              'test_dec_disent_syntemp', 'test_dec_disent_lextemp',
-                              'test_dec_disent_pobj', 'test_enc_disent_subj', 'test_enc_disent_verb', 'test_enc_disent_dobj',
-                              'test_enc_disent_pobj', 'test_rec_error', 'test_decoder_Ndisent_vars', 'test_encoder_Ndisent_vars',
+                              'test_tot_en_disent', 'test_dec_disent_subj', *['test_dec_disent_'+r for r in relations],
+                              'test_dec_disent_syntemp', 'test_dec_disent_lextemp', *['test_enc_disent_'+r for r in relations],
+                                'test_rec_error', 'test_decoder_Ndisent_vars',
+                               'test_encoder_Ndisent_vars',
                               'dev_mi', 'test_mi'])+'\n')
     with open(flags.csv_out, 'a') as f:
         f.write('\t'.join([flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
