@@ -51,7 +51,7 @@ parser.set_defaults(minimal_enc=False)
 parser.add_argument('--use_bart', dest='use_bart', action='store_true')
 parser.add_argument('--no-use_bart', dest='use_bart', action='store_false')
 parser.set_defaults(use_bart=False)
-parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
+parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs"],
                     type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
