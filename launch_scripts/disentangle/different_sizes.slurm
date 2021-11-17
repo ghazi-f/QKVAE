@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=VA3DE
+#SBATCH --job-name=VA4DE
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentVA3DE.txt
-#SBATCH --error=./disentVA3DE.err
+#SBATCH --output=./disentVA4DE.txt
+#SBATCH --error=./disentVA4DE.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -151,8 +151,8 @@ for ITER in 1 2 3 4 5
 do
 #srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
 #srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
-srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
+srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
 done
 done
 
