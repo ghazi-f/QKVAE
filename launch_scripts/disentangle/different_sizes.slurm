@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=Tr2DE
+#SBATCH --job-name=VA1DE
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disentTr2DE.txt
-#SBATCH --error=./disentTr2DE.err
+#SBATCH --output=./disentVA1DE.txt
+#SBATCH --error=./disentVA1DE.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -135,26 +135,26 @@
 #done
 
 # Experiments on the DE SNLI Dataset with Vanilla Transformer Baseline
-for BETA in 0.4 0.3
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 32
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 16
-done
-done
-
-# Experiments on the DE SNLI Dataset
 #for BETA in 0.4 0.3
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
-#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr16_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 32
+#srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaTr32_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph VanillaTr --z_size 16
+#done
+#done
+
+# Experiments on the DE SNLI Dataset
+for BETA in 0.4 0.3
+do
+for ITER in 1 2 3 4 5
+do
+srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256
+srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256
 #srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512
 #srun python disentangle_train.py --test_name "Disentanglement/DESNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data de_nli --max_len 32 --n_epochs 200 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512
-#done
-#done
+done
+done
 
 # ================= REG YELP EXP GROUP ==============================
 # Experiments on the SNLI Dataset # Trying with the new Yelp Data
