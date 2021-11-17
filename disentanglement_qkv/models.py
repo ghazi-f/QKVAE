@@ -1549,6 +1549,7 @@ class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metacl
 
     def load(self):
         if os.path.exists(self.h_params.save_path):
+            print("Path {} exists !".format(self.h_params.save_path))
             checkpoint = torch.load(self.h_params.save_path)
             model_checkpoint, self.step, self.aggressive = checkpoint['model_checkpoint'], checkpoint['step'], \
                                                            checkpoint['aggr']
