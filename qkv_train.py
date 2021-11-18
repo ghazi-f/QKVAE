@@ -148,11 +148,10 @@ if flags.graph == "NormalLSTM":
 if flags.graph == "Vanilla":
     flags.n_latents = [flags.z_size]
 if flags.losses == "LagVAE":
-    flags.anneal_kl0 = 0
-    flags.anneal_kl1 = 0
-    flags.kl_beta = 1.0
-    flags.kl_beta_zs = 1.0
-    flags.kl_beta_zg = 1.0
+    flags.anneal_kl0, flags.zs_anneal_kl0, flags.zg_anneal_kl0 = 0, 0, 0
+    flags.anneal_kl1, flags.zs_anneal_kl1, flags.zg_anneal_kl1 = 0, 0, 0
+    # flags.kl_beta, flags.kl_beta_zs, flags.kl_beta_zg = 1.0, 1.0, 1.0
+
 Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
         "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
         "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData}[flags.data]
@@ -230,6 +229,7 @@ def main():
     loss = torch.tensor(1e20)
     mean_loss = 0
     model.beam_size = 4
+    prev_mi = 0
     # model.eval()
     # # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
     # # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
@@ -318,12 +318,12 @@ def main():
             # print("Perplexity Upper Bound is {} at step {}".format(pp_ub, model.step))
             data.reinit_iterator('valid')
 
-            # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
-            # data.reinit_iterator('valid')
-            # if val_mi < prev_mi and flags.losses == "LagVAE":
-            #     print("Stopped aggressive training phase")
-            #     model.aggressive = False
-            # prev_mi = val_mi
+            dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+            data.reinit_iterator('valid')
+            if val_mi < prev_mi and flags.losses == "LagVAE":
+                print("Stopped aggressive training phase")
+                model.aggressive = False
+            prev_mi = val_mi
 
             if flags.save_all:
                 print('Saving The model ..')
