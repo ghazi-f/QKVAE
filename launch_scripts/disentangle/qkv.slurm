@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=PaLag3SBART
+#SBATCH --job-name=PaThrBART
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./PaLag3SBART.txt
-#SBATCH --error=./PaLag3SBART.err
+#SBATCH --output=./PaThrBART.txt
+#SBATCH --error=./PaThrBART.err
 #SBATCH --time=100:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
@@ -267,16 +267,16 @@
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --losses LagVAE
 
 
-srun python qkv_train.py --test_name "Disentanglement2/ParaSQKVBARTminiLag_beta0.2.0.2.1.8" --kl_beta 0.2 --n_latents 8 --data paranmt\
- --n_epochs 200 --graph SQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.2 --use_bart --batch_size 64 --z_size 192 --losses LagVAE
+#srun python qkv_train.py --test_name "Disentanglement2/ParaSQKVBARTminiLag_beta0.2.0.2.1.8" --kl_beta 0.2 --n_latents 8 --data paranmt\
+# --n_epochs 200 --graph SQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.2 --use_bart --batch_size 64 --z_size 192 --losses LagVAE
 #srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBARTminiLag_beta0.2.0.2.1.8" --kl_beta 0.2 --n_latents 8 --data paranmt\
 # --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.2 --use_bart --batch_size 64 --z_size 192 --losses LagVAE
 
 
 #srun python qkv_train.py --test_name "Disentanglement2/ParaSQKVBARTminiLag_beta0.4.0.4.1.8" --kl_beta 0.4 --n_latents 8 --data paranmt\
 # --n_epochs 200 --graph SQKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
-#srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBARTminiLag_beta0.4.0.4.1.8" --kl_beta 0.4 --n_latents 8 --data paranmt\
-# --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
+srun python qkv_train.py --test_name "Disentanglement2/ParaQKVBARTminiLag_beta0.4.0.4.1.8" --kl_beta 0.4 --n_latents 8 --data paranmt\
+ --n_epochs 200 --graph QKV --max_elbo_choice 6 --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
 
 # Yelp
 #srun python qkv_train.py --test_name "Disentanglement2/YelpQKVBART_beta0.3.0.3.1.4" --kl_beta 0.3 --n_latents 4 --data yelp\
