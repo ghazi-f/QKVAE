@@ -1289,10 +1289,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
             bsz, max_len = len(sents), max([len(s) for s in sents])
             stoi = self.index[self.generated_v].stoi
-            inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
-            for i, sen in enumerate(sents):
-                for j, tok in enumerate(sen.split()): # This must be changed for model that use more advanced tokenizers
-                    inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
+            if self.uses_bart:
+                inputs = self.dataset.tokenizer(sents, max_length=max_len, truncation=True, padding="max_length",
+                                        return_tensors='pt')["input_ids"].to(self.h_params.device)
+            else:
+                inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
+                for i, sen in enumerate(sents):
+                    for j, tok in enumerate(sen.split()):
+                        inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
 
             self.infer_bn({'x': inputs})
             orig_zs, orig_z = zs_infer.rep(zs_infer.infer(zs_infer.post_params))[..., 0, :], \
@@ -1424,8 +1428,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def get_syn_disent_encoder(self, split="valid", batch_size=100):
         easy_scores = self._get_syn_disent_encoder_easy(split=split, batch_size=batch_size)
-        hard_zs_score, hard_zs_score = self._get_syn_disent_encoder_hard(split=split, batch_size=batch_size)
-        scores = {**easy_scores, "hard": {"zs": hard_zs_score, "zc": hard_zs_score}}
+        hard_zs_score, hard_zc_score = self._get_syn_disent_encoder_hard(split=split, batch_size=batch_size)
+        scores = {**easy_scores, "hard": {"zs": hard_zs_score, "zc": hard_zc_score}}
         return scores
 
 
