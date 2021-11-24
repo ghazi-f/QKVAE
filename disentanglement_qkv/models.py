@@ -109,16 +109,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # Forward pass
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
         alter = np.random.choice(['skip', 'crop'])
-        if alter == 'skip':
-            shift = np.random.randint(7)
-            shifted_x = infer_inputs['x'][..., shift:]
-            padding = torch.zeros_like(infer_inputs['x'])[..., :shift]
-            infer_inputs['x'] = torch.cat([shifted_x, padding], -1)
-        else:
-            cropt_at = np.random.randint(12)
-            cropped_x = infer_inputs['x'][..., :cropt_at]
-            padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
-            infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
+        # if alter == 'skip':
+        #     shift = np.random.randint(7)
+        #     shifted_x = infer_inputs['x'][..., shift:]
+        #     padding = torch.zeros_like(infer_inputs['x'])[..., :shift]
+        #     infer_inputs['x'] = torch.cat([shifted_x, padding], -1)
+        # else:
+        #     cropt_at = np.random.randint(12)
+        #     cropped_x = infer_inputs['x'][..., :cropt_at]
+        #     padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
+        #     infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
         if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
             self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
                                                    prev_states=self.infer_last_states, complete=True)
