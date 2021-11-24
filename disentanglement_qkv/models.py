@@ -1291,7 +1291,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             stoi = self.index[self.generated_v].stoi
             if self.uses_bart:
                 inputs = self.dataset.tokenizer(sents, max_length=max_len, truncation=True, padding="max_length",
-                                        return_tensors='pt')["input_ids"].to(self.h_params.device)
+                                        return_tensors='pt')["input_ids"].to(self.h_params.device)[..., 1:]
             else:
                 inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
                 for i, sen in enumerate(sents):
