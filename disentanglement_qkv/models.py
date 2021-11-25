@@ -1226,7 +1226,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return x_prev
 
     def generate_from_z2(self, z_input, x_prev, gen_len=None, only_z_sampling=True, temp=1.0, mask_unk=True,
-                         beam_size=1, keep_beam=False):
+                         beam_size=1, keep_beam=False, return_seq_scores=False):
         eos_idx = (self.index[self.generated_v].stoi["?"], self.index[self.generated_v].stoi["!"],
                    self.index[self.generated_v].stoi["."], self.index[self.generated_v].stoi[self.eos_symbol]) \
                     if not self.uses_bart else (self.index[self.generated_v].stoi[self.eos_symbol],)
@@ -1277,11 +1277,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 x_prev = next_xprev
         if beam_size > 1:
             x_prev = x_prev.view(x_prev.shape[0]*x_prev.shape[1], x_prev.shape[2])
+            seq_scores = seq_scores.view(-1)
+
         if not keep_beam and beam_size > 1:
             x_prev = x_prev[:int(x_prev.shape[0] / beam_size)]
+            seq_scores = seq_scores[:int(seq_scores.shape[0] / beam_size)]
+        if return_seq_scores:
+            return x_prev, seq_scores
         return x_prev
 
-    def embed_sents(self, sents):
+    def embed_sents(self, sents, sample=False):
         with torch.no_grad():
             zs_infer, z_infer, x_gen = self.infer_bn.name_to_v['zs'], \
                                        {'z{}'.format(i + 1): self.infer_bn.name_to_v['z{}'.format(i + 1)]
@@ -1298,9 +1303,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     for j, tok in enumerate(sen.split()):
                         inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
 
-            self.infer_bn({'x': inputs})
-            orig_zs, orig_z = zs_infer.rep(zs_infer.infer(zs_infer.post_params))[..., 0, :], \
-                              torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1)
+            self.infer_bn({'x': inputs}, complete=sample)
+            if sample:
+                orig_zs, orig_z = zs_infer.post_samples[..., 0, :], \
+                                  torch.cat([v.post_samples[..., 0, :] for k, v in z_infer.items()], dim=-1)
+            else:
+                orig_zs, orig_z = zs_infer.rep(zs_infer.infer(zs_infer.post_params))[..., 0, :], \
+                                  torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1)
 
             return orig_zs, orig_z
 
