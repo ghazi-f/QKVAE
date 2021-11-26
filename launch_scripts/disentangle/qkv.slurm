@@ -337,9 +337,9 @@
 # --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
 
 
-#srun python qkv_train.py --test_name "Disentanglement2/PQBmTLongAnneal_beta1.0.1.0.1.8" --kl_beta 1.0 --n_latents 8 --data paranmt\
-# --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 1.0 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
-# --anneal_kl0 20000 --anneal_kl1 100000 --zs_anneal_kl0 20000 --zs_anneal_kl1 100000
+srun python qkv_train.py --test_name "Disentanglement2/PQBmTLongAnneal_beta1.0.1.0.1.8" --kl_beta 1.0 --n_latents 8 --data paranmt\
+ --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 1.0 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
+ --anneal_kl0 20000 --anneal_kl1 100000 --zs_anneal_kl0 20000 --zs_anneal_kl1 100000
 
 
 #srun python qkv_train.py --test_name "Disentanglement2/PQBmTLongAnneal_beta5.0.5.0.1.8" --kl_beta 5.0 --n_latents 8 --data paranmt\
