@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ReVA1
+#SBATCH --job-name=ReVA2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disReVA1.txt
-#SBATCH --error=./disReVA1.err
+#SBATCH --output=./disReVA2.txt
+#SBATCH --error=./disReVA2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -36,10 +36,10 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
-#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
-#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data nli --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
 done
 done
 # ================= ReEvaluating Yelp Exps ==============================
@@ -71,9 +71,9 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
 done
 done
