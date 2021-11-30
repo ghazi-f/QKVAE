@@ -442,11 +442,11 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
                                                           word_embeddings, highway=h_params.highway, sbn=None,
                                                           dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
                                                           memory=[z.name for z in z_gens], targets=['x_prev'],
-                                                          nheads=4, bidirectional=False,
+                                                          nheads=h_params.n_heads, bidirectional=False,
                                                           mem_size=int(z_sizes[0]/h_params.n_latents[0]),
                                                           minimal_enc=h_params.minimal_enc)
     z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1], h_params.decoder_l,
-                                          Gaussian.parameter_activations, nheads=4, sequence=None,
+                                          Gaussian.parameter_activations, nheads=h_params.n_heads, sequence=None,
                                           memory=[z_gens[i].name],
                                           n_mems=h_params.n_latents[i], mem_size=int(z_sizes[i]/h_params.n_latents[i]),
                                           highway=h_params.highway, dropout=h_params.dropout,
@@ -463,7 +463,7 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
     x_inf, z_infs = XInfer(h_params, word_embeddings, has_rep=False), [ZInferi(h_params, z_repnet, i) for i in
                                                                        range(n_lvls)]
     z_posterior = [CoattentiveTransformerLink(xin_size, int(lv_size_props[i]*h_params.encoder_h),
-                                              z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations, nheads=4,
+                                              z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations, nheads=h_params.n_heads,
                                               sequence=['x'], memory=None,
                                               n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
                                               highway=h_params.highway, dropout=h_params.dropout, no_sa=h_params.no_sa,

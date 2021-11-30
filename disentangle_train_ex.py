@@ -39,6 +39,7 @@ parser.add_argument("--encoder_h", default=192*k, type=int)#################"
 parser.add_argument("--encoder_l", default=2, type=int)#################"
 parser.add_argument("--decoder_h", default=192*k, type=int)
 parser.add_argument("--decoder_l", default=2, type=int)#################"
+parser.add_argument("--n_heads", default=4, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
@@ -78,7 +79,8 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.lv_kl_coeff = 1.0
+    # flags.lv_kl_coeff = 1.0
+    flags.n_heads = 1
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     flags.test_name = "nliLM/No_sa_test"
     flags.data = "nli"
@@ -136,7 +138,7 @@ def main():
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos) if flags.data == 'yelp' else None, MAX_LEN, BATCH_SIZE, N_EPOCHS,
                        device=DEVICE, vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
-                       text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
+                       text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l, n_heads=flags.n_heads,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},

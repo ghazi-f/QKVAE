@@ -31,6 +31,7 @@ class DefaultHParams:
                  pos_l=2,
                  decoder_h=32,
                  decoder_l=2,
+                 n_heads=4,
                  no_sa=False,
                  losses=None,
                  loss_params=None,
@@ -98,6 +99,7 @@ class DefaultHParams:
         self.decoder_h = decoder_h
         self.decoder_l = decoder_l
 
+        self.n_heads = n_heads
         self.n_latents = n_latents
         self.graph_generator = graph_generator
         self.no_sa = no_sa
