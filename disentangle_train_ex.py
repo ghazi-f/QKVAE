@@ -291,7 +291,7 @@ def main():
     dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
     # relations = ["nsubj", "verb", "obj", "iobj"]
-    relations = ['subj', 'verb', 'dobj', 'pobj'] if flags.data != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
+    relations = ['nsubj', 'verb', 'dobj', 'pobj'] if flags.data != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
     temps = ['syntemp', 'lextemp']
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
