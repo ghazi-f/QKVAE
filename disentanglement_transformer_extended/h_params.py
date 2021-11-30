@@ -49,6 +49,7 @@ class DefaultHParams:
                  grad_clip=None,
                  kl_th=None,
                  kl_beta=1.0,
+                 lv_kl_coeff=0.0,
                  max_elbo=False,
                  highway=True,
                  dropout=0.,
@@ -119,6 +120,7 @@ class DefaultHParams:
         self.grad_clip = grad_clip
         self.kl_th = kl_th
         self.kl_beta = kl_beta
+        self.lv_kl_coeff = lv_kl_coeff
         self.max_elbo = max_elbo
         self.dropout = dropout
         self.word_dropout = word_dropout

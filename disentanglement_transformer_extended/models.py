@@ -92,11 +92,19 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             cropped_x = infer_inputs['x'][..., :cropt_at]
             padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
             infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
+
+        if self.h_params.lv_kl_coeff > 0:
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
+
         if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
             self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
                                                    prev_states=self.infer_last_states, complete=True)
         else:
             self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
+
+        if self.h_params.lv_kl_coeff > 0:
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw:
@@ -109,6 +117,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         # Loss computation and backward pass
         losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
+        if self.h_params.lv_kl_coeff > 0:
+            kl_loss = self.get_lv_kl_loss()
+            print(kl_loss)
+            self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
+            losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
         sum(losses_uns).backward()
         if not self.h_params.contiguous_lm:
             self.infer_last_states, self.gen_last_states = None, None
@@ -664,7 +677,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             shall_dep_func = lambda x: shallow_dependencies2(x, de_nlp, ['sb', 'verb', 'oa', 'da', 'op', 'oc'])
         else:
             shall_dep_func = lambda x: shallow_dependencies2(x, nlp)
-        max_len = text_in.shape[-1]
         text_sents = [' '.join([self.index[self.generated_v].itos[w]
                                 for w in s]).replace(' <pad>', '').replace(' <eos>', '')
                       for s in text_in]
@@ -674,7 +686,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
         self.infer_bn({'x': text_in})
+        att_vals = self.get_enc_att_vals().cpu().detach().numpy()
+        att_vals = att_vals.mean(-2)
         CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+        att_maxes = att_vals.argmax(-1).tolist()
+        return rel_idx, att_maxes
+
+    def get_enc_att_vals(self):
+        max_len = self.h_params.max_len
         all_att_weights = []
         for i in range(len(self.h_params.n_latents)):
             trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
@@ -691,12 +710,30 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                     , -1)
                 if lv_layer == 2:  # TODO: update this part for structured inference networks
                     att_out[..., -1] *= 0
-                var_att_weights.append(att_out.cpu().detach().numpy())
-            att_weights.append(var_att_weights)
+                var_att_weights.append(att_out)
+                # var_att_weights.append(att_out.cpu().detach().numpy())
+            # att_weights.append(var_att_weights)
+            att_weights.append(torch.stack(var_att_weights))
         # att_vals shape:[sent, lv, layer, tok]
-        att_vals = np.transpose(np.array(att_weights), (2, 0, 1, 3)).mean(-2)
-        att_maxes = att_vals.argmax(-1).tolist()
-        return rel_idx, att_maxes
+        att_vals = torch.stack(att_weights).transpose(2, 1).transpose(1, 0)
+        # att_vals = np.transpose(np.array(att_weights), (2, 0, 1, 3))
+        return att_vals
+
+    def get_lv_kl_loss(self):
+        att_vals = self.get_enc_att_vals()
+        kl_list = []
+        n_lv = sum(self.h_params.n_latents)
+        # Calculating pairwise KL divergences between latent variable attention distributions
+        for i in range(n_lv):
+            for j in range(n_lv):
+                if i!=j:
+                    logit0, logit1 = att_vals[:, i], att_vals[:, j]
+                    kl_per_dim = torch.softmax(logit0, dim=-1)*(torch.log_softmax(logit0, dim=-1) -
+                                                                torch.log_softmax(logit1, dim=-1))
+                    kl_list.append(torch.sum(kl_per_dim, dim=-1).unsqueeze(0))
+        return - torch.mean(torch.cat(kl_list))
+
+
 
     def get_att_and_rel_idx_all(self, text_in, roles=None):
         roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
@@ -810,7 +847,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return [get_diff(r) for r in rels], same_struct, \
                    syn_temp_diff, lex_temp_diff
 
-
     def get_sentence_statistics_all(self, orig, sen, orig_relations, alt_relations, orig_temp, alt_temp, roles):
         roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
         orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
@@ -829,7 +865,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         diffs = [get_diff(r) for r in roles]
         return diffs, same_struct, \
                syn_temp_diff, lex_temp_diff
-
 
     def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100, delta_drop=True):
         stats = []

@@ -62,6 +62,7 @@ parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=10, type=int)
 parser.add_argument("--kl_beta", default=0.4, type=float)
+parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.1, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -77,9 +78,10 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
+    flags.lv_kl_coeff = 1.0
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     flags.test_name = "nliLM/No_sa_test"
-    flags.data = "de_nli"
+    flags.data = "nli"
     flags.n_latents = [4]
     flags.graph = "IndepInfer"
     # flags.losses = "LagVAE"
@@ -145,7 +147,7 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
-                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  # max_elbo is paper's beta
+                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
