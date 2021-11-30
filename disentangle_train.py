@@ -46,7 +46,7 @@ parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false'
 parser.set_defaults(minimal_enc=False)
 parser.add_argument('--no_sa', dest='no_sa', action='store_true')
 parser.add_argument('--no-no_sa', dest='no_sa', action='store_false')
-parser.set_defaults(no_sa=False)
+parser.set_defaults(no_sa=True)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "Discrete", "IndepInfer", "Normal", "NormalConGen",
                                                           "NormalSimplePrior", "Normal2",  "NormalLSTM", "VanillaTr"],
