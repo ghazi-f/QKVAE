@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=QKVReg45
+#SBATCH --job-name=QKVReg46
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVReg45.txt
-#SBATCH --error=./QKVReg45.err
+#SBATCH --output=./QKVReg46.txt
+#SBATCH --error=./QKVReg46.err
 #SBATCH --time=100:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
