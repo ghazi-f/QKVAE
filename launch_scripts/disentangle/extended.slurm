@@ -86,8 +86,8 @@
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
 #done
 #done
 
@@ -96,8 +96,8 @@
 #do
 #for ITER in 1 2 3 4 5
 #do
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
 #done
 #done
 
@@ -110,8 +110,8 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
 done
 done
 
@@ -120,7 +120,7 @@ for BETA in 0.4 0.3
 do
 for ITER in 1 2 3 4 5
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
 done
 done
