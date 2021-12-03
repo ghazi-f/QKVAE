@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=QKVReg46
+#SBATCH --job-name=QKVReg45
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVReg46.txt
-#SBATCH --error=./QKVReg46.err
+#SBATCH --output=./QKVReg45.txt
+#SBATCH --error=./QKVReg45.err
 #SBATCH --time=100:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
@@ -337,12 +337,12 @@
 # --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
 
 
-#srun python qkv_train.py --test_name "Disentanglement2/PQBmT_beta0.5.0.4.1.4" --kl_beta 0.5 --n_latents 4 --data paranmt\
-# --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
-
-
-srun python qkv_train.py --test_name "Disentanglement2/PQBmT_beta0.6.0.4.1.4" --kl_beta 0.6 --n_latents 4 --data paranmt\
+srun python qkv_train.py --test_name "Disentanglement2/PQBmT_beta0.5.0.4.1.4" --kl_beta 0.5 --n_latents 4 --data paranmt\
  --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
+
+
+#srun python qkv_train.py --test_name "Disentanglement2/PQBmT_beta0.6.0.4.1.4" --kl_beta 0.6 --n_latents 4 --data paranmt\
+# --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 0.4 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05
 
 
 
