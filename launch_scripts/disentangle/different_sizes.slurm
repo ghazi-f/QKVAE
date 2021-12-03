@@ -200,14 +200,14 @@
 #done
 #
 ## Experiments on the Yelp Dataset
-for BETA in 0.3 0.5 #0.4
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disentAnnex.csv
-srun python disentangle_train.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disentAnnex.csv
-done
-done
+#for BETA in 0.3 0.5 #0.4
+#do
+#for ITER in 1 2 3 4 5
+#do
+#srun python disentangle_train.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disentAnnex.csv
+#srun python disentangle_train.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disentAnnex.csv
+#done
+#done
 
 
 # ================= EXP GROUP 2 ==============================
