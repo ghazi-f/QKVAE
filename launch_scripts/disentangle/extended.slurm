@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ReLVKL
+#SBATCH --job-name=ReHead
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disReLVKL.txt
-#SBATCH --error=./disReLVKL.err
+#SBATCH --output=./disReHead.txt
+#SBATCH --error=./disReHead.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -82,45 +82,45 @@
 # ================= Trying KL per lv loss ==============================
 
 # Experiments on the SNLI Dataset with ADVAE
-for BETA in 0.4 0.3
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
-done
-done
+#for BETA in 0.4 0.3
+#do
+#for ITER in 1 2 3 4 5
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.LVKL0.1" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 0.1
+#done
+#done
 
 # Experiments on the SNLI Dataset with ADVAE
-for BETA in 0.4 0.3
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
-done
-done
+#for BETA in 0.4 0.3
+#do
+#for ITER in 1 2 3 4 5
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.LVKL1.0" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvallvkl.csv --lv_kl_coeff 1.0
+#done
+#done
 
 
 
 # ================= Other N_heads ==============================
 
 # Experiments on the SNLI Dataset with ADVAE
-#for BETA in 0.4 0.3
-#do
-#for ITER in 1 2 3 4 5
-#do
+for BETA in 0.4 0.3
+do
+for ITER in 1 2 3 4 5
+do
 #srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
-#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
-#done
-#done
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
+done
+done
 
 # Experiments on the SNLI Dataset with ADVAE
-#for BETA in 0.4 0.3
-#do
-#for ITER in 1 2 3 4 5
-#do
-#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.H1" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 1
+for BETA in 0.4 0.3
+do
+for ITER in 1 2 3 4 5
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegular_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
 #srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIWide_beta$BETA.$ITER.H2" --kl_beta $BETA --n_latents 8 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_reEvalheads.csv --n_heads 2
-#done
-#done
+done
+done
