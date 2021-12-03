@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ReADYelp
+#SBATCH --job-name=ReVA1Yelp
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./disReADYelp.txt
-#SBATCH --error=./disReADYelp.err
+#SBATCH --output=./disReVA1Yelp.txt
+#SBATCH --error=./disReVA1Yelp.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -45,14 +45,14 @@
 # ================= ReEvaluating Yelp Exps ==============================
 
 # Experiments on the Yelp Dataset with ADVAE
-for BETA in 0.3 # 0.4
-do
-for ITER in 1 2 3 4 5
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEval.csv
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEval.csv
-done
-done
+#for BETA in 0.3 # 0.4
+#do
+#for ITER in 1 2 3 4 5
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta$BETA.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEval.csv
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpWide_beta$BETA.$ITER" --kl_beta $BETA --n_latents 8 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_reEval.csv
+#done
+#done
 
 
 # Experiments on the Yelp Dataset with Vanilla Transformer Baseline
@@ -67,16 +67,16 @@ done
 
 
 # Experiments on the Yelp Dataset with Sequence VAE
-#for BETA in 0.4 0.3
-#do
-#for ITER in 1 2 3 4 5
-#do
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
+for BETA in 0.3 #0.4
+do
+for ITER in 1 2 3 4 5
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszsh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 256 --decoder_h 256 --csv_out disent_reEval.csv
 #srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEmzmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 32 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
 #srun python disentangle_train_ex.py --test_name "Disentanglement/YelpVanillaVAEszmh1_beta$BETA.$ITER" --kl_beta $BETA --data yelp --n_epochs 20 --graph Vanilla --z_size 16 --encoder_h 512 --decoder_h 512 --csv_out disent_reEval.csv
-#done
-#done
+done
+done
 
 
 # ================= Trying KL per lv loss ==============================
