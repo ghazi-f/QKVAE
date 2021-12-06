@@ -119,7 +119,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
         if self.h_params.lv_kl_coeff > 0:
             kl_loss = self.get_lv_kl_loss()
-            print(kl_loss)
             self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
             losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
         sum(losses_uns).backward()
