@@ -119,11 +119,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #     cropped_x = infer_inputs['x'][..., :cropt_at]
         #     padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
         #     infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
+
+        if self.h_params.lv_kl_coeff > 0:
+            activate_all_attention_outputs()
+
         if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
             self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
                                                    prev_states=self.infer_last_states, complete=True)
         else:
             self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
+        if self.h_params.lv_kl_coeff > 0:
+            deactivate_all_attention_outputs()
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw:
@@ -136,6 +142,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         # Loss computation and backward pass
         losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
+        if self.h_params.lv_kl_coeff > 0:
+            kl_loss = self.get_lv_kl_loss()
+            if self.step % 128 : print("kl_loss:", kl_loss)
+            self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
+            losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
         sum(losses_uns).backward()
         if not self.h_params.contiguous_lm:
             self.infer_last_states, self.gen_last_states = None, None
@@ -862,15 +873,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         rel_idx = [out['idx'] for out in shallow_dependencies(text_sents)]
         # Getting layer wise attention values
 
-        CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
-        ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = True, True
-        ConditionalCoattentiveTransformerLink2.get_att, QKVBartTransformerLink.get_att = True, True
-        CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = True, True
+        activate_all_attention_outputs()
         self.infer_bn({'x': text_in})
-        CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
-        ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = False, False
-        ConditionalCoattentiveTransformerLink2.get_att, QKVBartTransformerLink.get_att = False, False
-        CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = False, False
+        att_vals = self.get_enc_att_vals().cpu().detach().numpy()
+        att_vals = att_vals.mean(-2)
+        deactivate_all_attention_outputs()
+        att_maxes = att_vals.argmax(-1).tolist()
+        return rel_idx, att_maxes
+
+    def get_enc_att_vals(self):
+        max_len = self.h_params.max_len
         all_att_weights = []
         for i in range(len(self.h_params.n_latents)):
             trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
@@ -887,12 +899,27 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                     , -1)
                 if lv_layer == 2:
                     att_out[..., -1] *= 0
-                var_att_weights.append(att_out.cpu().detach().numpy())
-            att_weights.append(var_att_weights)
+                var_att_weights.append(att_out)
+                # var_att_weights.append(att_out.cpu().detach().numpy())
+            # att_weights.append(var_att_weights)
+            att_weights.append(torch.stack(var_att_weights))
         # att_vals shape:[sent, lv, layer, tok]
-        att_vals = np.transpose(np.array(att_weights), (2, 0, 1, 3)).mean(-2)
-        att_maxes = att_vals.argmax(-1).tolist()
-        return rel_idx, att_maxes
+        att_vals = torch.stack(att_weights).transpose(2, 1).transpose(1, 0)
+        return att_vals
+
+    def get_lv_kl_loss(self):
+        att_vals = self.get_enc_att_vals()
+        kl_list = []
+        n_lv = sum(self.h_params.n_latents)
+        # Calculating pairwise KL divergences between latent variable attention distributions
+        for i in range(n_lv):
+            for j in range(n_lv):
+                if i!=j:
+                    logit0, logit1 = att_vals[:, i], att_vals[:, j]
+                    kl_per_dim = torch.softmax(logit0, dim=-1)*(torch.log_softmax(logit0, dim=-1) -
+                                                                torch.log_softmax(logit1, dim=-1))
+                    kl_list.append(torch.sum(kl_per_dim, dim=-1).unsqueeze(0))
+        return - torch.mean(torch.cat(kl_list))
 
     def _get_real_sent_argmaxes(self, sents, maxes):
         text = [[self.index[self.generated_v].itos[w] for w in sen] for sen in sents]
@@ -1181,15 +1208,18 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def collect_stats(self, data_iter):
         kl, kl_var, rec, mi, nsamples = 0, 0, 0, 0, 0
+        varwise_mi = {'z{}'.format(i+1): 0 for i in range(len(self.h_params.n_latents))}
         infer_prev, gen_prev = None, None
         loss_obj = self.losses[0]
-        zs = [(self.infer_bn.name_to_v['z{}'.format(i+1)], self.gen_bn.name_to_v['z{}'.format(i+1)])
-              for i in range(len(self.h_params.n_latents))]
+        zs = {'z{}'.format(i+1): (self.infer_bn.name_to_v['z{}'.format(i+1)], self.gen_bn.name_to_v['z{}'.format(i+1)])
+              for i in range(len(self.h_params.n_latents))}
         if "zs" in self.gen_bn.name_to_v and isinstance(self.infer_bn.name_to_v['zs'], Gaussian):
             # Mutual information still hasn't been implemented for non Gaussian Latent variables
-            zs += [(self.infer_bn.name_to_v['zs'], self.gen_bn.name_to_v['zs'])]
+            zs["zs"] = (self.infer_bn.name_to_v['zs'], self.gen_bn.name_to_v['zs'])
+            varwise_mi["zs"] = 0
         if "zg" in self.gen_bn.name_to_v:
-            zs += [(self.infer_bn.name_to_v['zg'], self.gen_bn.name_to_v['zg'])]
+            zs["zg"] = (self.infer_bn.name_to_v['zg'], self.gen_bn.name_to_v['zg'])
+            varwise_mi["zg"] = 0
         with torch.no_grad():
             for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Stats")):
                 if batch.text.shape[1] < 2: continue
@@ -1201,9 +1231,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 kl += sum([v for k, v in loss_obj.KL_dict.items() if not k.startswith('/Var')]) * batch.text.shape[0]
                 kl_var += sum([v**2 for k, v in loss_obj.KL_dict.items() if k.startswith('/Var')]) * batch.text.shape[0]
                 rec += loss_obj.log_p_xIz.sum()
-                mi += sum([z[0].get_mi(z[1]) for z in zs])
+                # mi += sum([z[0].get_mi(z[1]) for z in zs.values()])
+                for z_n, z in zs.items():
+                    varwise_mi[z_n] += z[0].get_mi(z[1])
                 self.gen_bn.clear_values(), self.infer_bn.clear_values()
-        self.writer.add_scalar('test/MI', (mi/nsamples), self.step)
+        for z_n, z in zs.items():
+            varwise_mi[z_n] /= nsamples
+            self.writer.add_scalar('test/MI_{}'.format(z_n), varwise_mi[z_n], self.step)
+        mi = sum([varwise_mi[z_n] for z_n in varwise_mi.keys()])
+        self.writer.add_scalar('test/MI', mi, self.step)
+        print("Mutual Info :", varwise_mi)
         return (kl/nsamples).cpu().detach().item(), np.sqrt(kl_var/nsamples), \
                - (rec/nsamples).cpu().detach().item(), (mi/nsamples).cpu().detach().item()
 
@@ -1756,3 +1793,16 @@ def l2_sim(a, b):
     dist = (a-b).square().sum(-1).sqrt()
     sim = 1/(1+dist)
     return sim
+
+def activate_all_attention_outputs():
+    CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
+    ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = True, True
+    ConditionalCoattentiveTransformerLink2.get_att, QKVBartTransformerLink.get_att = True, True
+    CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = True, True
+
+
+def deactivate_all_attention_outputs():
+    CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+    ConditionalCoattentiveQKVTransformerLink.get_att, CoattentiveTransformerLink2.get_att = False, False
+    ConditionalCoattentiveTransformerLink2.get_att, QKVBartTransformerLink.get_att = False, False
+    CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = False, False

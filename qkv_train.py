@@ -73,6 +73,7 @@ parser.add_argument("--max_elbo_choice", default=6, type=int)
 parser.add_argument("--kl_beta", default=0.3, type=float)
 parser.add_argument("--kl_beta_zs", default=0.1, type=float)
 parser.add_argument("--kl_beta_zg", default=0.1, type=float)
+parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -91,12 +92,13 @@ if False:
     flags.grad_accu = 1
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
-    flags.data = "yelp"
+    flags.lv_kl_coeff = 1.0
+    flags.data = "paranmt"
     flags.n_latents = [16]
     flags.n_keys = 16
-    flags.graph ="SQKV"  # "Vanilla"
+    flags.graph ="QKV"  # "Vanilla"
     flags.z_size = 192
-    flags.losses = "LagVAE"
+    flags.losses = "VAE"
     flags.kl_beta = 0.4
     flags.kl_beta_zg = 0.1
     flags.kl_beta_zs = 0.01
@@ -193,7 +195,7 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=OPTIMIZER,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
-                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],
+                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type)
     val_iterator = iter(data.val_iter)
@@ -231,8 +233,8 @@ def main():
     model.beam_size = 4
     prev_mi = 0
     # model.eval()
-    # # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
-    # # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
+    # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
+    # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
     # model.step = 8000
     # model.get_disentanglement_summaries2(data.val_iter, 200)
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
