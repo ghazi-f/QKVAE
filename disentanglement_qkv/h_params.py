@@ -31,6 +31,7 @@ class DefaultHParams:
                  pos_l=2,
                  decoder_h=32,
                  decoder_l=2,
+                 layer_wise_qkv=False,
                  losses=None,
                  loss_params=None,
                  piwo=False,
@@ -102,6 +103,7 @@ class DefaultHParams:
         self.decoder_h = decoder_h
         self.decoder_l = decoder_l
 
+        self.layer_wise_qkv = layer_wise_qkv
         self.n_keys = n_keys
         self.n_latents = n_latents
         self.graph_generator = graph_generator

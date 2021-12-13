@@ -51,6 +51,9 @@ parser.set_defaults(minimal_enc=False)
 parser.add_argument('--use_bart', dest='use_bart', action='store_true')
 parser.add_argument('--no-use_bart', dest='use_bart', action='store_false')
 parser.set_defaults(use_bart=False)
+parser.add_argument('--layer_wise_qkv', dest='layer_wise_qkv', action='store_true')
+parser.add_argument('--no-layer_wise_qkv', dest='layer_wise_qkv', action='store_false')
+parser.set_defaults(layer_wise_qkv=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs"],
                     type=str)
@@ -88,11 +91,12 @@ flags = parser.parse_args()
 if False:
     # flags.optimizer="sgd"
     flags.use_bart = True
+    flags.layer_wise_qkv = True
     flags.batch_size = 20
     flags.grad_accu = 1
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
-    flags.lv_kl_coeff = 1.0
+    # flags.lv_kl_coeff = 1.0
     flags.data = "paranmt"
     flags.n_latents = [16]
     flags.n_keys = 16
@@ -182,7 +186,7 @@ if flags.grad_accu > 1:
 def main():
     data = Data(MAX_LEN, BATCH_SIZE, N_EPOCHS, DEVICE, pretrained=flags.pretrained_embeddings)
     h_params = HParams(len(data.vocab.itos), len(data.tags.itos) if (flags.data == 'yelp' and not flags.use_bart)
-                       else None, MAX_LEN, BATCH_SIZE, N_EPOCHS,
+                       else None, MAX_LEN, BATCH_SIZE, N_EPOCHS, layer_wise_qkv=flags.layer_wise_qkv,
                        device=DEVICE, vocab_ignore_index=data.vocab.stoi['<pad>'], decoder_h=flags.decoder_h,
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
