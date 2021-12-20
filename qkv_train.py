@@ -8,6 +8,7 @@ import torch
 from torch import optim
 from transformers import Adafactor
 import numpy as np
+from allennlp.training.learning_rate_schedulers import PolynomialDecay
 
 from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
     BARTParaNMT, BARTNLI
@@ -81,6 +82,7 @@ parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
 parser.add_argument("--lr", default=2e-4, type=float)
+parser.add_argument("--lr_sched", default=0., type=float)
 parser.add_argument("--lr_reduction", default=4., type=float)
 parser.add_argument("--wait_epochs", default=1, type=float)
 parser.add_argument("--save_all", default=True, type=bool)
@@ -88,10 +90,11 @@ parser.add_argument("--save_all", default=True, type=bool)
 flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
-if False:
+if True:
     # flags.optimizer="sgd"
     flags.use_bart = True
     flags.layer_wise_qkv = True
+    flags.lr_sched = 0.00003
     flags.batch_size = 20
     flags.grad_accu = 1
     flags.max_len = 5
@@ -140,7 +143,7 @@ OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor}[flags
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
               'adafactor': {'lr': flags.lr, 'relative_step': False,
-                            'weight_decay': flags.l2_reg}}[flags.optimizer]
+                            'weight_decay': flags.l2_reg, 'clip_threshold': flags.grad_clip}}[flags.optimizer]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
@@ -218,6 +221,10 @@ def main():
         data.redefine_max_len(flags.init_len)
         h_params.max_len = flags.init_len
 
+    if flags.lr_sched > 0:
+        decay = PolynomialDecay(optimizer=model.optimizer, num_epochs=1, num_steps_per_epoch=100000, power=2.0,
+                                warmup_steps=2000, end_learning_rate=flags.lr_sched)# typically 3e-5
+
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
     total_unsupervised_val_samples = len(data.val_iter)*(BATCH_SIZE/data.divide_bs)
     print("Unsupervised training examples: ", total_unsupervised_train_samples)
@@ -258,8 +265,10 @@ def main():
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
             loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]})
+            if flags.lr_sched > 0:
+                decay.step_batch()
 
-            # ---------------------- In-training metric calculations ---------------------------------------------------
+                # ---------------------- In-training metric calculations ---------------------------------------------------
             mean_loss += loss
             if i % 30 == 0:
                 mean_loss /= 30

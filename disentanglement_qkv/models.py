@@ -3,6 +3,7 @@ import sys
 from torch.utils.tensorboard import SummaryWriter
 import torch
 from torch.optim import SGD
+from transformers.optimization import Adafactor
 import numpy as np
 from tqdm import tqdm
 import pandas as pd
@@ -153,7 +154,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         self.infer_bn.clear_values(), self.gen_bn.clear_values()
         torch.cuda.empty_cache()
-        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
+        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1) and \
+                self.h_params.optimizer != Adafactor:
             # Applying gradients and gradient clipping if accumulation is over
             torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
             self.optimizer.step()
