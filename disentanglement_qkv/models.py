@@ -1759,7 +1759,11 @@ def truncate_tree(tree, lv):
 
 
 def get_lin_parse_tree(sens):
-    tree_parses = const_parser.predict(sens, lang='en', verbose=False)
+    try:
+        tree_parses = const_parser.predict(sens, lang='en', verbose=False)
+    except ValueError:
+        print("Obtained malformed parses from sentences!(ValueError)")
+        return [""]*len(sens)
     lin_parses = []
     for p in tree_parses:
         lin_p = repr(p)
