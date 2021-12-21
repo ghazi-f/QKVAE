@@ -31,8 +31,6 @@ import itertools
 from datasets import load_metric
 from supar import Parser
 
-BART_GRAPHS = [] #TODO: fill_in graphs
-
 const_parser = Parser.load('crf-con-en')
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 bleu_score = load_metric("bleu").compute
