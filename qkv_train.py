@@ -223,7 +223,7 @@ def main():
 
     if flags.lr_sched > 0:
         decay = PolynomialDecay(optimizer=model.optimizer, num_epochs=1, num_steps_per_epoch=100000, power=2.0,
-                                warmup_steps=1000, end_learning_rate=flags.lr_sched)# typically 3e-5
+                                warmup_steps=000, end_learning_rate=flags.lr_sched)# typically 3e-5
 
     total_unsupervised_train_samples = len(data.train_iter)*BATCH_SIZE
     total_unsupervised_val_samples = len(data.val_iter)*(BATCH_SIZE/data.divide_bs)
