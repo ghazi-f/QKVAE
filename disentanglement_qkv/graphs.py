@@ -423,7 +423,7 @@ def get_BARTADVAE(h_params, word_embeddings):
     # Generation
     x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
     z_gens = [ZGeni(h_params, z_repnet, i, allow_prior=(i == 0)) for i in range(n_lvls)]
-    zs_xprev_to_x = ConditionalCoattentiveBARTTransformerLink(zin_size, h_params.decoder_h, xout_size,h_params.decoder_l,
+    zs_xprev_to_x = ConditionalCoattentiveBARTTransformerLink(xin_size, h_params.decoder_h, xout_size,h_params.decoder_l,
                                                               Categorical.parameter_activations, word_embeddings,
                                                               highway=h_params.highway, sbn=None,
                                                               dropout=h_params.dropout, n_mems=sum(h_params.n_latents),

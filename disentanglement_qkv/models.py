@@ -1324,30 +1324,55 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def embed_sents(self, sents, sample=False):
         with torch.no_grad():
-            zs_infer, z_infer, x_gen = self.infer_bn.name_to_v['zs'], \
-                                       {'z{}'.format(i + 1): self.infer_bn.name_to_v['z{}'.format(i + 1)]
-                                        for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
+            if self.has_struct:
+                zs_infer, z_infer, x_gen = self.infer_bn.name_to_v['zs'], \
+                                           {'z{}'.format(i + 1): self.infer_bn.name_to_v['z{}'.format(i + 1)]
+                                            for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
 
-            bsz, max_len = len(sents), max([len(s) for s in sents])
-            stoi = self.index[self.generated_v].stoi
-            if self.uses_bart:
-                inputs = self.dataset.tokenizer(sents, max_length=max_len, truncation=True, padding="max_length",
-                                        return_tensors='pt')["input_ids"].to(self.h_params.device)[..., 1:]
+                bsz, max_len = len(sents), max([len(s) for s in sents])
+                stoi = self.index[self.generated_v].stoi
+                if self.uses_bart:
+                    inputs = self.dataset.tokenizer(sents, max_length=max_len, truncation=True, padding="max_length",
+                                            return_tensors='pt')["input_ids"].to(self.h_params.device)[..., 1:]
+                else:
+                    inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
+                    for i, sen in enumerate(sents):
+                        for j, tok in enumerate(sen.split()):
+                            inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
+
+                self.infer_bn({'x': inputs}, complete=sample)
+                if sample:
+                    orig_zs, orig_z = zs_infer.post_samples[..., 0, :], \
+                                      torch.cat([v.post_samples[..., 0, :] for k, v in z_infer.items()], dim=-1)
+                else:
+                    orig_zs, orig_z = zs_infer.rep(zs_infer.infer(zs_infer.post_params))[..., 0, :], \
+                                      torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1)
+
+                return orig_zs, orig_z
             else:
-                inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
-                for i, sen in enumerate(sents):
-                    for j, tok in enumerate(sen.split()):
-                        inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
 
-            self.infer_bn({'x': inputs}, complete=sample)
-            if sample:
-                orig_zs, orig_z = zs_infer.post_samples[..., 0, :], \
-                                  torch.cat([v.post_samples[..., 0, :] for k, v in z_infer.items()], dim=-1)
-            else:
-                orig_zs, orig_z = zs_infer.rep(zs_infer.infer(zs_infer.post_params))[..., 0, :], \
-                                  torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1)
+                z_infer, x_gen = {'z{}'.format(i + 1): self.infer_bn.name_to_v['z{}'.format(i + 1)]
+                                  for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
 
-            return orig_zs, orig_z
+                bsz, max_len = len(sents), max([len(s) for s in sents])
+                stoi = self.index[self.generated_v].stoi
+                if self.uses_bart:
+                    inputs = self.dataset.tokenizer(sents, max_length=max_len, truncation=True, padding="max_length",
+                                                    return_tensors='pt')["input_ids"].to(self.h_params.device)[..., 1:]
+                else:
+                    inputs = torch.zeros((bsz, max_len)).to(self.h_params.device).long() + stoi['<pad>']
+                    for i, sen in enumerate(sents):
+                        for j, tok in enumerate(sen.split()):
+                            inputs[i, j] = stoi[tok] if tok in stoi else stoi['<unk>']
+
+                self.infer_bn({'x': inputs}, complete=sample)
+                if sample:
+                    orig_z = torch.cat([v.post_samples[..., 0, :] for k, v in z_infer.items()], dim=-1)
+                else:
+                    orig_z = torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1)
+
+                return torch.zeros_like(orig_z), orig_z
+
 
     # def get_sent_eval(self):
     #     def prepare(params, samples):

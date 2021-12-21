@@ -94,16 +94,16 @@ if False:
     # flags.optimizer="sgd"
     flags.use_bart = True
     flags.layer_wise_qkv = True
-    flags.lr_sched = 0.00003
+    # flags.lr_sched = 0.00003
     flags.batch_size = 20
     flags.grad_accu = 1
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
     flags.data = "paranmt"
-    flags.n_latents = [16]
+    flags.n_latents = [4]
     flags.n_keys = 16
-    flags.graph ="QKV"  # "Vanilla"
+    flags.graph = "IndepInfer"#"QKV"  # "Vanilla"
     flags.z_size = 192
     flags.losses = "VAE"
     flags.kl_beta = 0.4
@@ -243,13 +243,14 @@ def main():
     mean_loss = 0
     model.beam_size = 4
     prev_mi = 0
-    # model.eval()
+    model.eval()
     # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
     # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
-    # model.step = 8000
+    model.step = 8000
     # model.get_disentanglement_summaries2(data.val_iter, 200)
-    # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
-    # pp_ub = model.get_perplexity(data.val_iter)
+    print(model.get_syn_disent_encoder(split="valid"))
+    dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+    pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
@@ -317,16 +318,13 @@ def main():
                                                                                       val_decoder_Ndisent_vars))
 
             print("=========== New syntax disentanglement scores ========================")
+            val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
             if flags.graph not in ("Vanilla", "IndepInfer"):
-                val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
                 decoder_syn_disent_scores = model.get_swap_tma(n_samples=200)
             else:
-                val_encoder_syn_disent_scores, decoder_syn_disent_scores = {"template": {"zs": 0, "zc": 0},
-                                                                            "paraphrase": {"zs": 0, "zc": 0},
-                                                                            "hard": {"zs": 0, "zc": 0}}, \
-                                                                           {"tma2": {"zs": 0, "zc": 0, "copy": 0},
-                                                                            "tma3": {"zs": 0, "zc": 0, "copy": 0},
-                                                                            "bleu": {"zs": 0, "zc": 0, "copy": 0}}
+                decoder_syn_disent_scores = {"tma2": {"zs": 0, "zc": 0, "copy": 0},
+                                             "tma3": {"zs": 0, "zc": 0, "copy": 0},
+                                             "bleu": {"zs": 0, "zc": 0, "copy": 0}}
             print("Encoder Syntax Disentanglement Scores: ", val_encoder_syn_disent_scores)
             print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
 
@@ -369,18 +367,13 @@ def main():
                                                                               sum(test_dec_lab_wise_disent.values()),
                                                                               test_decoder_Ndisent_vars))
     print("=========== New syntax disentanglement scores ========================")
+    val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
+    test_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="test")
     if flags.graph not in ("Vanilla", "IndepInfer"):
-        val_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="valid")
-        test_encoder_syn_disent_scores = model.get_syn_disent_encoder(split="test")
         decoder_syn_disent_scores = model.get_swap_tma()
     else:
-        val_encoder_syn_disent_scores, test_encoder_syn_disent_scores, \
-        decoder_syn_disent_scores = {"template": {"zs": 0, "zc": 0}, "paraphrase": {"zs": 0, "zc": 0},
-                                     "hard": {"zs": 0, "zc": 0}}, \
-                                    {"template": {"zs": 0, "zc": 0}, "paraphrase": {"zs": 0, "zc": 0},
-                                     "hard": {"zs": 0, "zc": 0}}, \
-                                       {"tma2": {"zs": 0, "zc": 0, "copy": 0}, "tma3": {"zs": 0, "zc": 0, "copy": 0},
-                                        "bleu": {"zs": 0, "zc": 0, "copy": 0}}
+        decoder_syn_disent_scores = {"tma2": {"zs": 0, "zc": 0, "copy": 0}, "tma3": {"zs": 0, "zc": 0, "copy": 0},
+                                     "bleu": {"zs": 0, "zc": 0, "copy": 0}}
     print("Encoder Syntax Disentanglement Scores: ", val_encoder_syn_disent_scores)
     print("Encoder Syntax Disentanglement Scores: ", test_encoder_syn_disent_scores)
     print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
