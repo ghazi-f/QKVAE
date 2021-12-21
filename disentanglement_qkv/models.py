@@ -152,8 +152,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         self.infer_bn.clear_values(), self.gen_bn.clear_values()
         torch.cuda.empty_cache()
-        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1) and \
-                self.h_params.optimizer != Adafactor:
+        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
             # Applying gradients and gradient clipping if accumulation is over
             torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
             self.optimizer.step()

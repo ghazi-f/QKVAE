@@ -143,7 +143,7 @@ OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor}[flags
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
               'adafactor': {'lr': flags.lr, 'relative_step': False,
-                            'weight_decay': flags.l2_reg, 'clip_threshold': flags.grad_clip}}[flags.optimizer]
+                            'weight_decay': flags.l2_reg}}[flags.optimizer]
 
 # torch.autograd.set_detect_anomaly(True)
 GRAPH = {"Vanilla": get_vanilla_graph,
