@@ -131,7 +131,6 @@ if flags.use_bart:
     flags.encoder_h = 768
     flags.embedding_dim = 768
 
-
 if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
     flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
     flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
