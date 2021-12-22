@@ -14,7 +14,8 @@ from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
     ConditionalCoattentiveQKVTransformerLink, CoattentiveTransformerLink2, ConditionalCoattentiveTransformerLink2, \
-    CoattentiveBARTTransformerLink, ConditionalCoattentiveBARTTransformerLink, QKVBartTransformerLink, BartModel
+    CoattentiveBARTTransformerLink, ConditionalCoattentiveBARTTransformerLink, QKVBartTransformerLink, BartModel, \
+    BARTHEZ_LINK, BART_LINK, AutoModel
 from components.bayesnets import BayesNet
 from components.criteria import Supervision
 from components.latent_variables import MultiCategorical
@@ -62,7 +63,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         self.h_params = h_params
         if self.uses_bart:
-            self.word_embeddings = BartModel.from_pretrained('facebook/bart-base').shared
+            self.word_embeddings = AutoModel.from_pretrained(BARTHEZ_LINK).shared if h_params.fr else \
+                BartModel.from_pretrained(BART_LINK).shared
         else:
             self.word_embeddings = nn.Embedding(h_params.vocab_size, h_params.embedding_dim)
             nn.init.uniform_(self.word_embeddings.weight, -1., 1.)
