@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=PADVAE
+#SBATCH --job-name=PADVAE44
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./PADVAE.txt
-#SBATCH --error=./PADVAE.err
+#SBATCH --output=./PADVAE44.txt
+#SBATCH --error=./PADVAE44.err
 #SBATCH --time=100:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
