@@ -9,10 +9,11 @@ from torch.nn.modules.transformer import TransformerEncoder, TransformerEncoderL
 import torch.nn.functional as F
 
 
-from transformers import BartModel
+from transformers import BartModel, AutoModel
 from transformers.models.bart.modeling_bart import BartAttention
 EPSILON = 1e-8
-
+BART_LINK = "facebook/bart-base"
+BARTHEZ_LINK= "moussaKam/barthez"
 
 # ============================================== BASE CLASSES ==========================================================
 
@@ -815,13 +816,14 @@ class CoattentiveBARTTransformerLink(NamedLink):
     get_att = False
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, dropout=0., residual=None,
-                 n_targets=20, n_mems=None):
+                 n_targets=20, n_mems=None, fr=False):
         super(CoattentiveBARTTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
                                                          highway=False, dropout=dropout, batchnorm=False,
                                                          residual=residual)
         # assert output_size % n_targets == 0
         assert z_size % n_targets == 0
-        self.transformer = BartModel.from_pretrained('facebook/bart-base')
+        self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK) if fr else \
+            BartModel.from_pretrained(BART_LINK)
         assert output_size == self.transformer.config.d_model
         output_size = self.transformer.config.d_model
         # output_size = int(output_size/n_targets)
@@ -890,11 +892,12 @@ class ConditionalCoattentiveBARTTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., bidirectional=False, n_mems=20, memory=None, targets=None,
-                 mem_size=None):
+                 mem_size=None, fr=False):
         super(ConditionalCoattentiveBARTTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=False, residual=None)
-        self.transformer = BartModel.from_pretrained('facebook/bart-base')
+        self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK) if fr else \
+            BartModel.from_pretrained(BART_LINK)
         assert output_size == self.transformer.config.d_model
         output_size = self.transformer.config.d_model
 
@@ -959,12 +962,12 @@ class QKVBartTransformerLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
                  key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
-                 simple_zs_use=True, layer_wise=False):
+                 simple_zs_use=True, layer_wise=False, fr=False):
         super(QKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
-
-        self.transformer_dec = BartModel.from_pretrained('facebook/bart-base').decoder
+        self.transformer_dec = AutoModel.from_pretrained(BARTHEZ_LINK).decoder if fr else \
+            BartModel.from_pretrained(BART_LINK).decoder
         assert output_size == self.transformer_dec.config.d_model, "Output size {}, different from BART model " \
                                                                    "dimension {}" \
                                                                    "".format(output_size,
