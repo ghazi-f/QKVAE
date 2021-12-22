@@ -44,6 +44,7 @@ class DefaultHParams:
                  test_prior_samples=5,
                  is_weighted=None,
                  graph_generator=None,
+                 fr=False,
                  anneal_kl=None,
                  zs_anneal_kl=None,
                  zg_anneal_kl=None,
@@ -81,6 +82,7 @@ class DefaultHParams:
         self.vocab_size = vocab_size
         self.tag_size = tag_size
         self.input_dimensions = input_dimensions
+        self.fr = fr
 
         # Architectural hyper-parameters
         self.max_len = max_len
