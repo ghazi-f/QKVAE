@@ -8,7 +8,8 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
-from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2, BARTNLI, BARTNewsCategory
+from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2, BARTNLI, BARTNewsCategory, \
+    BARTFrSbt
 from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
@@ -47,7 +48,12 @@ nlp = spacy.load("en_core_web_sm")
 class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
         self.dataset = dataset
-        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI, BARTNewsCategory]])
+        if h_params.fr:
+            print("Loading Multilingual parser")
+            global const_parser
+            const_parser = Parser.load('crf-con-xlmr')
+        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI, BARTNewsCategory,
+                                                                      BARTFrSbt]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
         self.beam_size = 1
