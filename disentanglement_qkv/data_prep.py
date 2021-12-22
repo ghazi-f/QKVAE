@@ -368,6 +368,101 @@ class BARTParaNMT:
             raise NameError('Misspelled split name : {}'.format(split))
 
 
+
+class BARTNewsCategory:
+
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
+                 pretrained=False):
+
+        self.device = device
+        self.max_len = max_len
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        self.divide_bs = TEST_DIVIDE_BS
+
+        np.random.seed(42)
+        # Loading Data
+        folder = os.path.join(".data", "NewsCategory")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.shorter.txt'), os.path.join(folder, 'dev.shorter.txt'), \
+                                            os.path.join(folder, 'test.shorter.txt')
+        self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
+                                    delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
+
+        # print("Original text Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['text'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Original text length:", np.mean(tr_len))
+        # print("Paraphrase Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['para'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Paraphrase length:", np.mean(tr_len))
+        self.dataset = {'train': self.dataset['train'][:],
+                        'valid': self.dataset['valid'][:],
+                        'test': self.dataset['test'][:]}
+
+        # Getting Tokenizer
+        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base')
+
+        # Getting vocabulary object
+        stoi = self.tokenizer.get_vocab()
+        itos = [None] * len(stoi)
+        for k, v in stoi.items():
+            itos[v] = k
+        self.vocab = MyVocab(itos, stoi)
+
+        # Setting up iterators
+        self.shuffle_split('train'), self.shuffle_split('valid'), self.shuffle_split('test')
+        self.train_iter, self.enc_train_iter = MyBARTIter(self, self.dataset['train']), \
+                                               MyBARTIter(self, self.dataset['train'])
+        self.val_iter, self.test_iter = MyBARTIter(self, self.dataset['valid'], divide_bs=self.divide_bs), \
+                                        MyBARTIter(self, self.dataset['test'], divide_bs=self.divide_bs)
+
+        self.tags, self.wvs = None, None
+
+    def redefine_max_len(self, new_len):
+        folder = os.path.join(".data", "paranmt2")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
+                                            os.path.join(folder, 'test.txt')
+        print("Reloading the data with max words per sentence : ", new_len)
+        self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
+                                    delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
+        self.dataset = self.dataset.filter(lambda x: len(x['text'].split()) < new_len)
+        self.dataset = {'train': self.dataset['train'][:],
+                        'valid': self.dataset['valid'][:],
+                        'test': self.dataset['test'][:]}
+        self.reinit_iterator('train')
+        self.reinit_iterator('valid')
+        self.reinit_iterator('test')
+
+    def shuffle_split(self, split):
+        assert split in ('train', 'valid', 'test')
+        rrange = np.arange(len(self.dataset[split]['text']))
+        np.random.shuffle(rrange)
+        self.dataset[split]['text'] = np.array(self.dataset[split]['text'])[rrange].tolist()
+        self.dataset[split]['para'] = np.array(self.dataset[split]['para'])[rrange].tolist()
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.shuffle_split('train')
+                self.train_iter = MyBARTIter(self, self.dataset['train'])
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.shuffle_split('valid')
+            self.val_iter = MyBARTIter(self, self.dataset['valid'], divide_bs=self.divide_bs)
+        elif split == 'test':
+            self.shuffle_split('test')
+            self.test_iter = MyBARTIter(self, self.dataset['test'], divide_bs=self.divide_bs)
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
 class ParaNMTData:
 
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,

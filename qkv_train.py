@@ -11,7 +11,7 @@ import numpy as np
 from allennlp.training.learning_rate_schedulers import PolynomialDecay
 
 from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
-    BARTParaNMT, BARTNLI
+    BARTParaNMT, BARTNLI, BARTNewsCategory
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -21,7 +21,7 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 2, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt'], type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt', 'news'], type=str)
 parser.add_argument("--csv_out", default='disentqkv3.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--init_len", default=None, type=int)
@@ -100,10 +100,10 @@ if False:
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "paranmt"
+    flags.data = "news"
     flags.n_latents = [4]
     flags.n_keys = 16
-    flags.graph = "IndepInfer"#"QKV"  # "Vanilla"
+    flags.graph = "QKV"  # "Vanilla"
     flags.z_size = 192
     flags.losses = "VAE"
     flags.kl_beta = 0.4
@@ -161,9 +161,11 @@ if flags.losses == "LagVAE":
     flags.anneal_kl1, flags.zs_anneal_kl1, flags.zg_anneal_kl1 = 0, 0, 0
     # flags.kl_beta, flags.kl_beta_zs, flags.kl_beta_zg = 1.0, 1.0, 1.0
 
+if flags.data == 'news': assert flags.use_bart
 Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
         "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
-        "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData}[flags.data]
+        "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData,
+        "news": BARTNewsCategory}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -246,11 +248,11 @@ def main():
     model.eval()
     # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
     # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
-    model.step = 8000
+    # model.step = 8000
     # model.get_disentanglement_summaries2(data.val_iter, 200)
-    print(model.get_syn_disent_encoder(split="valid"))
-    dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
-    pp_ub = model.get_perplexity(data.val_iter)
+    # print(model.get_syn_disent_encoder(split="valid"))
+    # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
+    # pp_ub = model.get_perplexity(data.val_iter)
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
