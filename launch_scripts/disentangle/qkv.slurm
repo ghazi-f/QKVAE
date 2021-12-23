@@ -403,5 +403,5 @@
 
 
 srun python qkv_train.py --test_name "Disentanglement2/QKVFR_beta0.6.0.6.1.4" --kl_beta 0.6 --n_latents 4 --data fr_sbt\
- --n_epochs 200 --graph QKV --max_len 40 --kl_beta_zs 0.6 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
+ --n_epochs 200 --graph QKV --max_len 30 --kl_beta_zs 0.6 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
  --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0
