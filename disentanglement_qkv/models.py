@@ -194,7 +194,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #                            complete=True)
         # else:
         # try:
-        gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev)#, complete=True)
+        gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
         # except ValueError as e:
         #     print({k: v.shape for k, v in self.generated_v.post_params.items()})
         #     print({k: v.dtype for k, v in self.generated_v.post_params.items()})

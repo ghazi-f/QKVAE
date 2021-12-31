@@ -81,7 +81,14 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
 
     def posterior_sample(self, x_params):
         # Returns a sample from P(z|x). x is a dictionary containing the distribution's parameters.
-        sample = self.posterior(**x_params).rsample()
+        try:
+            sample = self.posterior(**x_params).rsample()
+        except ValueError as e:
+            print("Error Happened !")
+            x_params = {k: v.type(torch.float64) for k, v in x_params}
+            sample = self.posterior(**x_params).rsample().type(torch.float64)
+            print("Successfully Unhappened the error !")
+
         # Applying STL
         if self.stl:
             prior = self.posterior(**{k: v.detach() for k, v in x_params.items()})
