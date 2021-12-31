@@ -292,8 +292,9 @@ def main():
                     for loss in model.losses:
                         print(type(loss), ":")
                         print(loss._prepared_metrics, flush=True)
-                model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
-                                    COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
+                model.dump_test_viz(complete=(int(model.step / (len(LOSSES))) %
+                                    COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1) and (model.step > flags.anneal_kl0) and
+                                             (model.step > flags.anneal_kl1))
             # ----------------------------------------------------------------------------------------------------------
                 model.train()
             current_time = time()
