@@ -193,7 +193,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #     gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
         #                            complete=True)
         # else:
-        gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+        try:
+            gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+        except ValueError as e:
+            print(self.generated_v.post_samples.shape, self.generated_v.post_log_probas.shape,
+                  {k: v.shape for k, v in self.generated_v.post_params.items()})
+            print(self.generated_v.post_samples.dtype, self.generated_v.post_log_probas.dtype,
+                  {k: v.dtype for k, v in self.generated_v.post_params.items()})
+            print(self.generated_v.post_samples, self.generated_v.post_log_probas,
+                  {k: v for k, v in self.generated_v.post_params.items()})
+            raise e
 
         # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
