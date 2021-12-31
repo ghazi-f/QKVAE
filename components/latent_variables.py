@@ -85,9 +85,7 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             sample = self.posterior(**x_params).rsample()
         except ValueError as e:
             x_params = {k: v.type(torch.float64) for k, v in x_params.items()}
-            sample = self.posterior(**x_params).rsample()
-            print(sample.dtype)
-            sample = sample.type(torch.DoubleTensor)
+            sample = self.posterior(**x_params).rsample().type(torch.float32)
 
         # Applying STL
         if self.stl:
