@@ -85,7 +85,8 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
             sample = self.posterior(**x_params).rsample()
         except ValueError as e:
             print("Error Happened !")
-            x_params = {k: v.type(torch.float64) for k, v in x_params}
+            print([[v_i for v_i in v] for v in x_params.values()])
+            x_params = {k: v.type(torch.float64) for k, v in x_params.items()}
             sample = self.posterior(**x_params).rsample().type(torch.float64)
             print("Successfully Unhappened the error !")
 
