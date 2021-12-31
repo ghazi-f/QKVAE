@@ -35,7 +35,8 @@ from supar import Parser
 
 const_parser = Parser.load('crf-con-en')
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
-bleu_score = load_metric("bleu").compute
+metric_name = "~/.cache/huggingface/metrics/bleu" if LOCAL_ONLY else "bleu"
+bleu_score = load_metric(metric_name).compute
 nlp = spacy.load("en_core_web_sm")
 # try:
 #     nlp.add_pipe(benepar.BeneparComponent("benepar_en3"))
