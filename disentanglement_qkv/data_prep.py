@@ -11,6 +11,7 @@ from torchtext.vocab import FastText, GloVe
 import numpy as np
 import torch
 from time import time
+from components.links import LOCAL_ONLY
 
 from datasets import load_dataset
 from tokenizers.models import BPE, WordLevel
@@ -121,7 +122,7 @@ class BARTNLI:
                         'test': self.dataset['test'][:]}
 
         # Getting Tokenizer
-        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base')
+        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base', local_files_only=LOCAL_ONLY)
 
         # Getting vocabulary object
         stoi = self.tokenizer.get_vocab()
@@ -213,7 +214,7 @@ class BARTYelp:
                         'test': self.dataset['test'][:]}
 
         # Getting Tokenizer
-        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base')
+        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base', local_files_only=LOCAL_ONLY)
 
         # Getting vocabulary object
         stoi = self.tokenizer.get_vocab()
@@ -307,7 +308,7 @@ class BARTParaNMT:
                         'test': self.dataset['test'][:]}
 
         # Getting Tokenizer
-        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base')
+        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base', local_files_only=LOCAL_ONLY)
 
         # Getting vocabulary object
         stoi = self.tokenizer.get_vocab()
@@ -401,7 +402,7 @@ class BARTNewsCategory:
                         'test': self.dataset['test'][:]}
 
         # Getting Tokenizer
-        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base')
+        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base', local_files_only=LOCAL_ONLY)
 
         # Getting vocabulary object
         stoi = self.tokenizer.get_vocab()
@@ -497,7 +498,7 @@ class BARTFrSbt:
                         'valid': self.dataset['valid'][:],
                         'test': self.dataset['test'][:]}
         # Getting Tokenizer
-        self.tokenizer = BarthezTokenizerFast.from_pretrained('moussaKam/barthez')
+        self.tokenizer = BarthezTokenizerFast.from_pretrained('moussaKam/barthez', local_files_only=LOCAL_ONLY)
 
         # Getting vocabulary object
         stoi = self.tokenizer.get_vocab()

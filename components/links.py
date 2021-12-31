@@ -14,6 +14,7 @@ from transformers.models.bart.modeling_bart import BartAttention
 EPSILON = 1e-8
 BART_LINK = "facebook/bart-base"
 BARTHEZ_LINK= "moussaKam/barthez"
+LOCAL_ONLY = True
 
 # ============================================== BASE CLASSES ==========================================================
 
@@ -822,8 +823,8 @@ class CoattentiveBARTTransformerLink(NamedLink):
                                                          residual=residual)
         # assert output_size % n_targets == 0
         assert z_size % n_targets == 0
-        self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK) if fr else \
-            BartModel.from_pretrained(BART_LINK)
+        self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY) if fr else \
+            BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY)
         assert output_size == self.transformer.config.d_model
         output_size = self.transformer.config.d_model
         # output_size = int(output_size/n_targets)
@@ -896,8 +897,8 @@ class ConditionalCoattentiveBARTTransformerLink(NamedLink):
         super(ConditionalCoattentiveBARTTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=False, residual=None)
-        self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK) if fr else \
-            BartModel.from_pretrained(BART_LINK)
+        self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY) if fr else \
+            BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY)
         assert output_size == self.transformer.config.d_model
         output_size = self.transformer.config.d_model
 
@@ -966,8 +967,8 @@ class QKVBartTransformerLink(NamedLink):
         super(QKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
-        self.transformer_dec = AutoModel.from_pretrained(BARTHEZ_LINK).decoder if fr else \
-            BartModel.from_pretrained(BART_LINK).decoder
+        self.transformer_dec = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY).decoder if fr else \
+            BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY).decoder
         assert output_size == self.transformer_dec.config.d_model, "Output size {}, different from BART model " \
                                                                    "dimension {}" \
                                                                    "".format(output_size,
