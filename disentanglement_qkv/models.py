@@ -189,11 +189,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw or force_iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
-        if self.step < self.h_params.anneal_kl[0]:
-            gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
-                                   complete=True)
-        else:
-            gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+        # if self.step < self.h_params.anneal_kl[0]:
+        #     gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
+        #                            complete=True)
+        # else:
+        gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
 
         # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
