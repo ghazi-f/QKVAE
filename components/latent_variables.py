@@ -84,9 +84,11 @@ class BaseLatentVariable(nn.Module, metaclass=abc.ABCMeta):
         try:
             sample = self.posterior(**x_params).rsample()
         except ValueError as e:
+            print("Error Happened")
             x_params = {k: v.type(torch.float64) for k, v in x_params.items()}
             sample = self.posterior(**x_params).rsample().type(torch.float32)
 
+            print("Error unHappened !")
         # Applying STL
         if self.stl:
             prior = self.posterior(**{k: v.detach() for k, v in x_params.items()})
