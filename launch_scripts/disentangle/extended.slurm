@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SupADVAE3
+#SBATCH --job-name=SupADVAE4
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./SupADVAE3.txt
-#SBATCH --error=./SupADVAE3.err
+#SBATCH --output=./SupADVAE4.txt
+#SBATCH --error=./SupADVAE4.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -162,19 +162,19 @@
 
 
 # Experiments on the Yelp Dataset with ADVAE
-for SUP in 1.0 10.0 100.0
-do
-for ITER in 1 2 3
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta0.3.$SUP.$ITER" --kl_beta 0.3 --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP
-done
-done
-
-# Experiments on the Yelp Dataset with ADVAE
 #for SUP in 1.0 10.0 100.0
 #do
 #for ITER in 1 2 3
 #do
-#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta0.4.$SUP.$ITER" --kl_beta 0.4 --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta0.3.$SUP.$ITER" --kl_beta 0.3 --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP
 #done
 #done
+
+# Experiments on the Yelp Dataset with ADVAE
+for SUP in 1.0 10.0 100.0
+do
+for ITER in 1 2 3
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegular_beta0.4.$SUP.$ITER" --kl_beta 0.4 --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP
+done
+done

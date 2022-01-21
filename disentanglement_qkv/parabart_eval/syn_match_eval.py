@@ -2,18 +2,25 @@ import numpy as np
 from supar import Parser
 import os
 from tqdm import tqdm
-FR = True
+FR = False
+TEST = True
 if FR:
     root = os.path.join('..', '..', '.data', 'fr_sbt')
     sem_f = os.path.join(root, 'sem_ref.txt')
     syn_f = os.path.join(root, 'syn_ref.txt')
     para_f = None
+elif TEST:
+    root = os.path.join('..', '..', '..', 'TSE', 'VGVAE', 'test_files')
+    sem_f = os.path.join(root, 'sem_ref.txt')
+    syn_f = os.path.join(root, 'syn_ref.txt')
+    para_f = os.path.join(root, 'test_ref.txt')
 else:
     root = os.path.join('..', '..', '..', 'TSE', 'VGVAE')
     sem_f = os.path.join(root, 'sem_ref.txt')
     syn_f = os.path.join(root, 'syn_ref.txt')
     para_f = os.path.join(root, 'dev_ref.txt')
-res_f = os.path.join('..', '..', '..', 'TSE', 'VGVAE', 'QKVFR_beta0.6.0.6.1.4_synswap_res.txt')
+# res_f = os.path.join('..', '..', '..', 'TSE', 'VGVAE', 'dev_files', 'advaelvres.txt')
+res_f = os.path.join('..', '..', '..', 'TSE', 'VGVAE', 'test_files', 'advaelvres.txt')
 
 
 def get_sents_from_file(path, codec=False):
@@ -29,7 +36,7 @@ def get_sents_from_file(path, codec=False):
 
 print("Getting sentences")
 syn_src_sens, sem_src_sens, para_sens, res_sens = get_sents_from_file(syn_f), get_sents_from_file(sem_f),\
-                                                  get_sents_from_file(para_f), get_sents_from_file(res_f, codec=False)
+                                                  get_sents_from_file(para_f), get_sents_from_file(res_f, codec=True)
 if FR:
     const_parser = Parser.load('crf-con-xlmr')
 else:
@@ -90,17 +97,17 @@ def template_match(l1, l2, lv, verbose=0, filter_empty=True):
     return [int(t1 == t2) for t1, t2 in zip(temps1, temps2)]
 
 
-print("Calculating various template match metrics")
-syn2sem_tma2, syn2sem_tma3 = np.mean(template_match(syn_src_sens, sem_src_sens, 2)) * 100, \
-                               np.mean(template_match(syn_src_sens, sem_src_sens, 3)) * 100
-print("syn2sem matches: 2:{}, 3:{}".format(syn2sem_tma2, syn2sem_tma3))
-if para_sens is not None:
-    ref2sem_tma2, ref2sem_tma3 = np.mean(template_match(para_sens, sem_src_sens, 2)) * 100, \
-                                   np.mean(template_match(para_sens, sem_src_sens, 3)) * 100
-    print("ref2sem matches: 2:{}, 3:{}".format(ref2sem_tma2, ref2sem_tma3))
-    ref2syn_tma2, ref2syn_tma3 = np.mean(template_match(syn_src_sens, para_sens, 2)) * 100, \
-                                   np.mean(template_match(syn_src_sens, para_sens, 3)) * 100
-    print("ref2syn matches: 2:{}, 3:{}".format(ref2syn_tma2, ref2syn_tma3))
+# print("Calculating various template match metrics")
+# syn2sem_tma2, syn2sem_tma3 = np.mean(template_match(syn_src_sens, sem_src_sens, 2)) * 100, \
+#                                np.mean(template_match(syn_src_sens, sem_src_sens, 3)) * 100
+# print("syn2sem matches: 2:{}, 3:{}".format(syn2sem_tma2, syn2sem_tma3))
+# if para_sens is not None:
+#     ref2sem_tma2, ref2sem_tma3 = np.mean(template_match(para_sens, sem_src_sens, 2)) * 100, \
+#                                    np.mean(template_match(para_sens, sem_src_sens, 3)) * 100
+#     print("ref2sem matches: 2:{}, 3:{}".format(ref2sem_tma2, ref2sem_tma3))
+#     ref2syn_tma2, ref2syn_tma3 = np.mean(template_match(syn_src_sens, para_sens, 2)) * 100, \
+#                                    np.mean(template_match(syn_src_sens, para_sens, 3)) * 100
+#     print("ref2syn matches: 2:{}, 3:{}".format(ref2syn_tma2, ref2syn_tma3))
 syn2res_tma2, syn2res_tma3 = np.mean(template_match(syn_src_sens, res_sens, 2)) * 100, \
                                np.mean(template_match(syn_src_sens, res_sens, 3)) * 100
 print("syn_tma2:{}, syn_tma3:{}".format(syn2res_tma2, syn2res_tma3))
