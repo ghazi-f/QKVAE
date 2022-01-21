@@ -8,7 +8,8 @@ import torch
 from torch import optim
 import numpy as np
 
-from data_prep import NLIGenData2, OntoGenData, HuggingYelp2, HuggingYelpReg, GermanNLIGenData2
+from disentanglement_transformer_extended.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, HuggingYelpReg,\
+    GermanNLIGenData2, SupYelpData, SupNLIData
 from disentanglement_transformer_extended.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_transformer_extended.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer_extended.graphs import *
@@ -18,7 +19,8 @@ from torch.nn import MultiheadAttention
 # Training and Optimization
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", "yelp_reg", "de_nli"], type=str)
+parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", "yelp_reg", "de_nli", "sup_yelp",
+                                                      "sup_nli"], type=str)
 parser.add_argument("--csv_out", default='disentICLRDE.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
@@ -64,6 +66,7 @@ parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=10, type=int)
 parser.add_argument("--kl_beta", default=0.4, type=float)
 parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
+parser.add_argument("--sup_coeff", default=0.0, type=float)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.1, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -79,11 +82,11 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    # flags.lv_kl_coeff = 1.0
+    flags.sup_coeff = 1.0
     flags.n_heads = 1
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
-    flags.test_name = "nliLM/No_sa_test"
-    flags.data = "nli"
+    flags.test_name = "nliLM/sup_test"
+    flags.data = "sup_nli"
     flags.n_latents = [4]
     flags.graph = "IndepInfer"
     # flags.losses = "LagVAE"
@@ -111,8 +114,8 @@ if flags.graph in ("Vanilla", "VanillaTr"):
 if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
-Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2,
-        "yelp_reg": HuggingYelpReg, "de_nli": GermanNLIGenData2}[flags.data]
+Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "yelp_reg": HuggingYelpReg,
+        "de_nli": GermanNLIGenData2, "sup_yelp": SupYelpData, "sup_nli": SupNLIData}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -120,6 +123,8 @@ N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
 DEVICE = device(flags.device)
+SUPERVISED = flags.data.startswith("sup_")
+print('This run is {}supervised'.format("" if SUPERVISED else 'not '))
 # This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
 if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
@@ -149,7 +154,7 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
-                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,
+                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff, sup_coeff=flags.sup_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
@@ -197,7 +202,10 @@ def main():
                     print('Saved model after it\'s pure reconstruction phase')
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
-            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]})
+            inp = {'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}
+            if SUPERVISED:
+                inp['sup'] = training_batch.label
+            loss = model.opt_step(inp)
 
             mean_loss += loss
             if i % 30 == 0:
@@ -214,7 +222,10 @@ def main():
                     val_iterator = iter(data.val_iter)
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
-                    model({'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]})
+                    inp = {'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]}
+                    if SUPERVISED:
+                        inp['sup'] = test_batch.label
+                    model(inp)
                 model.dump_test_viz(complete=int(model.step / (len(LOSSES))) %
                                     COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)
                 model.train()

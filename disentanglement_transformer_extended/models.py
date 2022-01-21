@@ -54,7 +54,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         self.gen_last_states_test = None
 
         # Setting up categorical variable indexes
-        self.index = {self.generated_v: vocab_index}
+        self.index = {self.generated_v: vocab_index, "sup":tag_index}
+
 
         # The losses
         self.losses = [loss(self, w) for loss, w in zip(h_params.losses, h_params.loss_params)]
@@ -74,68 +75,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         if autoload:
             self.load()
 
-    def opt_step(self, samples):
-        if (self.step % self.h_params.grad_accumulation_steps) == 0:
-            # Reinitializing gradients if accumulation is over
-            self.optimizer.zero_grad()
-        #                          ----------- Unsupervised Forward/Backward ----------------
-        # Forward pass
-        infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
-        alter = np.random.choice(['skip', 'crop'])
-        if alter == 'skip':
-            shift = np.random.randint(7)
-            shifted_x = infer_inputs['x'][..., shift:]
-            padding = torch.zeros_like(infer_inputs['x'])[..., :shift]
-            infer_inputs['x'] = torch.cat([shifted_x, padding], -1)
-        else:
-            cropt_at = np.random.randint(12)
-            cropped_x = infer_inputs['x'][..., :cropt_at]
-            padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
-            infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
-
-        if self.h_params.lv_kl_coeff > 0:
-            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
-
-        if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
-            self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
-                                                   prev_states=self.infer_last_states, complete=True)
-        else:
-            self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
-
-        if self.h_params.lv_kl_coeff > 0:
-            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
-
-        gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
-                      **{'x': samples['x'], 'x_prev': samples['x_prev']}}
-        if self.iw:
-            gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
-        if self.step < self.h_params.anneal_kl[0]:
-            self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
-                                               prev_states=self.gen_last_states)
-        else:
-            self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
-
-        # Loss computation and backward pass
-        losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
-        if self.h_params.lv_kl_coeff > 0:
-            kl_loss = self.get_lv_kl_loss()
-            self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
-            losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
-        sum(losses_uns).backward()
-        if not self.h_params.contiguous_lm:
-            self.infer_last_states, self.gen_last_states = None, None
-
-        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
-            # Applying gradients and gradient clipping if accumulation is over
-            torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
-            self.optimizer.step()
-        self.step += 1
-
-        self._dump_train_viz()
-        total_loss = sum(losses_uns)
-
-        return total_loss
-
     def forward(self, samples, eval=False, prev_states=None, force_iw=None):
         # Just propagating values through the bayesian networks to get summaries
         if prev_states:
@@ -147,8 +86,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # Forward pass
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
 
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
         infer_prev = self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval,
                                    prev_states=infer_prev, force_iw=force_iw, complete=True)
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw or force_iw:
@@ -158,6 +102,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                    complete=True)
         else:
             gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+        if self.h_params.lv_kl_coeff > 0:
+            kl_loss = self.get_lv_kl_loss()
+            self.writer.add_scalar('test' + '/' + 'kl_loss', kl_loss, self.step)
+        if self.h_params.sup_coeff > 0:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss(samples['sup'])
+            self.writer.add_scalar('test' + '/' + 'sup_loss', sup_loss, self.step)
 
         # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -204,6 +155,74 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         if complete and any([isinstance(loss, ELBo) for loss in self.losses]):
             for summary_type, summary_name, summary_data in self.data_specific_metrics():
                 summary_dumpers[summary_type]('test'+summary_name, summary_data, self.step)
+
+    def opt_step(self, samples):
+        if (self.step % self.h_params.grad_accumulation_steps) == 0:
+            # Reinitializing gradients if accumulation is over
+            self.optimizer.zero_grad()
+        #                          ----------- Unsupervised Forward/Backward ----------------
+        # Forward pass
+        infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
+        alter = np.random.choice(['skip', 'crop'])
+        if alter == 'skip':
+            shift = np.random.randint(7)
+            shifted_x = infer_inputs['x'][..., shift:]
+            padding = torch.zeros_like(infer_inputs['x'])[..., :shift]
+            infer_inputs['x'] = torch.cat([shifted_x, padding], -1)
+        else:
+            cropt_at = np.random.randint(12)
+            cropped_x = infer_inputs['x'][..., :cropt_at]
+            padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
+            infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
+
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
+
+        if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
+            self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
+                                                   prev_states=self.infer_last_states, complete=True)
+        else:
+            self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
+
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+
+        gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
+                      **{'x': samples['x'], 'x_prev': samples['x_prev']}}
+        if self.iw:
+            gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
+        if self.step < self.h_params.anneal_kl[0]:
+            self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
+                                               prev_states=self.gen_last_states)
+        else:
+            self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
+
+        # Loss computation and backward pass
+        losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
+        if self.h_params.lv_kl_coeff > 0:
+            kl_loss = self.get_lv_kl_loss()
+            self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
+            losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
+        if self.h_params.sup_coeff > 0:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss(samples['sup'])
+            self.writer.add_scalar('train' + '/' + 'sup_loss', sup_loss, self.step)
+            losses_uns.append(self.h_params.sup_coeff * sup_loss)
+        sum(losses_uns).backward()
+
+        if not self.h_params.contiguous_lm:
+            self.infer_last_states, self.gen_last_states = None, None
+
+        if (self.step % self.h_params.grad_accumulation_steps) == (self.h_params.grad_accumulation_steps-1):
+            # Applying gradients and gradient clipping if accumulation is over
+            torch.nn.utils.clip_grad_norm_(self.parameters(), self.h_params.grad_clip)
+            self.optimizer.step()
+        self.step += 1
+
+        self._dump_train_viz()
+        total_loss = sum(losses_uns)
+
+        return total_loss
 
     def data_specific_metrics(self):
         # this is supposed to output a list of (summary type, summary name, summary data) triplets
@@ -692,7 +711,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return rel_idx, att_maxes
 
     def get_enc_att_vals(self):
-        max_len = self.h_params.max_len
+        max_len = self.h_params.max_len-1
         all_att_weights = []
         for i in range(len(self.h_params.n_latents)):
             trans_mod = self.infer_bn.approximator[self.infer_bn.name_to_v['z{}'.format(i + 1)]]
@@ -732,6 +751,26 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     kl_list.append(torch.sum(kl_per_dim, dim=-1).unsqueeze(0))
         return - torch.mean(torch.cat(kl_list))
 
+    def get_sup_att_loss(self, sup):
+        # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
+        att_vals = self.get_enc_att_vals()[..., :-1]
+        # averaging over layers which leads to shape [sent, lv, tok]
+        att_vals = att_vals.mean(-2)
+        # transposing lv and tok dimension to get the softmax right
+        att_vals = att_vals.transpose(-1, -2)
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        mask = 1-(sup == o_idx).int().unsqueeze(-1)
+        sup = F.one_hot(sup)
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx]
+
+        # Calculating cross entropy
+        c_e = -(torch.log_softmax(att_vals, -1)*sup*mask).sum()/mask.sum()
+        return c_e
 
 
     def get_att_and_rel_idx_all(self, text_in, roles=None):

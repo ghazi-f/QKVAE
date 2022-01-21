@@ -51,6 +51,7 @@ class DefaultHParams:
                  kl_th=None,
                  kl_beta=1.0,
                  lv_kl_coeff=0.0,
+                 sup_coeff=0.0,
                  max_elbo=False,
                  highway=True,
                  dropout=0.,
@@ -123,6 +124,7 @@ class DefaultHParams:
         self.kl_th = kl_th
         self.kl_beta = kl_beta
         self.lv_kl_coeff = lv_kl_coeff
+        self.sup_coeff = sup_coeff
         self.max_elbo = max_elbo
         self.dropout = dropout
         self.word_dropout = word_dropout
