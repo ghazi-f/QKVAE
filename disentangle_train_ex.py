@@ -190,6 +190,7 @@ def main():
     # model.eval()
     # print(model.get_disentanglement_summaries2(data.test_iter, 200))
     # print(model.get_perplexity(data.val_iter))
+    # print(model.collect_stats(data.val_iter))
     while data.train_iter is not None:  # Add False for eval mode
         for i, training_batch in enumerate(data.train_iter):
             if training_batch.text.shape[1] < 2: continue

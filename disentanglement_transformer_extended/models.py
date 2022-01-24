@@ -374,10 +374,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Perplexity")):
                 if batch.text.shape[1] < 2: continue
-                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
-                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev),
-                                            force_iw=force_iw,
-                                            )
+                inp = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
+                if self.h_params.sup_coeff > 0:
+                    inp['sup'] = batch.label
+                infer_prev, gen_prev = self(inp, prev_states=(infer_prev, gen_prev), force_iw=force_iw)
                 if not self.h_params.contiguous_lm:
                     infer_prev, gen_prev = None, None
                 elbo = - iwlbo.get_loss(actual=True)
@@ -445,9 +445,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             y_vals = []
             for i, batch in enumerate(tqdm(iterator, desc="Getting Model Sentiment stats")):
                 if batch.text.shape[1] < 2: continue
-                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
-                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev),
-                                            )
+                inp = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
+                if self.h_params.sup_coeff > 0:
+                    inp['sup'] = batch.label
+                infer_prev, gen_prev = self(inp, prev_states=(infer_prev, gen_prev))
                 y_vals.extend(batch.label[:, 0].cpu().numpy())
                 # Getting z values
                 z_vals_i = []
@@ -754,6 +755,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def get_sup_att_loss(self, sup):
         # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
         att_vals = self.get_enc_att_vals()[..., :-1]
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
         # averaging over layers which leads to shape [sent, lv, tok]
         att_vals = att_vals.mean(-2)
         # transposing lv and tok dimension to get the softmax right
@@ -1131,8 +1135,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Stats")):
                 if batch.text.shape[1] < 2: continue
-                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
-                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev))
+                inp = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
+                if self.h_params.sup_coeff > 0:
+                    inp['sup'] = batch.label
+                infer_prev, gen_prev = self(inp, prev_states=(infer_prev, gen_prev))
                 if not self.h_params.contiguous_lm:
                     infer_prev, gen_prev = None, None
                 nsamples += batch.text.shape[0]
