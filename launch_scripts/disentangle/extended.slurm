@@ -137,7 +137,7 @@
 # ================= Supervised ==============================
 
 # Experiments on the SNLI Dataset with ADVAE
-for SUP in 1.0 10.0 100.0
+for SUP in 100.0 1000.0
 do
 for BETA in 0.4
 do
@@ -149,7 +149,7 @@ done
 done
 
 # Experiments on the SNLI Dataset with ADVAE
-#for SUP in 1.0 10.0 100.0
+#for SUP in 100.0 1000.0
 #do
 #for BETA in 0.3
 #do
@@ -162,7 +162,7 @@ done
 
 
 # Experiments on the Yelp Dataset with ADVAE
-#for SUP in 1.0 10.0 100.0
+#for SUP in 100.0 1000.0
 #do
 #for ITER in 1 2 3
 #do
@@ -171,7 +171,7 @@ done
 #done
 
 # Experiments on the Yelp Dataset with ADVAE
-#for SUP in 1.0 10.0 100.0
+#for SUP in 100.0 1000.0
 #do
 #for ITER in 1 2 3
 #do
