@@ -766,7 +766,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         o_idx = self.index['sup'].stoi['o']
         unk_idx = self.index['sup'].unk_index
         mask = 1-(sup == o_idx).int().unsqueeze(-1)
-        sup = F.one_hot(sup)
+        sup = F.one_hot(sup, len(self.index['sup']))
         role_idx = list(range(sup.shape[-1]))
         role_idx.remove(unk_idx)
         role_idx.remove(o_idx)
