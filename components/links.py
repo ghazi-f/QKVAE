@@ -579,7 +579,16 @@ class CoattentiveTransformerLink(NamedLink):
         if no_sa:
             for layer in self.transformer_dec.layers:
                 layer.self_attn = IdentitySAPatch()
-
+        # print("========Encoder Transformer Size========")
+        # print("Enc params:",
+        #       "output_size:", output_size,  "nheads:", nheads, "dim_feedforward:", output_size*n_targets, "depth:", depth)
+        # print("Dec params:",
+        #       "output_size:", output_size,  "nheads:", nheads, "dim_feedforward:", output_size, "depth:", depth)
+        # number_parameters = sum(p.numel() for p in self.transformer_enc.parameters() if p.requires_grad)
+        # print("TransEnc has {} M params".format(number_parameters/1e6))
+        # number_parameters = sum(p.numel() for p in self.transformer_dec.parameters() if p.requires_grad)
+        # print("TransDec has {} M params".format(number_parameters/1e6))
+        # print("========================================")
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
 
@@ -1227,7 +1236,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, memory=None, targets=None,
-                 nheads=2, minimal_enc=False, mem_size=None):
+                 nheads=2, minimal_enc=False, mem_size=None, mem_enc=True):
         super(ConditionalCoattentiveTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
@@ -1236,14 +1245,24 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
         self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
-        if minimal_enc:
-            self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
+        if mem_enc:
+            if minimal_enc:
+                self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
+            else:
+                self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
+                                                                                    dropout=dropout, activation='gelu',
+                                                                                    n_mems=n_mems), depth)
         else:
-            self.transformer_enc = TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
-                                                                                dropout=dropout, activation='gelu',
-                                                                                n_mems=n_mems), depth)
+            self.transformer_enc = None
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
+
+        # print("========Decoder Transformer Size========")
+        # print("Dec params:",
+        #       "output_size:", output_size,  "nheads:", nheads, "dim_feedforward:", output_size, "depth:", depth)
+        # number_parameters = sum(p.numel() for p in self.transformer_dec.parameters() if p.requires_grad)
+        # print("TransDec has {} M params".format(number_parameters/1e6))
+        # print("========================================")
         self.memory, self.targets = memory, targets
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
@@ -1280,7 +1299,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         target_mask = self._generate_square_subsequent_mask(targets.shape[0]) if not self.bidirectional else None
         # memory = self.pe(memory.transpose(-2, 0))
         memory = memory.transpose(-2, 0)
-        memory = self.transformer_enc(memory)
+        memory = self.transformer_enc(memory) if self.transformer_enc is not None else memory
 
         # This conditioned is not checked by the transformer module architecture
         assert all([ms == ts for ms, ts in zip(memory.shape[1:], targets.shape[1:])])
