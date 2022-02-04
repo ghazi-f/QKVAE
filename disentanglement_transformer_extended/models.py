@@ -102,10 +102,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                    complete=True)
         else:
             gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
-        if self.h_params.lv_kl_coeff > 0:
+        if self.h_params.lv_kl_coeff > 0 and not force_iw:
             kl_loss = self.get_lv_kl_loss()
             self.writer.add_scalar('test' + '/' + 'kl_loss', kl_loss, self.step)
-        if self.h_params.sup_coeff > 0:
+        if self.h_params.sup_coeff > 0 and not force_iw:
             assert 'sup' in samples
             sup_loss = self.get_sup_att_loss(samples['sup'])
             self.writer.add_scalar('test' + '/' + 'sup_loss', sup_loss, self.step)

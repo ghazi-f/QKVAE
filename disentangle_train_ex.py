@@ -37,9 +37,9 @@ parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
 parser.add_argument("--n_latents", default=[16, 16, 16], nargs='+', type=int)#################"
 parser.add_argument("--text_rep_l", default=3, type=int)
 parser.add_argument("--text_rep_h", default=192*k, type=int)
-parser.add_argument("--encoder_h", default=192*k, type=int)#################"
+parser.add_argument("--encoder_h", default=768*k, type=int)#################"
 parser.add_argument("--encoder_l", default=2, type=int)#################"
-parser.add_argument("--decoder_h", default=192*k, type=int)
+parser.add_argument("--decoder_h", default=768*k, type=int)
 parser.add_argument("--decoder_l", default=2, type=int)#################"
 parser.add_argument("--n_heads", default=4, type=int)#################"
 parser.add_argument("--highway", default=False, type=bool)
@@ -50,6 +50,9 @@ parser.set_defaults(minimal_enc=False)
 parser.add_argument('--no_sa', dest='no_sa', action='store_true')
 parser.add_argument('--no-no_sa', dest='no_sa', action='store_false')
 parser.set_defaults(no_sa=True)
+parser.add_argument('--tr_enc_in_dec', dest='tr_enc_in_dec', action='store_true')
+parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_false')
+parser.set_defaults(tr_enc_in_dec=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE" "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "Discrete", "IndepInfer", "Normal", "NormalConGen",
                                                           "NormalSimplePrior", "Normal2",  "NormalLSTM", "VanillaTr"],
@@ -83,7 +86,6 @@ if False:
     flags.grad_accu = 1
     flags.max_len = 17
     flags.sup_coeff = 1.0
-    flags.n_heads = 1
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     flags.test_name = "nliLM/sup_test"
     flags.data = "sup_nli"
@@ -147,7 +149,7 @@ def main():
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
                        optimizer_kwargs={'lr': flags.lr, #'weight_decay': flags.l2_reg, 't0':100, 'lambd':0.},
                                          'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
-                       is_weighted=[], graph_generator=GRAPH, no_sa=flags.no_sa,
+                       is_weighted=[], graph_generator=GRAPH, no_sa=flags.no_sa, tr_enc_in_dec=flags.tr_enc_in_dec,
                        z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
                        losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
@@ -178,6 +180,12 @@ def main():
     number_parameters = sum(p.numel() for p in model.infer_bn.parameters() if p.requires_grad)
     print("Inference parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     number_parameters = sum(p.numel() for p in model.gen_bn.parameters() if p.requires_grad)
+    for k, appr in model.infer_bn.approximator.items():
+        number_parameters = sum(p.numel() for p in appr.parameters() if p.requires_grad)
+        print("-->Inference approximator for {} has {} M params".format(k.name, number_parameters/1e6))
+    for k, appr in model.gen_bn.approximator.items():
+        number_parameters = sum(p.numel() for p in appr.parameters() if p.requires_grad)
+        print("-->Generation approximator for {} has {} M params".format(k.name, number_parameters/1e6))
     print("Generation parameters: ", "{0:05.2f} M".format(number_parameters/1e6))
     number_parameters = sum(p.numel() for p in model.word_embeddings.parameters() if p.requires_grad)
     print("Embedding parameters: ", "{0:05.2f} M".format(number_parameters/1e6))

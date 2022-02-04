@@ -444,7 +444,7 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
                                                           memory=[z.name for z in z_gens], targets=['x_prev'],
                                                           nheads=h_params.n_heads, bidirectional=False,
                                                           mem_size=int(z_sizes[0]/h_params.n_latents[0]),
-                                                          minimal_enc=h_params.minimal_enc)
+                                                          minimal_enc=h_params.minimal_enc,mem_enc=h_params.tr_enc_in_dec)
     z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1], h_params.decoder_l,
                                           Gaussian.parameter_activations, nheads=h_params.n_heads, sequence=None,
                                           memory=[z_gens[i].name],
@@ -462,7 +462,7 @@ def get_structured_auto_regressive_indep_graph(h_params, word_embeddings):
     # Inference
     x_inf, z_infs = XInfer(h_params, word_embeddings, has_rep=False), [ZInferi(h_params, z_repnet, i) for i in
                                                                        range(n_lvls)]
-    z_posterior = [CoattentiveTransformerLink(xin_size, int(lv_size_props[i]*h_params.encoder_h),
+    z_posterior = [CoattentiveTransformerLink(xin_size, h_params.encoder_h,# int(lv_size_props[i]*h_params.encoder_h),
                                               z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations, nheads=h_params.n_heads,
                                               sequence=['x'], memory=None,
                                               n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
