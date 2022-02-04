@@ -755,11 +755,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def get_sup_att_loss(self, sup):
         # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
         att_vals = self.get_enc_att_vals()[..., :-1]
+        # averaging over layers which leads to shape [sent, lv, tok]
+        att_vals = att_vals.mean(-2)
         # Avoiding the importance sampled forward passes
         if len(att_vals.shape)>3:
             return 0.
-        # averaging over layers which leads to shape [sent, lv, tok]
-        att_vals = att_vals.mean(-2)
         # transposing lv and tok dimension to get the softmax right
         att_vals = att_vals.transpose(-1, -2)
         # On_hot representing sup, removing "other syntactic roles" label and calculating mask
@@ -775,7 +775,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # Calculating cross entropy
         c_e = -(torch.log_softmax(att_vals, -1)*sup*mask).sum()/mask.sum()
         return c_e
-
 
     def get_att_and_rel_idx_all(self, text_in, roles=None):
         roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
@@ -1103,8 +1102,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
                 for k in enc_lab_wise_disent.keys():
                     self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
-                # enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
-                # self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+                enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
+                self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
                 encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
                 self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
             else:
@@ -1117,8 +1116,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
             for k in dec_lab_wise_disent.keys():
                 self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
-            # dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
-            # self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
+            dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
+            self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
             decoder_Ndisent_vars = len(set(dec_disent_vars.values()))
             self.writer.add_scalar('test/decoder_Ndisent_vars', decoder_Ndisent_vars, self.step)
             for k, v in enc_lab_wise_disent.items():

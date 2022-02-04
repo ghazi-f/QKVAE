@@ -188,6 +188,7 @@ def main():
     stabilize_epochs = 0
     prev_mi = 0
     # model.eval()
+    # model.step = 8000
     # print(model.get_disentanglement_summaries2(data.test_iter, 200))
     # print(model.get_perplexity(data.val_iter))
     # print(model.collect_stats(data.val_iter))
