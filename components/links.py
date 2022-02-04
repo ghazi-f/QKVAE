@@ -574,6 +574,8 @@ class CoattentiveTransformerLink(NamedLink):
         self.mem_to_hidden = nn.Linear(mem_size, output_size) if mem_size else None
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size*n_targets,
                                                                       dropout=dropout, activation='gelu'), depth)
+        for l in self.transformer_dec.layers:
+            l.multihead_attn.dropout = 0.
         self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
         if no_sa:

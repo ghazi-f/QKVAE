@@ -753,6 +753,44 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return - torch.mean(torch.cat(kl_list))
 
     def get_sup_att_loss(self, sup):
+        if self.h_params.sup_loss_choice == 'multi':
+            return self._get_sup_att_loss_multi(sup)
+        elif self.h_params.sup_loss_choice == 'single':
+            return self._get_sup_att_loss_single(sup)
+        else:
+            raise NotImplementedError("Unrecognized supervised loss "
+                                      "choice :\"{}\"".format(self.h_params.sup_loss_choice))
+
+    def _get_sup_att_loss_single(self, sup):
+        # This performs mutli_class classification with attention values
+        # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
+        att_vals = self.get_enc_att_vals()[..., :-1]
+        # averaging over layers which leads to shape [sent, lv, tok]
+        att_vals = att_vals.mean(-2)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx].transpose(-1, -2)
+
+        #Making new dimension for classification
+        att_vals = torch.cat([att_vals.unsqueeze(-1), 1-att_vals.unsqueeze(-1)], -1)
+        sup = torch.cat([sup.unsqueeze(-1), 1-sup.unsqueeze(-1)], -1)
+
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup).mean()
+        return c_e
+
+    def _get_sup_att_loss_multi(self, sup):
+        # For this one, each target LV is a classifier for a determined syntactic role
         # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
         att_vals = self.get_enc_att_vals()[..., :-1]
         # averaging over layers which leads to shape [sent, lv, tok]

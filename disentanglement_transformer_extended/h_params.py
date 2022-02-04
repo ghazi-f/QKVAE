@@ -35,6 +35,7 @@ class DefaultHParams:
                  no_sa=False,
                  tr_enc_in_dec=True,
                  losses=None,
+                 sup_loss_choice="multi",
                  loss_params=None,
                  piwo=False,
                  ipiwo=False,
@@ -111,6 +112,7 @@ class DefaultHParams:
 
         # Specifying losses
         self.losses = losses or [ELBo]
+        self.sup_loss_choice = sup_loss_choice
         self.loss_params = loss_params or [1]*len(self.losses)  # [weight] for unsupervised losses, and [weight, supervised_z_index] for the supervised losses
         self.is_weighted = is_weighted or []
         self.piwo = piwo

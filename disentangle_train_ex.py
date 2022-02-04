@@ -70,6 +70,7 @@ parser.add_argument("--max_elbo_choice", default=10, type=int)
 parser.add_argument("--kl_beta", default=0.4, type=float)
 parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
 parser.add_argument("--sup_coeff", default=0.0, type=float)
+parser.add_argument("--sup_loss_choice", default='multi', choices=["multi", "single"], type=str)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.1, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -82,6 +83,7 @@ flags = parser.parse_args()
 
 # Manual Settings, Deactivate before pushing
 if False:
+    flags.sup_loss_choice = 'single'
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
@@ -152,7 +154,7 @@ def main():
                        is_weighted=[], graph_generator=GRAPH, no_sa=flags.no_sa, tr_enc_in_dec=flags.tr_enc_in_dec,
                        z_size=flags.z_size, embedding_dim=flags.embedding_dim, anneal_kl=ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,
-                       losses=LOSSES, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
+                       losses=LOSSES, sup_loss_choice=flags.sup_loss_choice, dropout=flags.dropout, training_iw_samples=flags.training_iw_samples,
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=optim.AdamW,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
