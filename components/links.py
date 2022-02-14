@@ -1258,6 +1258,8 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             self.transformer_enc = None
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
+        for l in self.transformer_dec.layers:
+            l.multihead_attn.dropout = 0.
 
         # print("========Decoder Transformer Size========")
         # print("Dec params:",
@@ -1313,7 +1315,7 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             for mod in self.transformer_dec.layers:
                 self.att_vals.append(
                 mod.multihead_attn(out, memory, memory)[1])
-                out = mod(out, x)
+                out = mod(out, memory, tgt_mask=target_mask)
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
                     self.params.items()}

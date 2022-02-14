@@ -70,6 +70,7 @@ parser.add_argument("--max_elbo_choice", default=10, type=int)
 parser.add_argument("--kl_beta", default=0.4, type=float)
 parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
 parser.add_argument("--sup_coeff", default=0.0, type=float)
+parser.add_argument("--dec_sup_coeff", default=0.0, type=float)
 parser.add_argument("--sup_loss_choice", default='multi', choices=["multi", "single"], type=str)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.1, type=float)
@@ -87,7 +88,8 @@ if False:
     flags.batch_size = 128
     flags.grad_accu = 1
     flags.max_len = 17
-    flags.sup_coeff = 1.0
+    # flags.sup_coeff = 1.0
+    flags.dec_sup_coeff = 1.0
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     flags.test_name = "nliLM/sup_test"
     flags.data = "sup_nli"
@@ -159,6 +161,7 @@ def main():
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents,
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff, sup_coeff=flags.sup_coeff,
+                       dec_sup_coeff = flags.dec_sup_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type)
@@ -255,7 +258,8 @@ def main():
             # else:
             # dis_diffs1, dis_diffs2, _, _ = model.get_disentanglement_summaries()
             # print("disentanglement scores : {} and {}".format(dis_diffs1, dis_diffs2))
-            val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
+            val_dec_lab_wise_disent, val_enc_lab_wise_disent, \
+            val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
                 = model.get_disentanglement_summaries2(data.val_iter, 200)
             print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                            sum(val_enc_lab_wise_disent.values()),
@@ -292,8 +296,11 @@ def main():
         data.reinit_iterator('train')
     print("================= Finished training : Getting Scores on test set ============")
     model.eval()
-
-    val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
+    #
+    # val_dec_lab_wise_disent, val_dec_lab_wise_disent_recon, val_enc_lab_wise_disent, \
+    # val_decoder_Ndisent_vars, val_decoder_Ndisent_vars_recon, val_encoder_Ndisent_vars \
+    #     = model.get_disentanglement_summaries3(data.val_iter, n_samples=2000)
+    val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars \
         = model.get_disentanglement_summaries2(data.val_iter, n_samples=2000)
     print("Encoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_enc_lab_wise_disent,
                                                                    sum(val_enc_lab_wise_disent.values()),
@@ -301,6 +308,12 @@ def main():
     print("Decoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_dec_lab_wise_disent,
                                                                    sum(val_dec_lab_wise_disent.values()),
                                                                               val_decoder_Ndisent_vars))
+    # print("Decoder Reconstruction Disentanglement Scores : {}, Total : {}, Nvars: {}".format(val_dec_lab_wise_disent_recon,
+    #                                                                sum(val_dec_lab_wise_disent_recon.values()),
+    #                                                                           val_decoder_Ndisent_vars_recon))
+    # test_dec_lab_wise_disent, test_dec_lab_wise_disent_recon, test_enc_lab_wise_disent, \
+    # test_decoder_Ndisent_vars, test_decoder_Ndisent_vars_recon, test_encoder_Ndisent_vars\
+    #     = model.get_disentanglement_summaries3(data.test_iter, n_samples=2000)
     test_dec_lab_wise_disent, test_enc_lab_wise_disent, test_decoder_Ndisent_vars, test_encoder_Ndisent_vars\
         = model.get_disentanglement_summaries2(data.test_iter, n_samples=2000)
     data.reinit_iterator('test')
@@ -310,6 +323,9 @@ def main():
     print("Decoder Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_dec_lab_wise_disent,
                                                                    sum(test_dec_lab_wise_disent.values()),
                                                                               test_decoder_Ndisent_vars))
+    # print("Decoder Reconstruction Disentanglement Scores : {}, Total : {}, Nvars: {}".format(test_dec_lab_wise_disent_recon,
+    #                                                                sum(test_dec_lab_wise_disent_recon.values()),
+    #                                                                           test_decoder_Ndisent_vars_recon))
     pp_ub = model.get_perplexity(data.val_iter)
     test_pp_ub = model.get_perplexity(data.test_iter)
     print("Perplexity: {}".format(test_pp_ub))
@@ -321,13 +337,15 @@ def main():
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
             f.write('\t'.join(['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents',
-                               'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
+                               'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent', 'dev_tot_dec_disent_recon',
                               'dev_tot_en_disent', *['dev_dec_disent_'+r for r in relations],
+                               *['dev_dec_disent_recon_'+r for r in relations],
                                'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
                                *['dev_enc_disent_' + r for r in relations],
                                 'dev_rec_error', 'dev_decoder_Ndisent_vars', 'dev_encoder_Ndisent_vars',
-                              'test_kl', 'test_kl_std', 'test_ppl', 'test_tot_dec_disent',
+                              'test_kl', 'test_kl_std', 'test_ppl', 'test_tot_dec_disent', 'test_tot_dec_disent_recon',
                               'test_tot_en_disent', 'test_dec_disent_subj', *['test_dec_disent_'+r for r in relations],
+                               *['test_dec_disent_recon_' + r for r in relations],
                               'test_dec_disent_syntemp', 'test_dec_disent_lextemp', *['test_enc_disent_'+r for r in relations],
                                 'test_rec_error', 'test_decoder_Ndisent_vars',
                                'test_encoder_Ndisent_vars',
@@ -336,13 +354,17 @@ def main():
         f.write('\t'.join([flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
                            str(flags.kl_beta), str(flags.n_latents),
                            str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum(val_dec_lab_wise_disent.values())),
+                           # str(sum(val_dec_lab_wise_disent_recon.values())),
                            str(sum(val_enc_lab_wise_disent.values())),
                            *[str(val_dec_lab_wise_disent[k]) for k in relations+temps],
+                           # *[str(val_dec_lab_wise_disent_recon[k]) for k in relations+temps],
                            *[str(val_enc_lab_wise_disent[k]) for k in relations], str(dev_rec),
                            str(val_decoder_Ndisent_vars), str(val_encoder_Ndisent_vars),
                            str(test_kl), str(test_kl_std), str(test_pp_ub), str(sum(test_dec_lab_wise_disent.values())),
+                           # str(sum(test_dec_lab_wise_disent_recon.values())),
                            str(sum(test_enc_lab_wise_disent.values())),
                            *[str(test_dec_lab_wise_disent[k]) for k in relations+temps],
+                           # *[str(test_dec_lab_wise_disent_recon[k]) for k in relations+temps],
                            *[str(test_enc_lab_wise_disent[k]) for k in relations], str(test_rec),
                            str(test_decoder_Ndisent_vars), str(test_encoder_Ndisent_vars), str(val_mi), str(test_mi)
                          ])+'\n')
