@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=DecSupYelp
+#SBATCH --job-name=UnsuperSmall
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./DecSupYelp.txt
-#SBATCH --error=./DecSupYelp.err
+#SBATCH --output=./UnsuperSmall.txt
+#SBATCH --error=./UnsuperSmall.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
