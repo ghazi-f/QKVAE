@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=DecSupYelp
+#SBATCH --job-name=UnsupSmall
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./DecSupYelp.txt
-#SBATCH --error=./DecSupYelp.err
+#SBATCH --output=./UnsupSmall.txt
+#SBATCH --error=./UnsupSmall.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -216,31 +216,31 @@
 
 
 # Experiments on the Yelp Dataset with ADVAE
-for SUP in 100.0 1000.0
-do
-for BETA in 0.3 0.4
-do
-for ITER in 1 2 3
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularDec_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --dec_sup_coeff $SUP
-done
-done
-done
-
-
-# ================= Unsupervised ==============================
-
-# Experiments on the SNLI Dataset with ADVAE
-#for SIZE in 192 768
+#for SUP in 100.0 1000.0
 #do
 #for BETA in 0.3 0.4
 #do
 #for ITER in 1 2 3
 #do
-#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUns_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --encoder_h $SIZE --decoder_h $SIZE
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularDec_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --dec_sup_coeff $SUP
 #done
 #done
 #done
+
+
+# ================= Unsupervised ==============================
+
+# Experiments on the SNLI Dataset with ADVAE
+for SIZE in 192 768
+do
+for BETA in 0.3 0.4
+do
+for ITER in 1 2 3
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUns_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --encoder_h $SIZE --decoder_h $SIZE
+done
+done
+done
 
 
 # Experiments on the SNLI Dataset with ADVAE
