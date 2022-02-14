@@ -14,7 +14,10 @@ from components.latent_variables import MultiCategorical
 import spacy
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-#from allennlp.predictors.predictor import Predictor
+from allennlp.predictors.predictor import Predictor
+import allennlp_models.tagging
+
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
@@ -25,8 +28,7 @@ import spacy_udpipe
 nlp = spacy.load("en_core_web_sm")
 de_nlp = spacy.load("de_core_news_sm")
 
-#predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/openie-model.2020.03.26.tar.gz")
-
+predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/structured-prediction-srl-bert.2020.12.15.tar.gz")
 
 # ============================================= DISENTANGLEMENT MODEL CLASS ============================================
 
@@ -86,6 +88,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         # Forward pass
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
 
+        # ======= Inference forward ==============
         if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
             CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
         infer_prev = self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval,
@@ -93,15 +96,22 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
             CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
 
+        # ======= Generation forward ==============
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw or force_iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
+
+        if  self.h_params.dec_sup_coeff > 0:
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
         if self.step < self.h_params.anneal_kl[0]:
             gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
                                    complete=True)
         else:
             gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+        if self.h_params.dec_sup_coeff > 0:
+            CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
+
         if self.h_params.lv_kl_coeff > 0 and not force_iw:
             kl_loss = self.get_lv_kl_loss()
             self.writer.add_scalar('test' + '/' + 'kl_loss', kl_loss, self.step)
@@ -109,6 +119,10 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             assert 'sup' in samples
             sup_loss = self.get_sup_att_loss(samples['sup'])
             self.writer.add_scalar('test' + '/' + 'sup_loss', sup_loss, self.step)
+        if self.h_params.dec_sup_coeff > 0 and not force_iw:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss_dec(samples['sup'])
+            self.writer.add_scalar('test' + '/' + 'dec_sup_loss', sup_loss, self.step)
 
         # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -175,6 +189,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
             infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
 
+        # ======= Inference forward ==============
         if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
             CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = True, True
 
@@ -187,15 +202,22 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
             CoattentiveTransformerLink.get_att, ConditionalCoattentiveTransformerLink.get_att = False, False
 
+        # ======= Generation forward ==============
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
+
+        if self.h_params.dec_sup_coeff > 0:
+            ConditionalCoattentiveTransformerLink.get_att = True
         if self.step < self.h_params.anneal_kl[0]:
             self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
                                                prev_states=self.gen_last_states)
         else:
             self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
+
+        if self.h_params.dec_sup_coeff > 0:
+            ConditionalCoattentiveTransformerLink.get_att = False
 
         # Loss computation and backward pass
         losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -208,6 +230,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             sup_loss = self.get_sup_att_loss(samples['sup'])
             self.writer.add_scalar('train' + '/' + 'sup_loss', sup_loss, self.step)
             losses_uns.append(self.h_params.sup_coeff * sup_loss)
+        if self.h_params.dec_sup_coeff > 0:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss_dec(samples['sup'])
+            self.writer.add_scalar('train' + '/' + 'dec_sup_loss', sup_loss, self.step)
+            losses_uns.append(self.h_params.dec_sup_coeff * sup_loss)
         sum(losses_uns).backward()
 
         if not self.h_params.contiguous_lm:
@@ -809,9 +836,37 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         role_idx.remove(unk_idx)
         role_idx.remove(o_idx)
         sup = sup[..., role_idx]
+        # Making it so that values sum to 1 on the lv axis without a softmax
+        att_vals = att_vals / att_vals.sum(-1).unsqueeze(-1)
 
         # Calculating cross entropy
-        c_e = -(torch.log_softmax(att_vals, -1)*sup*mask).sum()/mask.sum()
+        c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
+        return c_e
+
+    def get_dec_att(self):
+        # att_weights shape:[layer, sent, tok, lv] -->[sent, layer, tok, lv]
+        att_weights = self.gen_bn.approximator[self.generated_v].att_vals
+        att_vals = torch.stack(att_weights).transpose(1, 0)
+        return att_vals
+
+    def get_sup_att_loss_dec(self, sup):
+        # att_vals shape:[sent, layer, tok, lv], averaging over layers which leads to shape [sent, tok, lv]
+        att_vals = self.get_dec_att().mean(1)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        mask = 1-(sup == o_idx).int().unsqueeze(-1)
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx]
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
         return c_e
 
     def get_att_and_rel_idx_all(self, text_in, roles=None):
@@ -915,16 +970,32 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 same_struct = False
 
         def get_diff(arg):
-            if orig_relations[arg] != '' and alt_relations[arg] != '':
-                return orig_relations[arg] != alt_relations[arg], False
+            if orig_relations[arg] == '' and alt_relations[arg] == '':
+                return False, False, False
+            elif orig_relations[arg] != '' and alt_relations[arg] != '':
+                return orig_relations[arg] != alt_relations[arg], False, True
             else:
-                return False, orig_relations[arg] != alt_relations[arg]
+                return False, orig_relations[arg] != alt_relations[arg], False
         syn_temp_diff = orig_temp['syn'] != alt_temp['syn']
         lex_temp_diff = orig_temp['lex'] != alt_temp['lex']
 
         rels = ['nsubj', 'verb', 'dobj', 'pobj'] if self.dataset != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
         return [get_diff(r) for r in rels], same_struct, \
                    syn_temp_diff, lex_temp_diff
+
+    def get_sem_stats(self, orig_relations, alt_relations):
+        orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
+
+        def get_diff(arg):
+            if orig_relations[arg] == '' and alt_relations[arg] == '':
+                return False, False, False
+            elif orig_relations[arg] != '' and alt_relations[arg] != '':
+                return orig_relations[arg] != alt_relations[arg], False, True
+            else:
+                return False, orig_relations[arg] != alt_relations[arg], False
+
+        rels = ['V', 'ARG0', 'ARG1']
+        return [get_diff(r) for r in rels]
 
     def get_sentence_statistics_all(self, orig, sen, orig_relations, alt_relations, orig_temp, alt_temp, roles):
         roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
@@ -944,6 +1015,181 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         diffs = [get_diff(r) for r in roles]
         return diffs, same_struct, \
                syn_temp_diff, lex_temp_diff
+
+    def swap_latent(self, src_lvs, trg_lvs, var_z_ids, gen_len, complete=None, no_unk=True):
+        h_params = self.h_params
+        has_struct = 'zs' in self.gen_bn.name_to_v
+        assert src_lvs['z1'].shape[0] == trg_lvs['z1'].shape[0]
+        n_orig_sentences = trg_lvs['z1'].shape[0]
+        n_samples = 1
+        go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
+                    self.index[self.generated_v].stoi['<go>']
+        go_symbol = go_symbol.to(self.h_params.device).unsqueeze(-1)
+        x_prev = go_symbol
+        if complete is not None:
+            for token in complete.split(' '):
+                x_prev = torch.cat([x_prev, torch.ones([n_samples * n_orig_sentences, 1]).long().to(self.h_params.device) * \
+                    self.index[self.generated_v].stoi[token]], dim=1)
+            gen_len = gen_len - len(complete.split(' '))
+
+        orig_z = trg_lvs['z1'].unsqueeze(1)
+        z_sample = src_lvs['z1'].reshape(n_samples*n_orig_sentences, -1)
+        orig_z = orig_z.transpose(0, 1).reshape(n_samples*n_orig_sentences, -1)
+
+        for id in var_z_ids:
+            if id < sum(h_params.n_latents):
+                z_number = sum([id> sum(h_params.n_latents[:i+1]) for i in range(len(h_params.n_latents))])
+                z_index = id - sum(h_params.n_latents[:z_number])
+                start, end = int(h_params.z_size/max(h_params.n_latents)*z_index),\
+                             int(h_params.z_size/max(h_params.n_latents)*(z_index+1))
+                source, destination = [z_sample][z_number], [orig_z][z_number]
+                destination[:, start:end] = source[:, start:end]
+            elif id == sum(h_params.n_latents) and has_struct:
+                raise NotImplementedError("Didn't Implement this for structure embeddings yet.")
+            else:
+                raise IndexError("You gave a too high z_id for swapping with this model")
+
+        z_input = {'z1': orig_z.unsqueeze(1)}
+
+        # Normal Autoregressive generation
+        for i in range(gen_len):
+            self.gen_bn({'x_prev': x_prev, **{k: v.expand(v.shape[0], i+1, v.shape[-1])
+                                              for k, v in z_input.items()}})
+            samples_i = self.generated_v.post_params['logits']
+            if no_unk:
+                annul_vector = 1-F.one_hot(torch.tensor([self.index[self.generated_v].stoi['<unk>']]).to(self.h_params.device),
+                                           self.h_params.vocab_size)
+                samples_i *= annul_vector
+
+            x_prev = torch.cat([x_prev, torch.argmax(samples_i,     dim=-1)[..., -1].unsqueeze(-1)],
+                               dim=-1)
+
+        text = self.decode_to_text2(x_prev, self.h_params.vocab_size, self.index[self.generated_v])
+        return text, {'z1': orig_z}
+
+    def _get_stat_data_frame_recon(self, data_iter, batch_size=400, delta_drop=True):
+        # Getting the right parsing function
+        stats = []
+        rels = ['nsubj', 'verb', 'dobj', 'pobj'] if self.dataset != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
+        sems = ['V', 'ARG0', 'ARG1']
+        if self.dataset == 'de_nli':
+            shall_dep_func = lambda x: shallow_dependencies2(x, de_nlp, ['sb', 'verb', 'oa', 'da', 'op', 'oc'])
+        else:
+            shall_dep_func = lambda x: shallow_dependencies2(x, nlp)
+        z_infer, x_gen = {'z{}'.format(i + 1): self.infer_bn.name_to_v['z{}'.format(i + 1)]
+                          for i in range(len(self.h_params.n_latents))}, self.gen_bn.name_to_v['x']
+        # Collecting original sentences with their parses and lv samples
+        text, samples, orig_rels, orig_sem, orig_temps = [], {"z1": []}, [], [], []
+        batch_collec = []
+        for i, batch_i in enumerate(tqdm(data_iter, desc="Encoding and reconstructing sentences")):
+            batch_collec.append(batch_i)
+            if sum([b.text.shape[0] for b in batch_collec])>= batch_size:
+                batch_text = torch.cat([b.text for b in batch_collec], dim=0)
+                batch_collec = []
+                if batch_text.shape[1] < 2: continue
+                bs = batch_text.shape[0]
+                self.infer_bn({'x': batch_text[..., 1:]})
+                samples["z1"].extend(torch.cat([v.post_params['loc'][..., 0, :] for k, v in z_infer.items()], dim=-1).tolist())
+                text.extend(self._get_alternative_sentences(
+                    prev_latent_vals={"z1": torch.Tensor(samples["z1"][-bs:]).to(self.h_params.device)}, params=None,
+                    n_samples=1, var_z_ids=[], gen_len=self.h_params.max_len - 1)[0])
+                orig_rels.extend(shall_dep_func(text[-bs:]))
+                orig_sem.extend(srl_from_sents(text[-bs:]))
+                orig_temps.extend(truncated_template(text[-bs:]))
+        samples = {k: torch.Tensor(v).to(self.h_params.device) for k, v in samples.items()}
+        n_samples = len(text)
+        new_idx = np.random.choice(list(range(n_samples)), n_samples).tolist()
+        for i in range(int(n_samples / batch_size)):
+            for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
+                # Altering the sentences
+                alt_text, _ = self.swap_latent({k: v[new_idx[i * batch_size:(i + 1) * batch_size]] for k, v in
+                                             samples.items()}, {k: v[i * batch_size:(i + 1) * batch_size]
+                                                                for k, v in samples.items()}, [j], 16)
+                alt_rels = shall_dep_func(alt_text)
+                alt_sem = srl_from_sents(alt_text)
+                alt_temps = truncated_template(alt_text)
+                # Getting alteration statistics
+                for k in range(batch_size):
+                    orig_text = text[(i * batch_size) + k % batch_size]
+                    try:
+                        r_diffs, same_struct, syn_temp_diff, lex_temp_diff = \
+                            self.get_sentence_statistics2(orig_text, alt_text[k],
+                                                     orig_rels[(i * batch_size) + k % batch_size], alt_rels[k],
+                                                     orig_temps[(i * batch_size) + k % batch_size], alt_temps[k])
+                        sem_diffs = self.get_sem_stats(orig_sem[(i * batch_size) + k % batch_size], alt_sem[k])
+                    except RecursionError or IndexError:
+                        continue
+                    stats.append([orig_text, alt_text[k], j, *(int(diff[0]) for diff in r_diffs),
+                                  *(int(diff[1]) for diff in r_diffs),
+                                  *(int(diff[2]) for diff in r_diffs), *(int(diff[0]) for diff in sem_diffs),
+                                  *(int(diff[2]) for diff in sem_diffs),same_struct, syn_temp_diff, lex_temp_diff])
+
+        header = ['original', 'altered', 'alteration_id', *(r + "_diff" for r in rels), *(r + "_struct" for r in rels),
+                  *(r + "_ex" for r in rels), *(r + "_diff" for r in sems), *(r + "_ex" for r in sems),
+                  'same_struct', 'syntemp_diff', 'lextemp_diff']
+        df = pd.DataFrame(stats, columns=header)
+        # Getting syntactic role scores
+        if not delta_drop:
+            for diff_lab, struct_lab in zip([r + "_diff" for r in rels], [r + "_struct" for r in rels]):
+                df[diff_lab] = [d or s for d, s in zip(df[diff_lab], df[struct_lab])]
+        var_wise_scores = df.groupby('alteration_id').mean()[
+            [r + "_diff" for r in rels] + ['syntemp_diff', 'lextemp_diff']]
+        var_wise_scores_struct = df.groupby('alteration_id').mean()[[r + "_struct" for r in rels]]
+        var_wise_scores_ex = df.groupby('alteration_id').mean()[[r + "_ex" for r in rels]]
+        var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
+        if delta_drop:
+            # renormalizing
+            ex_array = np.array(var_wise_scores_ex)+1e-10
+            ex_array = np.concatenate([ex_array, np.ones((sum(self.h_params.n_latents), 2))], axis=1)
+            var_wise_scores = var_wise_scores / ex_array
+
+        disent_score, lab_wise_disent, dec_disent_vars = 0, {}, {}
+        for lab in rels:
+            try:
+                dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
+            except TypeError:
+                dec_disent_vars[lab] = -1
+                lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
+            disent_score += diff
+        for lab in ['syntemp', 'lextemp']:
+            try:
+                var_wise_scores.idxmax()[lab]
+            except TypeError:
+                lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
+
+        # Getting Semantic role scores (default delta drop)
+        sem_var_wise_scores = df.groupby('alteration_id').mean()[
+            [r + "_diff" for r in sems]]
+        sem_var_wise_scores_ex = df.groupby('alteration_id').mean()[[r + "_ex" for r in sems]]
+        sem_var_wise_scores.set_axis([a.split('_')[0] for a in sem_var_wise_scores.axes[1]], axis=1, inplace=True)
+        if delta_drop:
+            # renormalizing
+            ex_array = np.array(sem_var_wise_scores_ex)+1e-10
+            sem_var_wise_scores = sem_var_wise_scores / ex_array
+
+        sem_disent_score, sem_lab_wise_disent, sem_dec_disent_vars = 0, {}, {}
+        for lab in sems:
+            try:
+                sem_dec_disent_vars[lab] = sem_var_wise_scores.idxmax()[lab]
+            except TypeError:
+                sem_dec_disent_vars[lab] = -1
+                sem_lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(sem_var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            sem_lab_wise_disent[lab] = diff
+            sem_disent_score += diff
+
+        return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars, \
+               sem_disent_score, sem_lab_wise_disent, sem_var_wise_scores, sem_dec_disent_vars
 
     def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=100, delta_drop=True):
         stats = []
@@ -986,25 +1232,25 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                     except RecursionError or IndexError:
                         continue
                     stats.append([orig_text, alt_text[k], j, *(int(diff[0]) for diff in r_diffs),
-                                  *(int(diff[1]) for diff in r_diffs), same_struct, syn_temp_diff, lex_temp_diff])
+                                  *(int(diff[1]) for diff in r_diffs),
+                                  *(int(diff[2]) for diff in r_diffs),same_struct, syn_temp_diff, lex_temp_diff])
 
-        header = ['original', 'altered', 'alteration_id',*(r+"_diff" for r in rels), *(r+"_struct" for r in rels),
-                  # 'subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
-                  # 'subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct',
-                  'same_struct', 'syntemp_diff',
-                  'lextemp_diff']
+        header = ['original', 'altered', 'alteration_id', *(r + "_diff" for r in rels), *(r + "_struct" for r in rels),
+                  *(r + "_ex" for r in rels),
+                  'same_struct', 'syntemp_diff', 'lextemp_diff']
         df = pd.DataFrame(stats, columns=header)
         if not delta_drop:
             for diff_lab, struct_lab in zip([r+"_diff" for r in rels], [r+"_struct" for r in rels]):
                 df[diff_lab] = [d or s for d, s in zip(df[diff_lab], df[struct_lab])]
         var_wise_scores = df.groupby('alteration_id').mean()[[r+"_diff" for r in rels]+['syntemp_diff', 'lextemp_diff']]
         var_wise_scores_struct = df.groupby('alteration_id').mean()[[r+"_struct" for r in rels]]
+        var_wise_scores_ex = df.groupby('alteration_id').mean()[[r+"_ex" for r in rels]]
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
         if delta_drop:
             # renormalizing
-            struct_array = np.array(var_wise_scores_struct)
-            struct_array = 1-np.concatenate([struct_array, np.zeros((sum(self.h_params.n_latents), 2))], axis=1)
-            var_wise_scores = var_wise_scores/struct_array
+            ex_array = np.array(var_wise_scores_ex)+1e-10
+            ex_array = np.concatenate([ex_array, np.ones((sum(self.h_params.n_latents), 2))], axis=1)
+            var_wise_scores = var_wise_scores/ex_array
 
         disent_score = 0
         lab_wise_disent = {}
@@ -1029,7 +1275,125 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
             diff = top2[0] - top2[1]
             lab_wise_disent[lab] = diff
+
         return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
+
+    def _get_stat_data_frame3(self, n_samples=2000, n_alterations=1, batch_size=100, delta_drop=True):
+        stats = []
+        rels = ['nsubj', 'verb', 'dobj', 'pobj'] if self.dataset != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
+        sems = ['V', 'ARG0', 'ARG1']
+        if self.dataset == 'de_nli':
+            shall_dep_func = lambda x: shallow_dependencies2(x, de_nlp, ['sb', 'verb', 'oa', 'da', 'op', 'oc'])
+        else:
+            shall_dep_func = lambda x: shallow_dependencies2(x, nlp)
+        # Generating n_samples sentences
+        text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                              sample_w=False, vary_z=True, complete=None)
+        orig_rels = shall_dep_func(text)
+        orig_sem = srl_from_sents(text)
+        orig_temps = truncated_template(text)
+        for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
+            text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
+                                                      sample_w=False, vary_z=True, complete=None)
+            text.extend(text_i)
+            for k in samples.keys():
+                samples[k] = torch.cat([samples[k], samples_i[k]])
+            orig_rels.extend(shall_dep_func(text_i))
+            orig_sem.extend(srl_from_sents(text_i))
+            orig_temps.extend(truncated_template(text_i))
+        for i in range(int(n_samples / batch_size)):
+            for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
+                # Altering the sentences
+                alt_text, _ = self._get_alternative_sentences(
+                    prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
+                                      for k, v in samples.items()},
+                    params=None, var_z_ids=[j], n_samples=n_alterations,
+                    gen_len=self.h_params.max_len - 1, complete=None)
+                alt_rels = shall_dep_func(alt_text)
+                alt_sem = srl_from_sents(alt_text)
+                alt_temps = truncated_template(alt_text)
+                # Getting alteration statistics
+                for k in range(n_alterations * batch_size):
+                    orig_text = text[(i * batch_size) + k % batch_size]
+                    try:
+                        r_diffs, same_struct, syn_temp_diff, lex_temp_diff = \
+                            self.get_sentence_statistics2(orig_text, alt_text[k],
+                                                          orig_rels[(i * batch_size) + k % batch_size], alt_rels[k],
+                                                          orig_temps[(i * batch_size) + k % batch_size], alt_temps[k])
+                        sem_diffs = self.get_sem_stats(orig_sem[(i * batch_size) + k % batch_size], alt_sem[k])
+                    except RecursionError or IndexError:
+                        continue
+                    stats.append([orig_text, alt_text[k], j, *(int(diff[0]) for diff in r_diffs),
+                                  *(int(diff[1]) for diff in r_diffs),
+                                  *(int(diff[2]) for diff in r_diffs), *(int(diff[0]) for diff in sem_diffs),
+                                  *(int(diff[2]) for diff in sem_diffs),same_struct, syn_temp_diff, lex_temp_diff])
+
+        header = ['original', 'altered', 'alteration_id', *(r + "_diff" for r in rels), *(r + "_struct" for r in rels),
+                  *(r + "_ex" for r in rels), *(r + "_diff" for r in sems), *(r + "_ex" for r in sems),
+                  'same_struct', 'syntemp_diff', 'lextemp_diff']
+        df = pd.DataFrame(stats, columns=header)
+        if not delta_drop:
+            for diff_lab, struct_lab in zip([r+"_diff" for r in rels], [r+"_struct" for r in rels]):
+                df[diff_lab] = [d or s for d, s in zip(df[diff_lab], df[struct_lab])]
+        var_wise_scores = df.groupby('alteration_id').mean()[[r+"_diff" for r in rels]+['syntemp_diff', 'lextemp_diff']]
+        var_wise_scores_struct = df.groupby('alteration_id').mean()[[r+"_struct" for r in rels]]
+        var_wise_scores_ex = df.groupby('alteration_id').mean()[[r+"_ex" for r in rels]]
+        var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
+        if delta_drop:
+            # renormalizing
+            ex_array = np.array(var_wise_scores_ex)+1e-10
+            ex_array = np.concatenate([ex_array, np.ones((sum(self.h_params.n_latents), 2))], axis=1)
+            var_wise_scores = var_wise_scores/ex_array
+
+        disent_score = 0
+        lab_wise_disent = {}
+        dec_disent_vars = {}
+        for lab in rels:
+            try:
+                dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
+            except TypeError:
+                dec_disent_vars[lab] = -1
+                lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
+            disent_score += diff
+        for lab in ['syntemp', 'lextemp']:
+            try:
+                var_wise_scores.idxmax()[lab]
+            except TypeError:
+                lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            lab_wise_disent[lab] = diff
+
+        # Getting Semantic role scores (default delta drop)
+        sem_var_wise_scores = df.groupby('alteration_id').mean()[
+            [r + "_diff" for r in sems]]
+        sem_var_wise_scores_ex = df.groupby('alteration_id').mean()[[r + "_ex" for r in sems]]
+        sem_var_wise_scores.set_axis([a.split('_')[0] for a in sem_var_wise_scores.axes[1]], axis=1, inplace=True)
+        if delta_drop:
+            # renormalizing
+            ex_array = np.array(sem_var_wise_scores_ex) + 1e-10
+            sem_var_wise_scores = sem_var_wise_scores / ex_array
+
+        sem_disent_score, sem_lab_wise_disent, sem_dec_disent_vars = 0, {}, {}
+        for lab in sems:
+            try:
+                sem_dec_disent_vars[lab] = sem_var_wise_scores.idxmax()[lab]
+            except TypeError:
+                sem_dec_disent_vars[lab] = -1
+                sem_lab_wise_disent[lab] = 0
+                continue
+            top2 = np.array(sem_var_wise_scores.nlargest(2, lab)[lab])
+            diff = top2[0] - top2[1]
+            sem_lab_wise_disent[lab] = diff
+            sem_disent_score += diff
+
+        return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars, \
+               sem_disent_score, sem_lab_wise_disent, sem_var_wise_scores, sem_dec_disent_vars
 
     def _get_stat_data_frame_all(self, n_samples=2000, n_alterations=1, batch_size=100, roles=None):
         roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
@@ -1138,12 +1502,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
                     self.get_encoder_disentanglement_score(data_iter)
                 self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
-                for k in enc_lab_wise_disent.keys():
-                    self.writer.add_scalar('test/enc_disent_score[{}]'.format(k), enc_lab_wise_disent[k], self.step)
                 enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
                 self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
                 encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
                 self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
+                for k, v in enc_lab_wise_disent.items():
+                    if np.isnan(v):
+                        enc_lab_wise_disent[k] = 0
             else:
                 enc_lab_wise_disent = {'nsubj': 0, 'verb': 0, 'dobj': 0, 'pobj': 0} if self.dataset != "de_nli" else\
                     {'sb': 0, 'verb': 0, 'oa': 0, 'da': 0, 'op': 0, 'oc': 0}
@@ -1152,16 +1517,65 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores, dec_disent_vars\
                 = self._get_stat_data_frame2(n_samples=n_samples)
             self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
-            for k in dec_lab_wise_disent.keys():
-                self.writer.add_scalar('test/dec_disent_score[{}]'.format(k), dec_lab_wise_disent[k], self.step)
             dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
             self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
             decoder_Ndisent_vars = len(set(dec_disent_vars.values()))
             self.writer.add_scalar('test/decoder_Ndisent_vars', decoder_Ndisent_vars, self.step)
-            for k, v in enc_lab_wise_disent.items():
-                if np.isnan(v):
-                    enc_lab_wise_disent[k] = 0
-        return dec_lab_wise_disent, enc_lab_wise_disent, decoder_Ndisent_vars, encoder_Ndisent_vars
+
+
+        return dec_lab_wise_disent, enc_lab_wise_disent,\
+               decoder_Ndisent_vars, encoder_Ndisent_vars
+
+    def get_disentanglement_summaries3(self, data_iter, n_samples=2000):
+        with torch.no_grad():
+            if self.h_params.graph_generator not in (get_vanilla_graph, get_vanilla_Transformer_graph):
+                enc_var_wise_scores, enc_max_score, enc_lab_wise_disent, enc_disent_vars = \
+                    self.get_encoder_disentanglement_score(data_iter)
+                self.writer.add_scalar('test/total_enc_disent_score', sum(enc_lab_wise_disent.values()), self.step)
+                enc_heatmap = get_hm_array2(pd.DataFrame(enc_var_wise_scores))#, "enc_heatmap_yelp.eps")
+                self.writer.add_image('test/encoder_disentanglement', enc_heatmap, self.step)
+                encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
+                self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
+                for k, v in enc_lab_wise_disent.items():
+                    if np.isnan(v):
+                        enc_lab_wise_disent[k] = 0
+            else:
+                enc_lab_wise_disent = {'nsubj': 0, 'verb': 0, 'dobj': 0, 'pobj': 0} if self.dataset != "de_nli" else\
+                    {'sb': 0, 'verb': 0, 'oa': 0, 'da': 0, 'op': 0, 'oc': 0}
+                encoder_Ndisent_vars = 0
+
+            dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores, dec_disent_vars, \
+               sem_disent_score, sem_lab_wise_disent, sem_var_wise_scores, sem_dec_disent_vars\
+                = self._get_stat_data_frame2(n_samples=n_samples)
+            self.writer.add_scalar('test/total_dec_disent_score', dec_disent_score, self.step)
+            dec_heatmap = get_hm_array2(dec_var_wise_scores)#, "dec_heatmap_yelp.eps")
+            self.writer.add_image('test/decoder_disentanglement', dec_heatmap, self.step)
+            decoder_Ndisent_vars = len(set(dec_disent_vars.values()))
+            self.writer.add_scalar('test/decoder_Ndisent_vars', decoder_Ndisent_vars, self.step)
+
+            self.writer.add_scalar('test/sem_dec_disent_score', sem_disent_score, self.step)
+            sem_heatmap = get_hm_array2(sem_var_wise_scores)#, "dec_heatmap_yelp.eps")
+            self.writer.add_image('test/sem_decoder_disentanglement', sem_heatmap, self.step)
+            sem_decoder_Ndisent_vars = len(set(sem_dec_disent_vars.values()))
+            self.writer.add_scalar('test/sem_decoder_Ndisent_vars', sem_decoder_Ndisent_vars, self.step)
+
+            dec_disent_score_recon, dec_lab_wise_disent_recon, dec_var_wise_scores_recon, dec_disent_vars_recon, \
+               sem_disent_score_recon, sem_lab_wise_disent_recon, sem_var_wise_scores_recon, sem_dec_disent_vars_recon\
+                = self._get_stat_data_frame_recon(data_iter)
+            self.writer.add_scalar('test/total_dec_disent_score_recon', dec_disent_score_recon, self.step)
+            dec_heatmap_recon = get_hm_array2(dec_var_wise_scores_recon)#, "dec_heatmap_yelp.eps")
+            self.writer.add_image('test/decoder_disentanglement_recon', dec_heatmap_recon, self.step)
+            decoder_Ndisent_vars_recon = len(set(dec_disent_vars_recon.values()))
+            self.writer.add_scalar('test/decoder_Ndisent_vars_recon', decoder_Ndisent_vars_recon, self.step)
+
+            self.writer.add_scalar('test/sem_dec_disent_score_recon', sem_disent_score_recon, self.step)
+            sem_heatmap_recon = get_hm_array2(sem_var_wise_scores_recon)#, "dec_heatmap_yelp.eps")
+            self.writer.add_image('test/sem_decoder_disentanglement_recon', sem_heatmap_recon, self.step)
+            sem_decoder_Ndisent_vars_recon = len(set(sem_dec_disent_vars_recon.values()))
+            self.writer.add_scalar('test/sem_decoder_Ndisent_vars_recon', sem_decoder_Ndisent_vars_recon, self.step)
+
+        return dec_lab_wise_disent, dec_lab_wise_disent_recon, enc_lab_wise_disent,\
+               decoder_Ndisent_vars, decoder_Ndisent_vars_recon, encoder_Ndisent_vars
 
     def collect_stats(self, data_iter):
         kl, kl_var, rec, mi, nsamples = 0, 0, 0, 0, 0
@@ -1173,7 +1587,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Stats")):
                 if batch.text.shape[1] < 2: continue
                 inp = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
-                if self.h_params.sup_coeff > 0:
+                if self.h_params.sup_coeff > 0 or self.h_params.dec_sup_coeff > 0:
                     inp['sup'] = batch.label
                 infer_prev, gen_prev = self(inp, prev_states=(infer_prev, gen_prev))
                 if not self.h_params.contiguous_lm:
@@ -1508,3 +1922,33 @@ def truncated_template(sents, depth=0):
             templates.append({'lex': ' ', 'syn': ' '})
     return templates
 
+
+def get_srl_from_prs(pr, doc):
+    roles = ['V', 'ARG0', 'ARG1']
+    realizations = {r: ['', []] for r in roles}
+    root, desc = None, None
+    for tok in doc:
+        if tok.dep_ == 'ROOT':
+            root = tok.i
+            break
+    if root is None: return False, realizations
+    for v in pr["verbs"]:
+        v_idx = [i for i in range(len(v['tags'])) if v['tags'][i].endswith('V')]
+        if root in v_idx:
+            for k in realizations.keys():
+                k_idx = [i for i in range(len(v['tags'])) if v['tags'][i].endswith(k)]
+                realizations[k] = [' '.join([pr['words'][j] for j in k_idx]), k_idx]
+            return True, realizations
+    return False, realizations
+    # relations.append({'text':{k: v[0] for k, v in realizations.items()},
+    #                      'idx': {k: v[1] for k, v in realizations.items()}})
+
+def srl_from_sents(sents):
+    relations = []
+    docs = nlp.pipe(sents)
+    prs = predictor.predict_batch_json([{'sentence': sent} for sent in sents])
+    for pr, doc in zip(prs, docs):
+        _, realizations = get_srl_from_prs(pr, doc)
+        relations.append({'text':{k: v[0] for k, v in realizations.items()},
+                             'idx': {k: v[1] for k, v in realizations.items()}})
+    return relations
