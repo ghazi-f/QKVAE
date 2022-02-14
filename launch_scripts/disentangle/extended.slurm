@@ -250,7 +250,7 @@ for BETA in 0.3 0.4
 do
 for ITER in 1 2 3
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUns_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --encoder_h $SIZE --decoder_h $SIZE --tr_enc_in_dec
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUnsDeAtt_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --encoder_h $SIZE --decoder_h $SIZE --tr_enc_in_dec
 done
 done
 done
