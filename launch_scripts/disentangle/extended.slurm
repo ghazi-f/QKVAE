@@ -161,7 +161,7 @@
 #done
 
 # Experiments on the Yelp Dataset with ADVAE
-#for SUP in 100.0 1000.0
+for SUP in 100.0 1000.0
 do
 for BETA in 0.3
 do
