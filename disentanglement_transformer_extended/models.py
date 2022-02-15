@@ -850,12 +850,21 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return att_vals
 
     def get_sup_att_loss_dec(self, sup):
+        if self.h_params.sup_loss_choice == 'multi':
+            return self._get_sup_att_loss_dec_multi(sup)
+        elif self.h_params.sup_loss_choice == 'single':
+            return self._get_sup_att_loss_dec_single(sup)
+        else:
+            raise NotImplementedError("Unrecognized supervised decoder loss "
+                                      "choice :\"{}\"".format(self.h_params.sup_loss_choice))
+
+    def _get_sup_att_loss_dec_multi(self, sup):
         # att_vals shape:[sent, layer, tok, lv], averaging over layers which leads to shape [sent, tok, lv]
         att_vals = self.get_dec_att().mean(1)
         # Avoiding the importance sampled forward passes
         if len(att_vals.shape)>3:
             return 0.
-        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        # One_hot representing sup, removing "other syntactic roles" label and calculating mask
         o_idx = self.index['sup'].stoi['o']
         unk_idx = self.index['sup'].unk_index
         mask = 1-(sup == o_idx).int().unsqueeze(-1)
@@ -867,6 +876,30 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         # Calculating cross entropy
         c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
+        return c_e
+
+    def _get_sup_att_loss_dec_single(self, sup):
+        # att_vals shape:[sent, layer, tok, lv], average on layers and transpose which leads to shape [sent, lv, tok]
+        att_vals = self.get_dec_att().mean(1).transpose(-1, -2)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx].transpose(-1, -2)
+
+        #Making new dimension for classification
+        att_vals = torch.cat([att_vals.unsqueeze(-1), 1-att_vals.unsqueeze(-1)], -1)
+        sup = torch.cat([sup.unsqueeze(-1), 1-sup.unsqueeze(-1)], -1)
+
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup).mean()
         return c_e
 
     def get_att_and_rel_idx_all(self, text_in, roles=None):
