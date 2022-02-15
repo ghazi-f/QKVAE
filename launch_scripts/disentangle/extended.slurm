@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=UnsupSmall2
+#SBATCH --job-name=UnsupYelp
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./UnsupSmall2.txt
-#SBATCH --error=./UnsupSmall2.err
+#SBATCH --output=./UnsupYelp.txt
+#SBATCH --error=./UnsupYelp.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -214,16 +214,16 @@
 # ================= Unsupervised ==============================
 
 # Experiments on the SNLI Dataset with ADVAE
-for SIZE in 192 768
-do
-for BETA in 0.3 0.4
-do
-for ITER in 1 2 3
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --encoder_h $SIZE --decoder_h $SIZE
-done
-done
-done
+#for SIZE in 192 768
+#do
+#for BETA in 0.3 0.4
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --encoder_h $SIZE --decoder_h $SIZE
+#done
+#done
+#done
 
 
 # Experiments on the SNLI Dataset with ADVAE
@@ -237,3 +237,15 @@ done
 #done
 #done
 #done
+
+# Experiments on the SNLI Dataset with ADVAE
+for SIZE in 768
+do
+for BETA in 0.3
+do
+for ITER in 1 2 3
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --encoder_h $SIZE --decoder_h $SIZE
+done
+done
+done
