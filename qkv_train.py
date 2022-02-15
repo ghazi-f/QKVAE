@@ -55,6 +55,9 @@ parser.set_defaults(use_bart=False)
 parser.add_argument('--layer_wise_qkv', dest='layer_wise_qkv', action='store_true')
 parser.add_argument('--no-layer_wise_qkv', dest='layer_wise_qkv', action='store_false')
 parser.set_defaults(layer_wise_qkv=False)
+parser.add_argument('--tr_enc_in_dec', dest='tr_enc_in_dec', action='store_true')
+parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_false')
+parser.set_defaults(tr_enc_in_dec=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs"],
                     type=str)
@@ -94,13 +97,14 @@ if False:
     # flags.optimizer="sgd"
     flags.use_bart = True
     flags.layer_wise_qkv = True
+    flags.tr_enc_in_dec=True
     # flags.lr_sched = 0.00003
     flags.batch_size = 20
     flags.grad_accu = 1
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "fr_sbt"
+    flags.data = "paranmt"#"fr_sbt"
     flags.n_latents = [4]
     flags.n_keys = 16
     flags.graph = "QKV"  # "Vanilla"
@@ -196,7 +200,7 @@ def main():
                        decoder_l=flags.decoder_l, encoder_h=flags.encoder_h, encoder_l=flags.encoder_l,
                        text_rep_h=flags.text_rep_h, text_rep_l=flags.text_rep_l,
                        test_name=flags.test_name, grad_accumulation_steps=GRAD_ACCU,
-                       optimizer_kwargs=OPT_KWARGS,
+                       optimizer_kwargs=OPT_KWARGS, tr_enc_in_dec=flags.tr_enc_in_dec,
                        is_weighted=[], graph_generator=GRAPH, z_size=flags.z_size, embedding_dim=flags.embedding_dim,
                        anneal_kl=ANNEAL_KL, zs_anneal_kl=ZS_ANNEAL_KL, zg_anneal_kl=ZG_ANNEAL_KL,
                        grad_clip=flags.grad_clip*flags.grad_accu, kl_th=flags.kl_th, highway=flags.highway,

@@ -974,7 +974,7 @@ class QKVBartTransformerLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
                  key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
-                 simple_zs_use=True, layer_wise=False, fr=False):
+                 simple_zs_use=True, layer_wise=False, fr=False, mem_enc=False):
         super(QKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
@@ -989,11 +989,21 @@ class QKVBartTransformerLink(NamedLink):
         hack_BART(self.transformer_dec)
 
         # output_size = int(output_size/n_mems)
-        self.mem_ids = nn.Embedding(n_mems, mem_size).weight
         self.mem_size = mem_size or int(input_size/n_mems)
         self.simple_zs_use = simple_zs_use
         self.n_keys = n_mems if simple_zs_use else n_keys
-        self.memory_to_hidden = nn.Linear(self.mem_size*2, output_size * (self.n_layers or 1))
+
+        if mem_enc:
+            self.mem_ids = None
+            self.memory_to_hidden1 = nn.Linear(self.mem_size, output_size)
+            self.transformer_enc =\
+                TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
+                                                             dropout=dropout, activation='gelu', n_mems=n_mems), depth)
+            self.memory_to_hidden = nn.Linear(output_size, output_size * (self.n_layers or 1))
+        else:
+            self.mem_ids = nn.Embedding(n_mems, mem_size).weight
+            self.memory_to_hidden = nn.Linear(self.mem_size * 2, output_size * (self.n_layers or 1))
+            self.transformer_enc, self.memory_to_hidden1 = None, None
         self.old = old_ver
         if self.old:
             self.key_to_hidden = nn.Linear(self.mem_size, output_size * self.n_keys)
@@ -1026,6 +1036,7 @@ class QKVBartTransformerLink(NamedLink):
         assert (memory is None and key is None) or (memory is not None and key is not None), "if you specify memory" \
                                                                                              " variables, also specify" \
                                                                                              " key variables"
+
         self.memory, self.key, self.targets = memory, key, targets
         self.bn = nn.BatchNorm1d(z_size)
         self.n_mems, self.output_size = n_mems, output_size
@@ -1048,10 +1059,7 @@ class QKVBartTransformerLink(NamedLink):
     def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
         memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
-        mem_ids = self.mem_ids
-        while memory.ndim > mem_ids.ndim:
-            mem_ids = mem_ids.unsqueeze(0)
-        memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
+
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
         if self.old:
             key = key.view((*key.shape[:-1], 1, self.mem_size))
@@ -1068,6 +1076,12 @@ class QKVBartTransformerLink(NamedLink):
         else:
             batch_orig_shape = None
 
+        if self.transformer_enc is not None:
+            memory = self.transformer_enc(self.memory_to_hidden1(memory.transpose(0, -2))).transpose(0, -2)
+            memory = self.memory_to_hidden(memory)
+        else:
+            memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
+        
         if not self.simple_zs_use:
             key = key.transpose(-2, 0)
             key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
@@ -1246,8 +1260,9 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
 
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
-        self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
         if mem_enc:
+            self.memory_to_hidden = nn.Linear(self.mem_size, output_size)
+            self.mem_ids = None
             if minimal_enc:
                 self.transformer_enc = MinimalTransformerEncoder(output_size, n_mems)
             else:
@@ -1255,6 +1270,8 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
                                                                                     dropout=dropout, activation='gelu',
                                                                                     n_mems=n_mems), depth)
         else:
+            self.memory_to_hidden = nn.Linear(2*self.mem_size, output_size)
+            self.mem_ids = nn.Embedding(n_mems, mem_size).weight
             self.transformer_enc = None
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
@@ -1289,7 +1306,11 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
     def forward(self, x, z_prev=None, lens=None):
         memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
         memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
-        memory = self.memory_to_hidden(memory)
+
+        if self.transformer_enc is not None:
+            memory = self.memory_to_hidden(memory)
+        else:
+            memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
         if memory.ndim > 3:

@@ -485,13 +485,13 @@ def get_qkv_graphBART(h_params, word_embeddings):
     zst_gen = ZStGen(h_params)
 
     zst_zs_xprev_to_x = QKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
-                                                                 Categorical.parameter_activations, word_embeddings,
-                                                                 highway=h_params.highway, sbn=None,
-                                                                 dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
-                                                                 memory=[z.name for z in z_gens], targets=['x_prev'],
-                                                                 key=['zs'], nheads=4, bidirectional=False,
-                                                                 mem_size=int(z_sizes[0]/h_params.n_latents[0]),
-                                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys,
+                                             Categorical.parameter_activations, word_embeddings,
+                                             highway=h_params.highway, sbn=None,
+                                             dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                             memory=[z.name for z in z_gens], targets=['x_prev'],
+                                             key=['zs'], nheads=4, bidirectional=False, mem_enc=h_params.tr_enc_in_dec,
+                                             mem_size=int(z_sizes[0]/h_params.n_latents[0]),
+                                             minimal_enc=h_params.minimal_enc, n_keys=n_keys,
                                                layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
     z_prior = [CoattentiveBARTTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
                                               h_params.decoder_l, Gaussian.parameter_activations,

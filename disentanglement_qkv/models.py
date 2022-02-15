@@ -977,84 +977,87 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         orig_relations, alt_relations = orig_relations['text'], alt_relations['text']
         same_struct = True
         for k in orig_relations.keys():
-            if (orig_relations[k] == '' and alt_relations[k] != '') or (orig_relations[k] == '' and alt_relations[k] != ''):
+            if (orig_relations[k] == '' and alt_relations[k] != '') or (
+                    orig_relations[k] == '' and alt_relations[k] != ''):
                 same_struct = False
 
         def get_diff(arg):
-            if orig_relations[arg] != '' and alt_relations[arg] != '':
-                return orig_relations[arg] != alt_relations[arg], False
+            if orig_relations[arg] == '' and alt_relations[arg] == '':
+                return False, False, False
+            elif orig_relations[arg] != '' and alt_relations[arg] != '':
+                return orig_relations[arg] != alt_relations[arg], False, True
             else:
-                return False, orig_relations[arg] != alt_relations[arg]
+                return False, orig_relations[arg] != alt_relations[arg], False
+
         syn_temp_diff = orig_temp['syn'] != alt_temp['syn']
         lex_temp_diff = orig_temp['lex'] != alt_temp['lex']
 
-        return get_diff('subj'), get_diff('verb'), get_diff('dobj'), get_diff('pobj'), same_struct, \
+        rels = ['nsubj', 'verb', 'dobj', 'pobj']
+        return [get_diff(r) for r in rels], same_struct, \
                syn_temp_diff, lex_temp_diff
 
     def _get_stat_data_frame2(self, n_samples=2000, n_alterations=1, batch_size=50):
         stats = []
+        rels = ['nsubj', 'verb', 'dobj', 'pobj'] if self.dataset != "de_nli" else ['sb', 'verb', 'oa', 'da', 'op', 'oc']
+        shall_dep_func = lambda x: shallow_dependencies2(x, nlp)
         # Generating n_samples sentences
         text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
-                                               sample_w=False, vary_z=True, complete=None)
-        orig_rels = shallow_dependencies(text)
+                                              sample_w=False, vary_z=True, complete=None)
+        orig_rels = shall_dep_func(text)
         orig_temps = truncated_template(text)
-        n_lvs = sum(self.h_params.n_latents) +(1 if self.has_struct else 0)
         for _ in tqdm(range(int(n_samples / batch_size)), desc="Generating original sentences"):
             text_i, samples_i, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
-                                                       sample_w=False, vary_z=True, complete=None)
+                                                      sample_w=False, vary_z=True, complete=None)
             text.extend(text_i)
             for k in samples.keys():
                 samples[k] = torch.cat([samples[k], samples_i[k]])
-            orig_rels.extend(shallow_dependencies(text_i))
+            orig_rels.extend(shall_dep_func(text_i))
             orig_temps.extend(truncated_template(text_i))
         for i in range(int(n_samples / batch_size)):
-            for j in tqdm(range(n_lvs), desc="Processing sample {}".format(str(i))):
+            for j in tqdm(range(sum(self.h_params.n_latents)), desc="Processing sample {}".format(str(i))):
                 # Altering the sentences
                 alt_text, _ = self._get_alternative_sentences(
                     prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
                                       for k, v in samples.items()},
                     params=None, var_z_ids=[j], n_samples=n_alterations,
                     gen_len=self.h_params.max_len - 1, complete=None)
-                alt_rels = shallow_dependencies(alt_text)
+                alt_rels = shall_dep_func(alt_text)
                 alt_temps = truncated_template(alt_text)
                 # Getting alteration statistics
                 for k in range(n_alterations * batch_size):
                     orig_text = text[(i * batch_size) + k % batch_size]
                     try:
-                        arg0_diff, v_diff, arg1_diff, arg_star_diff, same_struct, syn_temp_diff, lex_temp_diff = \
+                        r_diffs, same_struct, syn_temp_diff, lex_temp_diff = \
                             self.get_sentence_statistics2(orig_text, alt_text[k],
                                                           orig_rels[(i * batch_size) + k % batch_size], alt_rels[k],
                                                           orig_temps[(i * batch_size) + k % batch_size], alt_temps[k])
                     except RecursionError or IndexError:
                         continue
-                    altered_var = 'z{}'.format(j+1) if j!=(n_lvs-1) else 'zs'
-                    stats.append([orig_text, alt_text[k], altered_var, int(arg0_diff[0]), int(v_diff[0]),
-                                  int(arg1_diff[0]), int(arg_star_diff[0]), int(arg0_diff[1]), int(v_diff[1]),
-                                  int(arg1_diff[1]), int(arg_star_diff[1]), same_struct, syn_temp_diff, lex_temp_diff])
+                    stats.append([orig_text, alt_text[k], j, *(int(diff[0]) for diff in r_diffs),
+                                  *(int(diff[1]) for diff in r_diffs),
+                                  *(int(diff[2]) for diff in r_diffs),same_struct, syn_temp_diff, lex_temp_diff])
 
-        header = ['original', 'altered', 'alteration_id', 'subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
-                  'subj_struct', 'verb_struct', 'dobj_struct', 'pobj_struct', 'same_struct', 'syntemp_diff',
-                  'lextemp_diff']
+        header = ['original', 'altered', 'alteration_id', *(r + "_diff" for r in rels), *(r + "_struct" for r in rels),
+                  *(r + "_ex" for r in rels),
+                  'same_struct', 'syntemp_diff', 'lextemp_diff']
         df = pd.DataFrame(stats, columns=header)
-        var_wise_scores = df.groupby('alteration_id').mean()[['subj_diff', 'verb_diff', 'dobj_diff', 'pobj_diff',
-                                                              'syntemp_diff', 'lextemp_diff']]
-        var_wise_scores_struct = df.groupby('alteration_id').mean()[['subj_struct', 'verb_struct',
-                                                                     'dobj_struct', 'pobj_struct']]
+        var_wise_scores = df.groupby('alteration_id').mean()[[r+"_diff" for r in rels]+['syntemp_diff', 'lextemp_diff']]
+        var_wise_scores_struct = df.groupby('alteration_id').mean()[[r+"_struct" for r in rels]]
+        var_wise_scores_ex = df.groupby('alteration_id').mean()[[r+"_ex" for r in rels]]
         var_wise_scores.set_axis([a.split('_')[0] for a in var_wise_scores.axes[1]], axis=1, inplace=True)
         # renormalizing
-        struct_array = np.array(var_wise_scores_struct)
-        n_vars = sum(self.h_params.n_latents) + (1 if "zs" in self.gen_bn.name_to_v else 0)
-        struct_array = 1-np.concatenate([struct_array, np.zeros((n_vars, 2))], axis=1)
-        var_wise_scores = var_wise_scores/struct_array
+        ex_array = np.array(var_wise_scores_ex)+1e-10
+        ex_array = np.concatenate([ex_array, np.ones((sum(self.h_params.n_latents), 2))], axis=1)
+        var_wise_scores = var_wise_scores/ex_array
 
         disent_score = 0
         lab_wise_disent = {}
         dec_disent_vars = {}
-        for lab in ['subj', 'verb', 'dobj', 'pobj']:
+        for lab in rels:
             try:
                 dec_disent_vars[lab] = var_wise_scores.idxmax()[lab]
-            except TypeError :
-                dec_disent_vars[lab] = 'none'
+            except TypeError:
+                dec_disent_vars[lab] = -1
                 lab_wise_disent[lab] = 0
                 continue
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
@@ -1070,6 +1073,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             top2 = np.array(var_wise_scores.nlargest(2, lab)[lab])
             diff = top2[0] - top2[1]
             lab_wise_disent[lab] = diff
+
         return disent_score, lab_wise_disent, var_wise_scores, dec_disent_vars
 
     def _get_perturbation_tma(self, n_samples=2000, n_alterations=1, batch_size=100):
@@ -1745,6 +1749,32 @@ def shallow_dependencies(sents):
         relations.append({'text':{'subj': subj[0], 'verb': verb[0], 'dobj': dobj[0], 'pobj': pobj[0]},
                          'idx':{'subj': subj[1], 'verb': verb[1], 'dobj': dobj[1], 'pobj': pobj[1]}})
     return relations
+
+def shallow_dependencies2(sents, parser, roles=None):
+    roles = roles if roles is not None else['nsubj', 'verb', 'dobj', 'pobj']
+    docs = parser.pipe(sents)
+    relations = []
+    for doc in docs:
+        realizations = {r: ['', []] for r in roles}
+        for i, tok in enumerate(doc):
+            for r in roles:
+                if r == 'verb':
+                    if tok.dep_ == 'ROOT' and tok.pos_ == 'VERB':
+                        realizations[r] = [tok.text, [tok.i]]
+                else:
+                    expected_ancestors = 2 if r == 'pobj' else 1
+                    if len(list(tok.ancestors)) != expected_ancestors:
+                        continue
+                    parent = list(tok.ancestors)[expected_ancestors-1]
+                    parent_is_verbal_root = parent.dep_ == 'ROOT' and parent.pos_ == 'VERB'
+                    if tok.dep_ == r and realizations[r][0] == '' and parent_is_verbal_root:
+                        realizations[r] = [' '.join([toki.text for toki in tok.subtree]),
+                                           [toki.i for toki in tok.subtree]]
+
+        relations.append({'text':{k: v[0] for k, v in realizations.items()},
+                         'idx': {k: v[1] for k, v in realizations.items()}})
+    return relations
+
 
 
 def get_children(tok, depth):
