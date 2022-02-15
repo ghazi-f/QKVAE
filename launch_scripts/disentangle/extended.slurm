@@ -186,29 +186,29 @@
 # ================= Decoder Supervised ==============================
 
 # Experiments on the SNLI Dataset with ADVAE
-for SUP in 100.0 1000.0
-do
-for BETA in 0.3
-do
-for ITER in 1 2 3
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularDec_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --dec_sup_coeff $SUP  --tr_enc_in_dec
-done
-done
-done
+#for SUP in 100.0 1000.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularDec_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --dec_sup_coeff $SUP  --tr_enc_in_dec
+#done
+#done
+#done
 
 
 # Experiments on the Yelp Dataset with ADVAE
-for SUP in 100.0 1000.0
-do
-for BETA in 0.3
-do
-for ITER in 1 2 3
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularDec_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --dec_sup_coeff $SUP  --tr_enc_in_dec
-done
-done
-done
+#for SUP in 100.0 1000.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularDec_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --dec_sup_coeff $SUP  --tr_enc_in_dec
+#done
+#done
+#done
 
 
 # ================= Unsupervised ==============================
