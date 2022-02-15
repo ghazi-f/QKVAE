@@ -245,7 +245,7 @@ for BETA in 0.3
 do
 for ITER in 1 2 3
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --encoder_h $SIZE --decoder_h $SIZE
+srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --encoder_h $SIZE --decoder_h $SIZE --tr_enc_in_dec
 done
 done
 done
