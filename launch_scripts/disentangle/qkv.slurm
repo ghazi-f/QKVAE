@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=QKVXTr36=3
+#SBATCH --job-name=QKVXTr33
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
