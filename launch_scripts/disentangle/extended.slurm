@@ -264,14 +264,27 @@
 #done
 #done
 
-# Experiments on the SNLI Dataset with ADVAE
+# Experiments on the Yelp Dataset with ADVAE
+#for SIZE in 768
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --encoder_h $SIZE --decoder_h $SIZE --tr_enc_in_dec
+#done
+#done
+#done
+
+
+# Experiments on the Wiki Dataset with ADVAE
 for SIZE in 768
 do
-for BETA in 0.3
+for BETA in 0.3 0.4
 do
 for ITER in 1 2 3
 do
-srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --encoder_h $SIZE --decoder_h $SIZE --tr_enc_in_dec
+srun python disentangle_train_ex.py --test_name "Disentanglement/WikiRegularUns2_beta$BETA.$SIZE.$ITER" --kl_beta $BETA --n_latents 4 --data wiki --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --encoder_h $SIZE --decoder_h $SIZE --tr_enc_in_dec --max_len 23
 done
 done
 done

@@ -417,6 +417,11 @@
 # --n_epochs 40 --graph QKV --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
 # --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 --tr_enc_in_dec
 
-srun python qkv_train.py --test_name "Disentanglement2/PQBmTXNoDrop_beta0.3.0.3.1.4" --kl_beta 0.3 --n_latents 4 --data paranmt\
+#srun python qkv_train.py --test_name "Disentanglement2/PQBmTXNoDrop_beta0.3.0.3.1.4" --kl_beta 0.3 --n_latents 4 --data paranmt\
+# --n_epochs 40 --graph QKV --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
+# --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 --tr_enc_in_dec --dropout 0.0
+
+
+srun python qkv_train.py --test_name "Disentanglement2/WikiXNoDrop_beta0.3.0.3.1.4" --kl_beta 0.3 --n_latents 4 --data wiki\
  --n_epochs 40 --graph QKV --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64 --z_size 192 --kl_th 0.05 \
  --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 --tr_enc_in_dec --dropout 0.0
