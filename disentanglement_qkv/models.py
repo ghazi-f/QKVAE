@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pandas as pd
 
 from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2, BARTNLI, BARTNewsCategory, \
-    BARTFrSbt
+    BARTFrSbt, BARTWiki
 from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
@@ -55,7 +55,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             global const_parser
             const_parser = Parser.load('crf-con-xlmr')
         self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI, BARTNewsCategory,
-                                                                      BARTFrSbt]])
+                                                                      BARTFrSbt, BARTWiki]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
         self.beam_size = 1
