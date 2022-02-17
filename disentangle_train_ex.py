@@ -9,7 +9,7 @@ from torch import optim
 import numpy as np
 
 from disentanglement_transformer_extended.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, HuggingYelpReg,\
-    GermanNLIGenData2, SupYelpData, SupNLIData, Wiki21GenData
+    GermanNLIGenData2, SupYelpData, SupNLIData, Wiki21GenData, SupWiki21Data
 from disentanglement_transformer_extended.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_transformer_extended.h_params import DefaultTransformerHParams as HParams
 from disentanglement_transformer_extended.graphs import *
@@ -20,7 +20,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 1, 8, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", "yelp_reg", "de_nli", "sup_yelp",
-                                                      "sup_nli", "wiki"], type=str)
+                                                      "sup_nli", "wiki", "sup_wiki"], type=str)
 parser.add_argument("--csv_out", default='disentICLRDE.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--batch_size", default=128, type=int)
@@ -121,7 +121,8 @@ if flags.losses == "LagVAE":
     flags.anneal_kl0 = 0
     flags.anneal_kl1 = 0
 Data = {"nli": NLIGenData2, "ontonotes": OntoGenData, "yelp": HuggingYelp2, "yelp_reg": HuggingYelpReg,
-        "de_nli": GermanNLIGenData2, "sup_yelp": SupYelpData, "sup_nli": SupNLIData, "wiki":Wiki21GenData}[flags.data]
+        "de_nli": GermanNLIGenData2, "sup_yelp": SupYelpData, "sup_nli": SupNLIData, "wiki": Wiki21GenData,
+        "sup_wiki":SupWiki21Data}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu

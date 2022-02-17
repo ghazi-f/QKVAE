@@ -323,6 +323,72 @@ class SupNLIData:
             raise NameError('Misspelled split name : {}'.format(split))
 
 
+class SupWiki21Data:
+
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
+                 pretrained=False):
+        text_field = data.Field(lower=True, batch_first=True, fix_length=max_len, pad_token='<pad>',
+                                init_token='<go>' ,is_target=True)  # init_token='<go>', eos_token='<eos>', unk_token='<unk>', pad_token='<unk>')
+        label_field = data.Field(fix_length=max_len - 1, batch_first=True, pad_token="o")
+
+        start = time()
+
+        train, val, test = SupWiki21.splits((('text', text_field), ('label', label_field)))
+
+        # np.random.shuffle(train_examples)
+        fields1 = {'text': text_field, 'label': label_field}
+        train = Dataset(train, fields1)
+        val = Dataset(val, fields1)
+        test = Dataset(test, fields1)
+        print('data loading took', time() - start)
+
+        # build the vocabulary
+        text_field.build_vocab(train, max_size=VOCAB_LIMIT)  # , vectors="fasttext.simple.300d")
+        label_field.build_vocab(train)
+
+        # make iterator for splits
+        self.train_iter, _, _ = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        self.enc_train_iter, _, _ = data.BucketIterator.splits(
+            (train, val, test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+
+        _, self.val_iter, self.test_iter = data.BucketIterator.splits(
+            (train, val, test), batch_size=int(batch_size/10), device=device, shuffle=False, sort=False)
+
+        self.vocab = text_field.vocab
+        self.tags = label_field.vocab
+        self.text_field = text_field
+        self.label_field = label_field
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
 class HuggingYelpReg:
 
     def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
@@ -906,6 +972,53 @@ class SupNLI(Dataset):
 
         return super(SupNLI, cls).splits(
             path=os.path.join(".data", "nli_gen", "nli_gen"), fields=fields, root=root, train=train, validation=validation,
+            test=test, **kwargs)
+
+
+class SupWiki21(Dataset):
+    # Universal Dependencies English Web Treebank.
+    # Download original at http://universaldependencies.org/
+    # License: http://creativecommons.org/licenses/by-sa/4.0/
+    urls = []
+    dirname = ''
+    name = ''
+
+    @staticmethod
+    def sort_key(example):
+        for attr in dir(example):
+            if not callable(getattr(example, attr)) and \
+                    not attr.startswith("__"):
+                return len(getattr(example, attr))
+        return 0
+
+    def __init__(self, path, fields, encoding="utf-8", separator="\t", verbose=1, shuffle_seed=42, **kwargs):
+        examples = []
+        n_examples, n_words, n_chars = 0, [], []
+        with open(path, encoding=encoding) as input_file:
+            for line in input_file:
+                sen, lab = line.strip().split('\t')
+                sen, lab = sen.split(), lab.split()
+                examples.append(data.Example.fromlist([sen, lab], fields))
+                n_examples += 1
+                n_words.append(len(sen))
+        if verbose:
+            print("Dataset has {}  examples. statistics:\n -words: {}+-{}(quantiles(0.5, 0.7, 0.9, 0.95, "
+                  "0.99:{},{},{},{},{})".format(n_examples, np.mean(n_words), np.std(n_words),
+                                                *np.quantile(n_words, [0.5, 0.7, 0.9, 0.95, 0.99])))
+        np.random.seed(42)
+        np.random.shuffle(examples)
+        super(SupWiki21, self).__init__(examples, fields, **kwargs)
+
+    @classmethod
+    def splits(cls, fields, root=".data", train="train_labeled.txt",
+               validation="dev_labeled.txt",
+               test="test_labeled.txt", **kwargs):
+        """Loads the Universal Dependencies Version 1 POS Tagged
+        data.
+        """
+
+        return super(SupWiki21, cls).splits(
+            path=os.path.join(".data", "wiki21"), fields=fields, root=root, train=train, validation=validation,
             test=test, **kwargs)
 
 
