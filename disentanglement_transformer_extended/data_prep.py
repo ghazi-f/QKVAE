@@ -503,7 +503,7 @@ class Wiki21GenData:
         unsup_train, unsup_val, unsup_test = WikiGen.splits(text_field)
 
         # build the vocabulary
-        text_field.build_vocab(unsup_train)
+        text_field.build_vocab(unsup_train, max_size=VOCAB_LIMIT)
 
         # make iterator for splits
         self.train_iter, _,  _ = data.BucketIterator.splits(
