@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=QKVXNoDrop
+#SBATCH --job-name=QKVWiki
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVXNoDrop.txt
-#SBATCH --error=./QKVXNoDrop.err
+#SBATCH --output=./QKVWiki.txt
+#SBATCH --error=./QKVWiki.err
 #SBATCH --time=60:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5

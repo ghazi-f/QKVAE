@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=UnsupYelp
+#SBATCH --job-name=UnsupWiki
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./UnsupYelp.txt
-#SBATCH --error=./UnsupYelp.err
+#SBATCH --output=./UnsupWiki.txt
+#SBATCH --error=./UnsupWiki.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
