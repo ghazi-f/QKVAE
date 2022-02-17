@@ -494,6 +494,59 @@ class NLIGenData2:
             raise NameError('Misspelled split name : {}'.format(split))
 
 
+class Wiki21GenData:
+    def __init__(self, max_len, batch_size, max_epochs, device, pretrained):
+        text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<go>', eos_token='<eos>',
+                                unk_token='<unk>', pad_token='<pad>')
+
+        # make splits for data
+        unsup_train, unsup_val, unsup_test = WikiGen.splits(text_field)
+
+        # build the vocabulary
+        text_field.build_vocab(unsup_train)
+
+        # make iterator for splits
+        self.train_iter, _,  _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        self.enc_train_iter, _,  _ = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
+        _, self.val_iter,  self.test_iter = data.BucketIterator.splits(
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/10), device=device, shuffle=True, sort=False)
+
+        self.vocab = text_field.vocab
+        self.tags = None
+        self.text_field = text_field
+        self.label_field = None
+        self.device = device
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        if pretrained:
+            ftxt = FastText()
+            self.wvs = ftxt.get_vecs_by_tokens(self.vocab.itos)
+        else:
+            self.wvs = None
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.train_iter.init_epoch()
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.val_iter.init_epoch()
+        elif split == 'test':
+            self.test_iter.init_epoch()
+        elif split == 'unsup_valid':
+            self.unsup_val_iter.init_epoch()
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
 class OntoGenData:
     def __init__(self, max_len, batch_size, max_epochs, device, pretrained):
         text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<go>', eos_token='<eos>',
@@ -598,6 +651,34 @@ class NLIGen(LanguageModelingDataset):
                validation='valid.txt', test='test.txt',
                **kwargs):
         return super(NLIGen, cls).splits(
+            root=root, train=train, validation=validation, test=test,
+            text_field=text_field, **kwargs)
+
+    @classmethod
+    def iters(cls, batch_size=32, bptt_len=35, device=0, root='.data',
+              vectors=None, **kwargs):
+        TEXT = data.Field()
+
+        train, val, test = cls.splits(TEXT, root=root, **kwargs)
+
+        TEXT.build_vocab(train, vectors=vectors)
+
+        return data.BPTTIterator.splits(
+            (train, val, test), batch_size=batch_size, bptt_len=bptt_len,
+            device=device)
+
+
+class WikiGen(LanguageModelingDataset):
+
+    urls = []
+    name = 'wiki21'
+    dirname = 'wiki21'
+
+    @classmethod
+    def splits(cls, text_field, root='.data', train='train.txt',
+               validation='dev.txt', test='test.txt',
+               **kwargs):
+        return super(WikiGen, cls).splits(path=os.path.join(root, 'wiki21'),
             root=root, train=train, validation=validation, test=test,
             text_field=text_field, **kwargs)
 
