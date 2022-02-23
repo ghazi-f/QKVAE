@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SupWikiSing1
+#SBATCH --job-name=SupWikiSing2
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./SupWikiSing1.txt
-#SBATCH --error=./SupWikiSing1.err
+#SBATCH --output=./SupWikiSing2.txt
+#SBATCH --error=./SupWikiSing2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -302,7 +302,7 @@
 #done
 
 # Experiments on the SNLI Dataset with ADVAE
-for SUP in 100.0 #1000.0
+for SUP in 1000.0 #100.0
 do
 for BETA in 0.3
 do
