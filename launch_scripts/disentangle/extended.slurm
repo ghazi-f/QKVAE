@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=SupWikiSing2
+#SBATCH --job-name=Sup41
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./SupWikiSing2.txt
-#SBATCH --error=./SupWikiSing2.err
+#SBATCH --output=./Sup41.txt
+#SBATCH --error=./Sup41.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -302,16 +302,16 @@
 #done
 
 # Experiments on the SNLI Dataset with ADVAE
-for SUP in 1000.0 #100.0
-do
-for BETA in 0.3
-do
-for ITER in 1 2 3
-do
-srun python disentangle_train_ex.py --test_name "Disentanglement/WikiRegularSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_wiki --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP --sup_loss_choice single --max_len 23 --tr_enc_in_dec
-done
-done
-done
+#for SUP in 1000.0 #100.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/WikiRegularSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_wiki --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP --sup_loss_choice single --max_len 23 --tr_enc_in_dec
+#done
+#done
+#done
 
 
 # Experiments on the Yelp Dataset with ADVAE
@@ -335,6 +335,186 @@ done
 #for ITER in 1 2 3
 #do
 #srun python disentangle_train_ex.py --test_name "Disentanglement/WikiRegularDecSing2_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_wiki --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP  --tr_enc_in_dec  --max_len 23 --sup_loss_choice single
+#done
+#done
+#done
+
+
+# ================= Disentanglement with more layers Supervised and Unsupervised ==============================
+
+
+# Experiments on the Yelp Dataset with ADVAE
+for SUP in 100.0 1000.0
+do
+for BETA in 0.3
+do
+for ITER in 1 2 3
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/Yelp4RegularSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP --sup_loss_choice single  --tr_enc_in_dec  --encoder_l 4 --decoder_l 4
+done
+done
+done
+
+# Experiments on the SNLI Dataset with ADVAE
+for SUP in 100.0 1000.0
+do
+for BETA in 0.3
+do
+for ITER in 1 2 3
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLI4RegularSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP --sup_loss_choice single  --tr_enc_in_dec  --encoder_l 4 --decoder_l 4
+done
+done
+done
+
+# Experiments on the SNLI Dataset with ADVAE
+for SUP in 100.0 1000.0
+do
+for BETA in 0.3
+do
+for ITER in 1 2 3
+do
+srun python disentangle_train_ex.py --test_name "Disentanglement/SNLI4RegularDecSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP  --tr_enc_in_dec --sup_loss_choice single  --encoder_l 4 --decoder_l 4
+done
+done
+done
+
+
+# Experiments on the Yelp Dataset with ADVAE
+#for SUP in 100.0 1000.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/Yelp4RegularDecSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP  --tr_enc_in_dec  --sup_loss_choice single  --encoder_l 4 --decoder_l 4
+#done
+#done
+#done
+
+
+# Experiments on the SNLI Dataset with ADVAE
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLI4RegularUns_beta$BETA.768.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup2.csv --tr_enc_in_dec --encoder_l 4 --decoder_l 4
+#done
+#done
+
+
+# Experiments on the Yelp Dataset with ADVAE
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/Yelp4RegularUns_beta$BETA.768.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --tr_enc_in_dec --encoder_l 4 --decoder_l 4
+#done
+#done
+
+# ================= Supervised on both encoder and decoder ==============================
+
+# Experiments on the SNLI Dataset with ADVAE
+#for SUP in 100.0 1000.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularBothSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP --sup_coeff $SUP  --tr_enc_in_dec --sup_loss_choice single
+#done
+#done
+#done
+
+
+# Experiments on the Yelp Dataset with ADVAE
+#for SUP in 100.0 1000.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularBothSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP  --sup_coeff $SUP --tr_enc_in_dec  --sup_loss_choice single
+#done
+#done
+#done
+
+# ================= Supervised with other gamma value ==============================
+
+
+
+# Experiments on the SNLI Dataset with ADVAE
+#for SUP in 1.0 10.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularDecSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP  --tr_enc_in_dec --sup_loss_choice single
+#done
+#done
+#done
+
+
+# Experiments on the Yelp Dataset with ADVAE
+#for SUP in 1.0 10.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularDecSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup3.csv --dec_sup_coeff $SUP  --tr_enc_in_dec  --sup_loss_choice single
+#done
+#done
+#done
+
+# Experiments on the Yelp Dataset with ADVAE
+#for SUP in 1.0 10.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_yelp --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP --sup_loss_choice single  --tr_enc_in_dec
+#done
+#done
+#done
+
+# Experiments on the SNLI Dataset with ADVAE
+#for SUP in 1.0 10.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularSing_beta$BETA.$SUP.$ITER" --kl_beta $BETA --n_latents 4 --data sup_nli --n_epochs 20 --graph IndepInfer --csv_out disent_sup.csv --sup_coeff $SUP --sup_loss_choice single  --tr_enc_in_dec
+#done
+#done
+#done
+
+
+# ================= Unsupervised with Auxiliary lv_kl loss==============================
+#for UNSCOEFF in 1.0 10.0 100.0 1000.0
+#do
+# Experiments on the SNLI Dataset with ADVAE
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/SNLIRegularUnsKL_beta$BETA.$UNSCOEFF.$ITER" --kl_beta $BETA --n_latents 4 --data nli --n_epochs 20 --graph IndepInfer --lv_kl_coeff $UNSCOEFF --csv_out disent_sup2.csv --tr_enc_in_dec --encoder_l 4 --decoder_l 4
+#done
+#done
+#done
+
+
+# Experiments on the Yelp Dataset with ADVAE
+#for UNSCOEFF in 1.0 10.0  100.0 1000.0
+#do
+#for BETA in 0.3
+#do
+#for ITER in 1 2 3
+#do
+#srun python disentangle_train_ex.py --test_name "Disentanglement/YelpRegularUnsKL_beta$BETA.$UNSCOEFF.$ITER" --kl_beta $BETA --n_latents 4 --data yelp --n_epochs 20 --graph IndepInfer --lv_kl_coeff $UNSCOEFF --csv_out disent_sup3.csv --tr_enc_in_dec --encoder_l 4 --decoder_l 4
 #done
 #done
 #done

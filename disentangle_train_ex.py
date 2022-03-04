@@ -85,14 +85,14 @@ flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
     flags.sup_loss_choice = 'single'
-    flags.batch_size = 128
+    flags.batch_size = 2
     flags.grad_accu = 1
     flags.max_len = 10
-    # flags.sup_coeff = 1.0
+    flags.sup_coeff = 0.0
     flags.dec_sup_coeff = 0.0
     # flags.test_name = "nliLM/SNLIRegular_beta0.4.4"
     flags.test_name = "nliLM/sup_test"
-    flags.data = "wiki"
+    flags.data = "nli"
     flags.n_latents = [4]
     flags.graph = "IndepInfer"
     # flags.losses = "LagVAE"
