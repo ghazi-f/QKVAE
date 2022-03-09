@@ -11,7 +11,7 @@ import numpy as np
 from allennlp.training.learning_rate_schedulers import PolynomialDecay
 
 from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
-    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki
+    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki, BARTBookCorpus
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -104,7 +104,7 @@ if False:
     flags.max_len = 5
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "wiki"#"fr_sbt"
+    flags.data = "bc"#"fr_sbt"
     flags.n_latents = [4]
     flags.n_keys = 16
     flags.graph = "QKV"  # "Vanilla"
@@ -168,7 +168,7 @@ if flags.data in ('news', 'fr_sbt', 'wiki'): assert flags.use_bart
 Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
         "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
         "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData,
-        "news": BARTNewsCategory, "wiki":BARTWiki,
+        "news": BARTNewsCategory, "wiki": BARTWiki, "bc": BARTBookCorpus,
         'fr_sbt': BARTFrSbt}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
