@@ -85,7 +85,7 @@ flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
     flags.sup_loss_choice = 'single'
-    flags.batch_size = 2
+    flags.batch_size = 20
     flags.grad_accu = 1
     flags.max_len = 10
     flags.sup_coeff = 0.0
