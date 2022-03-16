@@ -110,7 +110,8 @@ class BayesNet(nn.Module):
                 self.log_proba[lv] = lv.post_log_probas
         if target is not None:
             # Collecting requirements to estimate the target
-            lvs_to_fill = [target]
+            assert isinstance(target, list) or isinstance(target, BaseLatentVariable)
+            lvs_to_fill = [target] if isinstance(target, BaseLatentVariable) else target
             collected = False
             while not collected:
                 collected = True
