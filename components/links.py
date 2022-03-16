@@ -974,7 +974,7 @@ class QKVBartTransformerLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
                  key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
-                 simple_zs_use=True, layer_wise=False, fr=False, mem_enc=False):
+                 simple_zs_use=True, layer_wise=False, fr=False, mem_enc=False, key_size=None):
         super(QKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
@@ -990,6 +990,7 @@ class QKVBartTransformerLink(NamedLink):
 
         # output_size = int(output_size/n_mems)
         self.mem_size = mem_size or int(input_size/n_mems)
+        self.key_size = key_size or mem_size*n_mems
         self.simple_zs_use = simple_zs_use
         self.n_keys = n_mems if simple_zs_use else n_keys
 
@@ -1006,13 +1007,11 @@ class QKVBartTransformerLink(NamedLink):
             self.transformer_enc, self.memory_to_hidden1 = None, None
         self.old = old_ver
         if self.old:
-            self.key_to_hidden = nn.Linear(self.mem_size, output_size * self.n_keys)
+            self.key_to_hidden = nn.Linear(int(self.key_size/n_mems), output_size * self.n_keys)
         else:
-            nn.Sequential(*([nn.Linear(self.mem_size, output_size * self.n_keys),
-                             nn.GELU()] * depth)[:-1])
             k2h_layers = []
             if depth > 1:
-                k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size))
+                k2h_layers.append(nn.Linear(self.key_size, output_size))
                 k2h_layers.append(nn.GELU())
                 for _ in range(depth-2):
                     k2h_layers.append(nn.Linear(output_size, output_size))
@@ -1020,11 +1019,11 @@ class QKVBartTransformerLink(NamedLink):
 
                 k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys * (self.n_layers or 1)))
             else:
-                if output_size < self.mem_size * n_mems:  # to minimize this layer's size
-                    k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size))
+                if output_size < self.key_size:  # to minimize this layer's size
+                    k2h_layers.append(nn.Linear(self.key_size, output_size))
                     k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys * (self.n_layers or 1)))
                 else:
-                    k2h_layers.append(nn.Linear(self.mem_size * n_mems,
+                    k2h_layers.append(nn.Linear(self.key_size,
                                                 output_size * self.n_keys * (self.n_layers or 1)))
 
             self.key_to_hidden = nn.Sequential(*k2h_layers)
@@ -1062,9 +1061,9 @@ class QKVBartTransformerLink(NamedLink):
 
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
         if self.old:
-            key = key.view((*key.shape[:-1], 1, self.mem_size))
+            key = key.view((*key.shape[:-1], 1, int(self.key_size/self.n_mems)))
         else:
-            key = key.view((*key.shape[:-1], self.mem_size*self.n_mems))
+            key = key.view((*key.shape[:-1], self.key_size))
         key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size * (self.n_layers or 1)))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
@@ -1364,13 +1363,83 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
         return mask
 
 
+class LVARTransformerLink(NamedLink):
+    get_att = False
+
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, dropout=0., bidirectional=False,
+                 n_lv=20, lv_size=None, z0=None, zc=None, nheads=2):
+        super(LVARTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, False,
+                                                  dropout=dropout, batchnorm=False, residual=None)
+
+        self.mem_size = lv_size or int(output_size/n_lv)
+        self.z0_to_hidden = nn.Linear(self.mem_size, output_size)
+        self.zc_to_hidden = nn.Linear(self.mem_size, output_size)
+
+        self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,
+                                                                          dropout=dropout, activation='gelu'), depth)
+        self.z0, self.zc = z0, zc
+        self.n_lv, self.output_size = n_lv, output_size
+        self.bidirectional = bidirectional
+
+        if embedding is not None:
+            z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, lv_size) for param in params})
+        assert self.residual is None, "Named links still can't have residuals"
+
+    def forward(self, x, z_prev=None, lens=None):
+        # Get z_c and z_0, and project them to the right dimension
+        z0 = self.z0_to_hidden(torch.cat([v for k, v in x.items() if k in self.z0], dim=-1)[..., 0, :].unsqueeze(-2))
+        zc = torch.cat([v for k, v in x.items() if k in self.zc], dim=-1)
+        real_seq_len = zc.shape[-2]
+        zc = zc[..., 0, :]
+        zc = self.zc_to_hidden(zc.view((*zc.shape[:-1], -1, self.mem_size)))
+
+        # handle ndim>3 and Concatenate them
+        z = torch.cat([z0, zc], dim=-2)
+        batch_orig_shape = None
+        if z.ndim > 3:
+            batch_orig_shape = z.shape[:-2]
+            z = z.view(-1, *z.shape[-2:])
+
+        # transpose (-2, 0) and run trans_enc and  transpose again
+        z = z.transpose(-2, 0)
+        seq_len = z.shape[0]
+        z_mask = self._generate_square_subsequent_mask(seq_len) if not self.bidirectional else None
+        outputs = self.transformer_enc(z, z_mask).transpose(-2, 0)
+
+        # Get lv params, then reshape
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+                    self.params.items()}
+
+        z_params = {k: v.reshape(*v.shape[:-2], 1, v.shape[-2]*v.shape[-1]).expand(*v.shape[:-2], real_seq_len,
+                                                                                   v.shape[-2]*v.shape[-1])
+                    for k, v in z_params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        return z_params
+
+    def _generate_square_subsequent_mask(self, sz):
+        device = next(self.parameters()).device
+        mask = (torch.triu(torch.ones(sz, sz, device=device)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+
 class ConditionalCoattentiveQKVTransformerLink(NamedLink):
     get_att = False
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
                  key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
-                 simple_zs_use=True):
+                 simple_zs_use=True, key_size=None):
         super(ConditionalCoattentiveQKVTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
@@ -1378,18 +1447,17 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         self.mem_ids = nn.Embedding(n_mems, mem_size).weight
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
+        self.key_size = key_size or self.mem_size
         self.simple_zs_use = simple_zs_use
         self.n_keys = n_mems if simple_zs_use else n_keys
         self.memory_to_hidden = nn.Linear(self.mem_size*2, output_size)
         self.old = old_ver
         if self.old:
-            self.key_to_hidden = nn.Linear(self.mem_size, output_size * self.n_keys)
+            self.key_to_hidden = nn.Linear(int(self.key_size/n_mems), output_size * self.n_keys)
         else:
-            nn.Sequential(*([nn.Linear(self.mem_size, output_size * self.n_keys),
-                             nn.GELU()] * depth)[:-1])
             k2h_layers = []
             if depth>1:
-                k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size))
+                k2h_layers.append(nn.Linear(self.key_size, output_size))
                 k2h_layers.append(nn.GELU())
                 for _ in range(depth-2):
                     k2h_layers.append(nn.Linear(output_size, output_size))
@@ -1397,11 +1465,11 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
 
                 k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys))
             else:
-                if output_size < self.mem_size * n_mems:  # to minimize this layer's size
-                    k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size))
+                if output_size < self.key_size:  # to minimize this layer's size
+                    k2h_layers.append(nn.Linear(self.key_size, output_size))
                     k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys))
                 else:
-                    k2h_layers.append(nn.Linear(self.mem_size * n_mems, output_size * self.n_keys))
+                    k2h_layers.append(nn.Linear(self.key_size, output_size * self.n_keys))
 
             self.key_to_hidden = nn.Sequential(*k2h_layers)
 
@@ -1444,9 +1512,9 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
         if self.old:
-            key = key.view((*key.shape[:-1], 1, self.mem_size))
+            key = key.view((*key.shape[:-1], 1, int(self.key_size/self.n_mems)))
         else:
-            key = key.view((*key.shape[:-1], self.mem_size*self.n_mems))
+            key = key.view((*key.shape[:-1], self.key_size))
         key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size))
         targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
 
