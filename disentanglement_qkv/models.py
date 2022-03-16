@@ -1136,13 +1136,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             for i in tqdm(range(int(n_samples / (2 * batch_size))),
                           desc="Getting Model Swap TMA"):
                 z_input = {'zs': source_lvs['zs'][i * batch_size:(i + 1) * batch_size].unsqueeze(1),
-                           **{'z{}'.format(i + 1): target_lvs['z{}'.format(i + 1)][
+                           **{'z{}'.format(j + 1): target_lvs['z{}'.format(j + 1)][
                                                    i * batch_size:(i + 1) * batch_size].unsqueeze(1)
-                              for i in range(len(self.h_params.n_latents))}}
+                              for j in range(len(self.h_params.n_latents))}}
                 inv_z_input = {'zs': target_lvs['zs'][i * batch_size:(i + 1) * batch_size].unsqueeze(1),
-                               **{'z{}'.format(i + 1): source_lvs['z{}'.format(i + 1)][
+                               **{'z{}'.format(j + 1): source_lvs['z{}'.format(j + 1)][
                                                        i * batch_size:(i + 1) * batch_size].unsqueeze(1)
-                                  for i in range(len(self.h_params.n_latents))}}
+                                  for j in range(len(self.h_params.n_latents))}}
                 x_prev = go_symbol.repeat((batch_size, 1))
                 x_prev = self.generate_from_z2(z_input, x_prev, mask_unk=False, beam_size=beam_size)
                 result_sents.extend(self.decode_to_text2(x_prev, self.h_params.vocab_size,
