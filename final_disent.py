@@ -264,6 +264,7 @@ def main():
     # print(model.get_syn_disent_encoder(split="valid"))
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
+    # print(model.get_swap_tma(n_samples=200))
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):

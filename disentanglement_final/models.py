@@ -2210,7 +2210,6 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def _get_perturbation_tma(self, n_samples=2000, n_alterations=1, batch_size=100):
         stats = []
-        assert self.has_struct
         alter_lvs = [list(range(sum(self.h_params.n_latents))), [sum(self.h_params.n_latents)]]
         n_lvs = sum(self.h_params.n_latents) + 1
         # Generating n_samples sentences
@@ -2246,7 +2245,6 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
     def get_swap_tma(self, n_samples=2000, batch_size=50, beam_size=None):
         beam_size = beam_size or self.beam_size
         with torch.no_grad():
-            assert self.has_struct
             # Generating n_samples sentences
             text, samples, _ = self.get_sentences(n_samples=batch_size, gen_len=self.h_params.max_len - 1,
                                                   sample_w=False, vary_z=True, complete=None, beam_size=beam_size)
