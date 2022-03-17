@@ -492,7 +492,7 @@ def get_qkv_graphBART(h_params, word_embeddings):
                                              key=['zs'], nheads=4, bidirectional=False, mem_enc=h_params.tr_enc_in_dec,
                                              mem_size=int(z_sizes[0]/h_params.n_latents[0]),
                                              minimal_enc=h_params.minimal_enc, n_keys=n_keys,
-                                               layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+                                               layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, bart_l=h_params.bart_l)
     z_prior = [CoattentiveBARTTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
                                               h_params.decoder_l, Gaussian.parameter_activations,
                                               n_mems=h_params.n_latents[i], dropout=h_params.dropout,
@@ -512,10 +512,10 @@ def get_qkv_graphBART(h_params, word_embeddings):
     z_posterior = [CoattentiveBARTTransformerLink(xin_size, int(lv_size_props[i]*h_params.encoder_h),
                                                   z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations,
                                                   n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
-                                                  dropout=h_params.dropout,
+                                                  dropout=h_params.dropout, bart_l=h_params.bart_l,
                                                   n_targets=h_params.n_latents[i], fr=h_params.fr) for i in range(n_lvls)]
     x_to_zst = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
-                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1, fr=h_params.fr)
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1, fr=h_params.fr, bart_l=h_params.bart_l)
     # Sharing BART encoder
     for link in z_posterior:
         link.transformer = x_to_zst.transformer
@@ -689,7 +689,7 @@ def get_hqkv_graph_discrete_zsBART(h_params, word_embeddings):
                                                                  key=['zs'], nheads=4, bidirectional=False,
                                                                  mem_size=int(z_sizes[0]/h_params.n_latents[0]),
                                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys,
-                                               layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+                                               layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, bart_l=h_params.bart_l)
     z_prior = [CoattentiveBARTTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
                                           h_params.decoder_l, Gaussian.parameter_activations, n_mems=h_params.n_latents[i],
                                           dropout=h_params.dropout, n_targets=h_params.n_latents[i+1], fr=h_params.fr)
@@ -713,13 +713,13 @@ def get_hqkv_graph_discrete_zsBART(h_params, word_embeddings):
     z_posterior = [CoattentiveBARTTransformerLink(xin_size, int(lv_size_props[i]*h_params.encoder_h),
                                               z_sizes[i], h_params.encoder_l, Gaussian.parameter_activations,
                                               n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
-                                              dropout=h_params.dropout,
+                                              dropout=h_params.dropout, bart_l=h_params.bart_l,
                                               n_targets=h_params.n_latents[i], fr=h_params.fr) for i in range(n_lvls)]
     x_to_zst = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
-                                          Categorical.parameter_activations,
+                                          Categorical.parameter_activations, bart_l=h_params.bart_l,
                                           dropout=h_params.dropout, n_targets=1, fr=h_params.fr)
     x_to_zg = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
-                                          Gaussian.parameter_activations,
+                                          Gaussian.parameter_activations, bart_l=h_params.bart_l,
                                           dropout=h_params.dropout, n_targets=1, fr=h_params.fr)
     # Sharing BART encoder
     for link in z_posterior:

@@ -47,6 +47,7 @@ parser.add_argument("--encoder_h", default=192*k, type=int)#################"
 parser.add_argument("--encoder_l", default=2, type=int)#################"
 parser.add_argument("--decoder_h", default=int(192*k), type=int)################
 parser.add_argument("--decoder_l", default=2, type=int)#################"
+parser.add_argument("--bart_l", default=None, type=int or None)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
@@ -104,9 +105,10 @@ if False:
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec = True
     # flags.lr_sched = 0.00003
-    flags.batch_size = 8
+    flags.batch_size = 64
     flags.grad_accu = 1
     flags.max_len = 4
+    flags.bart_l = 3
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
     flags.data = "bc"#"fr_sbt"
@@ -218,7 +220,7 @@ def main():
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,sem_coeff=flags.sem_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
-                       fr=flags.data == 'fr_sbt')
+                       fr=flags.data == 'fr_sbt', bart_l=flags.bart_l)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
     print("Loss Type: ", flags.losses)

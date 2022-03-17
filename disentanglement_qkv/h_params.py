@@ -31,6 +31,7 @@ class DefaultHParams:
                  pos_l=2,
                  decoder_h=32,
                  decoder_l=2,
+                 bart_l=None,
                  layer_wise_qkv=False,
                  tr_enc_in_dec=False,
                  losses=None,
@@ -105,6 +106,7 @@ class DefaultHParams:
 
         self.decoder_h = decoder_h
         self.decoder_l = decoder_l
+        self.bart_l = bart_l
 
         self.layer_wise_qkv = layer_wise_qkv
         self.tr_enc_in_dec = tr_enc_in_dec

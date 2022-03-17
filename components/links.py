@@ -828,7 +828,7 @@ class CoattentiveBARTTransformerLink(NamedLink):
     get_att = False
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, dropout=0., residual=None,
-                 n_targets=20, n_mems=None, fr=False):
+                 n_targets=20, n_mems=None, fr=False, bart_l=None):
         super(CoattentiveBARTTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding,
                                                          highway=False, dropout=dropout, batchnorm=False,
                                                          residual=residual)
@@ -836,6 +836,11 @@ class CoattentiveBARTTransformerLink(NamedLink):
         assert z_size % n_targets == 0
         self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY) if fr else \
             BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY)
+        if bart_l:
+            dec_layers = len(self.transformer.decoder.layers)
+            self.transformer.decoder.layers = self.transformer.decoder.layers[dec_layers-bart_l:]
+            self.transformer.encoder.layers = self.transformer.encoder.layers[:bart_l]
+
         assert output_size == self.transformer.config.d_model
         output_size = self.transformer.config.d_model
         # output_size = int(output_size/n_targets)
@@ -974,7 +979,7 @@ class QKVBartTransformerLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, memory=None,
                  key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
-                 simple_zs_use=True, layer_wise=False, fr=False, mem_enc=False, key_size=None):
+                 simple_zs_use=True, layer_wise=False, fr=False, mem_enc=False, key_size=None, bart_l=None):
         super(QKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
@@ -984,6 +989,10 @@ class QKVBartTransformerLink(NamedLink):
                                                                    "dimension {}" \
                                                                    "".format(output_size,
                                                                              self.transformer_dec.config.d_model)
+        if bart_l:
+            dec_layers = len(self.transformer_dec.layers)
+            self.transformer_dec.layers = self.transformer_dec.layers[dec_layers-bart_l:]
+
         self.n_layers = len(self.transformer_dec.layers) if layer_wise else 0
         output_size = self.transformer_dec.config.d_model
         hack_BART(self.transformer_dec)

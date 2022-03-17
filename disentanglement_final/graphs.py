@@ -762,7 +762,7 @@ def get_qkvNext(h_params, word_embeddings):
                                                  memory=['zp', 'z1'], targets=['x_prev'], key=['zs'],
                                                  mem_enc=h_params.tr_enc_in_dec, key_size=zst_gen.size,
                                                  mem_size=int(zin_size/h_params.n_latents[0]),
-                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys,
+                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
                                                  layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
     zp_to_zst = MLPLink(zpin_size, h_params.decoder_h, zstout_size, h_params.decoder_l, Gaussian.parameter_activations,
                       dropout=h_params.dropout)
@@ -782,11 +782,13 @@ def get_qkvNext(h_params, word_embeddings):
                             ZpInfer(h_params), ZStInfer(h_params)
     x_to_z = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zin_size, h_params.encoder_l,
                                             Gaussian.parameter_activations, n_mems=None, dropout=h_params.dropout,
-                                            n_targets=h_params.n_latents[0], fr=h_params.fr)
+                                            n_targets=h_params.n_latents[0], fr=h_params.fr, bart_l=h_params.bart_l)
     x_to_zst = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
-                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1, fr=h_params.fr)
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                              fr=h_params.fr, bart_l=h_params.bart_l)
     x_to_zp = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zpout_size, h_params.encoder_l,
-                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1, fr=h_params.fr)
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                             fr=h_params.fr, bart_l=h_params.bart_l)
     # Sharing BART encoder
     x_to_z.transformer = x_to_zst.transformer
     x_to_zp.transformer = x_to_zst.transformer
