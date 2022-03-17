@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=NQKm64
+#SBATCH --job-name=NQKm128
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./NQKm64.txt
-#SBATCH --error=./NQKm64.err
+#SBATCH --output=./NQKm128.txt
+#SBATCH --error=./NQKm128.err
 #SBATCH --time=60:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
