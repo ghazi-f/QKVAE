@@ -2057,7 +2057,7 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         # Calculating contrastive loss
         lmbd = 1.0
         klplus, klminus = gauss_kl(g_params_plus, g_params), gauss_kl(g_params_minus, g_params)
-        loss = torch.max(klplus-(klminus+lmbd), torch.zeros_like(klplus)).mean()
+        loss = torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
 
         return loss
 
