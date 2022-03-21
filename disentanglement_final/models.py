@@ -2055,9 +2055,9 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         self.infer_bn.clear_values()
 
         # Calculating contrastive loss
-        lmbd = 1.0
+        # lmbd = 1.0
         klplus, klminus = gauss_kl(g_params_plus, g_params), gauss_kl(g_params_minus, g_params)
-        loss = torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
+        loss = (klplus-klminus).mean()#torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
 
         return loss
 
@@ -2511,22 +2511,27 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
                 ezs2, ezc2, ezp2 = ezs2i, ezc2i, ezp2i
                 ezs3, ezc3, ezp3 = ezs3i, ezc3i, ezp3i
             else:
-                ezs1, ezc1, ezp1i = torch.cat([ezs1, ezs1i]), torch.cat([ezc1, ezc1i]), torch.cat([ezp1, ezp1i])
-                ezs2, ezc2, ezp2i = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i]), torch.cat([ezp2, ezp2i])
-                ezs3, ezc3, ezp3i = torch.cat([ezs3, ezs3i]), torch.cat([ezc3, ezc3i]), torch.cat([ezp3, ezp3i])
+                ezs1, ezc1, ezp1 = torch.cat([ezs1, ezs1i]), torch.cat([ezc1, ezc1i]), torch.cat([ezp1, ezp1i])
+                ezs2, ezc2, ezp2 = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i]), torch.cat([ezp2, ezp2i])
+                ezs3, ezc3, ezp3 = torch.cat([ezs3, ezs3i]), torch.cat([ezc3, ezc3i]), torch.cat([ezp3, ezp3i])
+        ezpc1, ezpc2, ezpc3 = torch.cat([ezc1, ezp1], dim=-1), torch.cat([ezc2, ezp2], dim=-1), \
+                              torch.cat([ezc3, ezp3], dim=-1)
 
         s13sims, s23sims = l2_sim(ezs1, ezs3), l2_sim(ezs2, ezs3)
         c13sims, c23sims = l2_sim(ezc1, ezc3), l2_sim(ezc2, ezc3)
         p13sims, p23sims = l2_sim(ezp1, ezp3), l2_sim(ezp2, ezp3)
+        pc13sims, pc23sims = l2_sim(ezpc1, ezpc3), l2_sim(ezpc2, ezpc3)
 
         zs_acc = np.mean(s13sims.cpu().detach().numpy() < s23sims.cpu().detach().numpy())
         zc_acc = np.mean(c13sims.cpu().detach().numpy() > c23sims.cpu().detach().numpy())
         zp_acc = np.mean(p13sims.cpu().detach().numpy() > p23sims.cpu().detach().numpy())
-        print("Paraphrase detection: with zs {}, with zc {}, zp {}".format(1-zs_acc, zc_acc, zp_acc))
+        zpc_acc = np.mean(pc13sims.cpu().detach().numpy() > pc23sims.cpu().detach().numpy())
+        print("Paraphrase detection: with zs {}, with zc {}, zp {}, zpc{}".format(1-zs_acc, zc_acc, zp_acc, zpc_acc))
         self.writer.add_scalar('test/hard_zs_enc_acc', zs_acc, self.step)
         self.writer.add_scalar('test/hard_zc_enc_acc', zc_acc, self.step)
         self.writer.add_scalar('test/hard_zp_enc_acc', zp_acc, self.step)
-        return zs_acc, zc_acc, zp_acc
+        self.writer.add_scalar('test/hard_zpc_enc_acc', zpc_acc, self.step)
+        return zs_acc, zc_acc, zp_acc, zpc_acc
 
     def _get_syn_disent_encoder_easy(self, split="valid", batch_size=100):
         template_file = {"valid": os.path.join(".data", "paranmt2", "dev_input.txt"),
@@ -2558,14 +2563,18 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
             ezs1, ezc1, ezp1 = my_repeat(ezs1, rep_n), my_repeat(ezc1, rep_n), my_repeat(ezp1, rep_n)
             ezs2, ezc2, ezp2 = my_repeat(ezs2, rep_n), my_repeat(ezc2, rep_n), my_repeat(ezp2, rep_n)
             ezs3, ezc3, ezp3 = ezs1[perm_idx], ezc1[perm_idx], ezp1[perm_idx]
+            ezpc1, ezpc2, ezpc3 = torch.cat([ezp1, ezc1], dim=-1), torch.cat([ezp2, ezc2], dim=-1), \
+                                  torch.cat([ezp3, ezc3], dim=-1)
 
             s12sims, s13sims = l2_sim(ezs1, ezs2), l2_sim(ezs1, ezs3)
             c12sims, c13sims = l2_sim(ezc1, ezc2), l2_sim(ezc1, ezc3)
             p12sims, p13sims = l2_sim(ezp1, ezp2), l2_sim(ezp1, ezp3)
+            pc12sims, pc13sims = l2_sim(ezpc1, ezpc2), l2_sim(ezpc1, ezpc3)
             syn_emb_sc = np.mean(s12sims.cpu().detach().numpy() > s13sims.cpu().detach().numpy())
             cont_emb_sc = np.mean(c12sims.cpu().detach().numpy() > c13sims.cpu().detach().numpy())
             pred_emb_sc = np.mean(p12sims.cpu().detach().numpy() > p13sims.cpu().detach().numpy())
-            accuracies[task] = {"zs": syn_emb_sc, "zc": cont_emb_sc, "zp": pred_emb_sc}
+            pc_emb_sc = np.mean(pc12sims.cpu().detach().numpy() > pc13sims.cpu().detach().numpy())
+            accuracies[task] = {"zs": syn_emb_sc, "zc": cont_emb_sc, "zp": pred_emb_sc, "zpc":pc_emb_sc}
         print("Paraphrase results 1 : ", accuracies)
         self.writer.add_scalar('test/zs_enc_para_acc', accuracies["paraphrase"]["zs"], self.step)
         self.writer.add_scalar('test/zc_enc_para_acc', accuracies["paraphrase"]["zc"], self.step)
@@ -2577,8 +2586,10 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
 
     def get_syn_disent_encoder(self, split="valid", batch_size=100):
         easy_scores = self._get_syn_disent_encoder_easy(split=split, batch_size=batch_size)
-        hard_zs_score, hard_zc_score, hard_zp_score = self._get_syn_disent_encoder_hard(split=split, batch_size=batch_size)
-        scores = {**easy_scores, "hard": {"zs": hard_zs_score, "zc": hard_zc_score, "zp": hard_zp_score}}
+        hard_zs_score, hard_zc_score, hard_zp_score, hard_zpc_score = \
+            self._get_syn_disent_encoder_hard(split=split, batch_size=batch_size)
+        scores = {**easy_scores, "hard": {"zs": hard_zs_score, "zc": hard_zc_score, "zp": hard_zp_score,
+                                          "zpc": hard_zpc_score}}
         return scores
 
 
