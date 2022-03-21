@@ -7,7 +7,7 @@ from components.links import  ConditionalCoattentiveTransformerLink, LastStateML
     LSTMLink, ConditionalCoattentiveQKVTransformerLink, MLPLink
 from components.links import CoattentiveTransformerLink2 as CoattentiveTransformerLink
 from components.links import ConditionalCoattentiveBARTTransformerLink, CoattentiveBARTTransformerLink,\
-    QKVBartTransformerLink, LVARTransformerLink
+    QKVBartTransformerLink, LVARTransformerLink, SQKVBartTransformerLink
 from disentanglement_final.variables import *
 
 
@@ -745,7 +745,7 @@ def get_qkvNext(h_params, word_embeddings):
     xout_size, zout_size = h_params.vocab_size, h_params.z_size
     n_keys = h_params.n_keys
     zstin_size, zstout_size = h_params.z_size, h_params.z_size
-    zpin_size, zpout_size = int(h_params.z_size/max(h_params.n_latents)), int(h_params.z_size/max(h_params.n_latents))
+    zpin_size, zpout_size = h_params.z_size, h_params.z_size
     n_lvls = len(h_params.n_latents)
     lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
     # =============================== Generation Graph ===============================
@@ -755,12 +755,12 @@ def get_qkvNext(h_params, word_embeddings):
     zp_gen = ZpGen(h_params)
     zst_gen = ZStGen(h_params, allow_prior=False)
 
-    zst_zp_z_xprev_to_x = QKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+    zst_zp_z_xprev_to_x = SQKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
                                                  Categorical.parameter_activations, word_embeddings,
                                                  highway=h_params.highway, sbn=None,
-                                                 dropout=h_params.dropout, n_mems=sum(h_params.n_latents)+1,
-                                                 memory=['zp', 'z1'], targets=['x_prev'], key=['zs'],
-                                                 mem_enc=h_params.tr_enc_in_dec, key_size=zst_gen.size,
+                                                 dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                 memory=['z1'], predicate=['zp'], targets=['x_prev'], key=['zs'],
+                                                 p_size=zp_gen.size, key_size=zst_gen.size,
                                                  mem_size=int(zin_size/h_params.n_latents[0]),
                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
                                                  layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
@@ -768,11 +768,10 @@ def get_qkvNext(h_params, word_embeddings):
                       dropout=h_params.dropout)
     z_zprev_p_to_z0 = LVARTransformerLink(zpin_size, h_params.decoder_h, zout_size, h_params.decoder_l,
                                    Gaussian.parameter_activations, dropout=h_params.dropout,
-                                   n_lv=sum(h_params.n_latents)+1, lv_size=zp_gen.size,
+                                   n_lv=sum(h_params.n_latents)+1, lv_size=int(zin_size/h_params.n_latents[0]), z0_size=zpin_size,
                                    z0=[zp_gen.name], zc=[z_prev_gen.name], nheads=h_params.n_heads)
     number_parameters = sum(p.numel() for p in zst_zp_z_xprev_to_x.parameters() if p.requires_grad)
     print("reconstruction net size:", "{0:05.2f} M".format(number_parameters/1e6))
-
 
     gen_edges = [nn.ModuleList([var, zst_zp_z_xprev_to_x, x_gen]) for var in [z_gen, xprev_gen, zst_gen, zp_gen]]+\
         [nn.ModuleList([z_prev_gen, z_zprev_p_to_z0, z_gen]), nn.ModuleList([zp_gen, z_zprev_p_to_z0, z_gen]),
@@ -808,8 +807,8 @@ def get_qkvNext(h_params, word_embeddings):
     zp_z0_gprev_to_g = ConditionalCoattentiveQKVTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.decoder_l,
                                                                 Gaussian.parameter_activations,dropout=h_params.dropout,
                                                                 bidirectional=True,n_mems=h_params.n_latents[0],
-                                                                mem_size=zp_aux.size,key_size=zp_aux.size,
-                                                                memory=[z0_aux.name], key=[zp_aux.name],
+                                                                mem_size=int(zin_size/h_params.n_latents[0]),
+                                                                key_size=zp_aux.size, memory=[z0_aux.name], key=[zp_aux.name],
                                                                 targets=[g_prev.name],nheads=h_params.n_heads)
     aux_edges = [nn.ModuleList([var, zp_z0_gprev_to_g, g_aux]) for var in [zp_aux, z0_aux, g_prev]]
 

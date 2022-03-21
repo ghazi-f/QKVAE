@@ -981,8 +981,8 @@ class QKVBartTransformerLink(NamedLink):
                  key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, old_ver=False,
                  simple_zs_use=True, layer_wise=False, fr=False, mem_enc=False, key_size=None, bart_l=None):
         super(QKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
-                                                                    params, embedding, highway, dropout=dropout,
-                                                                    batchnorm=batchnorm, residual=residual)
+                                                     params, embedding, highway, dropout=dropout,
+                                                     batchnorm=batchnorm, residual=residual)
         self.transformer_dec = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY).decoder if fr else \
             BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY).decoder
         assert output_size == self.transformer_dec.config.d_model, "Output size {}, different from BART model " \
@@ -991,22 +991,22 @@ class QKVBartTransformerLink(NamedLink):
                                                                              self.transformer_dec.config.d_model)
         if bart_l:
             dec_layers = len(self.transformer_dec.layers)
-            self.transformer_dec.layers = self.transformer_dec.layers[dec_layers-bart_l:]
+            self.transformer_dec.layers = self.transformer_dec.layers[dec_layers - bart_l:]
 
         self.n_layers = len(self.transformer_dec.layers) if layer_wise else 0
         output_size = self.transformer_dec.config.d_model
         hack_BART(self.transformer_dec)
 
         # output_size = int(output_size/n_mems)
-        self.mem_size = mem_size or int(input_size/n_mems)
-        self.key_size = key_size or mem_size*n_mems
+        self.mem_size = mem_size or int(input_size / n_mems)
+        self.key_size = key_size or mem_size * n_mems
         self.simple_zs_use = simple_zs_use
         self.n_keys = n_mems if simple_zs_use else n_keys
 
         if mem_enc:
             self.mem_ids = None
             self.memory_to_hidden1 = nn.Linear(self.mem_size, output_size)
-            self.transformer_enc =\
+            self.transformer_enc = \
                 TransformerEncoder(SpecialTransformerEncoder(output_size, nheads, dim_feedforward=output_size,
                                                              dropout=dropout, activation='gelu', n_mems=n_mems), depth)
             self.memory_to_hidden = nn.Linear(output_size, output_size * (self.n_layers or 1))
@@ -1016,13 +1016,13 @@ class QKVBartTransformerLink(NamedLink):
             self.transformer_enc, self.memory_to_hidden1 = None, None
         self.old = old_ver
         if self.old:
-            self.key_to_hidden = nn.Linear(int(self.key_size/n_mems), output_size * self.n_keys)
+            self.key_to_hidden = nn.Linear(int(self.key_size / n_mems), output_size * self.n_keys)
         else:
             k2h_layers = []
             if depth > 1:
                 k2h_layers.append(nn.Linear(self.key_size, output_size))
                 k2h_layers.append(nn.GELU())
-                for _ in range(depth-2):
+                for _ in range(depth - 2):
                     k2h_layers.append(nn.Linear(output_size, output_size))
                     k2h_layers.append(nn.GELU())
 
@@ -1070,7 +1070,7 @@ class QKVBartTransformerLink(NamedLink):
 
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
         if self.old:
-            key = key.view((*key.shape[:-1], 1, int(self.key_size/self.n_mems)))
+            key = key.view((*key.shape[:-1], 1, int(self.key_size / self.n_mems)))
         else:
             key = key.view((*key.shape[:-1], self.key_size))
         key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size * (self.n_layers or 1)))
@@ -1089,7 +1089,7 @@ class QKVBartTransformerLink(NamedLink):
             memory = self.memory_to_hidden(memory)
         else:
             memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
-        
+
         if not self.simple_zs_use:
             key = key.transpose(-2, 0)
             key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
@@ -1098,12 +1098,12 @@ class QKVBartTransformerLink(NamedLink):
             key = key.transpose(-2, 0)
 
         if self.n_layers > 0:
-            key = key.view(*key.shape[:-1], self.n_layers, int(key.shape[-1]/self.n_layers)).unbind(-2)
-            memory = memory.view(*memory.shape[:-1], self.n_layers, int(memory.shape[-1]/self.n_layers)).unbind(-2)
+            key = key.view(*key.shape[:-1], self.n_layers, int(key.shape[-1] / self.n_layers)).unbind(-2)
+            memory = memory.view(*memory.shape[:-1], self.n_layers, int(memory.shape[-1] / self.n_layers)).unbind(-2)
             load_BART_kv_hacks(self.transformer_dec, key, memory)
         else:
             n_layers = len(self.transformer_dec.layers)
-            load_BART_kv_hacks(self.transformer_dec, [key]*n_layers, [memory]*n_layers)
+            load_BART_kv_hacks(self.transformer_dec, [key] * n_layers, [memory] * n_layers)
         outputs = self.transformer_dec(inputs_embeds=targets, encoder_hidden_states=memory,
                                        output_attentions=self.get_att)
         clear_BART_kv_hacks(self.transformer_dec)
@@ -1111,7 +1111,7 @@ class QKVBartTransformerLink(NamedLink):
             self.att_vals = [att.mean(1) for att in outputs.cross_attentions]
         outputs = outputs.last_hidden_state
 
-        z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) + EPSILON for param, activation in
                     self.params.items()}
         if batch_orig_shape is not None:
             z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
@@ -1126,7 +1126,157 @@ class QKVBartTransformerLink(NamedLink):
             z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
             out_shape = z_params['scale'].shape
             z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
-                                             ).view(out_shape).exp()
+                                        ).view(out_shape).exp()
+
+        return z_params
+
+
+class SQKVBartTransformerLink(NamedLink):
+    get_att = False
+
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, predicate=None,
+                 memory=None, key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, p_size=None,
+                 old_ver=False, simple_zs_use=True, layer_wise=False, fr=False, key_size=None, bart_l=None):
+        super(SQKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
+                                                     params, embedding, highway, dropout=dropout,
+                                                     batchnorm=batchnorm, residual=residual)
+        self.transformer_dec = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY).decoder if fr else \
+            BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY).decoder
+        assert output_size == self.transformer_dec.config.d_model, "Output size {}, different from BART model " \
+                                                                   "dimension {}" \
+                                                                   "".format(output_size,
+                                                                             self.transformer_dec.config.d_model)
+        if bart_l:
+            dec_layers = len(self.transformer_dec.layers)
+            self.transformer_dec.layers = self.transformer_dec.layers[dec_layers - bart_l:]
+
+        self.n_layers = len(self.transformer_dec.layers) if layer_wise else 0
+        output_size = self.transformer_dec.config.d_model
+        hack_BART(self.transformer_dec)
+
+        # output_size = int(output_size/n_mems)
+        self.mem_size = mem_size or int(input_size / n_mems)
+        self.key_size = key_size or mem_size * n_mems
+        self.p_size = p_size or self.mem_size
+        self.simple_zs_use = simple_zs_use
+        self.n_keys = (n_mems+1) if simple_zs_use else n_keys
+
+        self.mem_ids = nn.Embedding(n_mems, mem_size).weight
+        self.memory_to_hidden = nn.Linear(self.mem_size * 2, output_size * (self.n_layers or 1))
+        self.p_to_hidden = nn.Linear(self.p_size , output_size * (self.n_layers or 1))
+        self.old = old_ver
+        if self.old:
+            self.key_to_hidden = nn.Linear(int(self.key_size / n_mems), output_size * self.n_keys)
+        else:
+            k2h_layers = []
+            if depth > 1:
+                k2h_layers.append(nn.Linear(self.key_size, output_size))
+                k2h_layers.append(nn.GELU())
+                for _ in range(depth - 2):
+                    k2h_layers.append(nn.Linear(output_size, output_size))
+                    k2h_layers.append(nn.GELU())
+
+                k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys * (self.n_layers or 1)))
+            else:
+                if output_size < self.key_size:  # to minimize this layer's size
+                    k2h_layers.append(nn.Linear(self.key_size, output_size))
+                    k2h_layers.append(nn.Linear(output_size, output_size * self.n_keys * (self.n_layers or 1)))
+                else:
+                    k2h_layers.append(nn.Linear(self.key_size,
+                                                output_size * self.n_keys * (self.n_layers or 1)))
+
+            self.key_to_hidden = nn.Sequential(*k2h_layers)
+
+        if not self.simple_zs_use:
+            self.key_inputs = nn.Embedding(n_mems, output_size).weight
+            self.key_enc = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
+                                                                      dropout=dropout, activation='gelu'), depth)
+        assert (memory is None and key is None) or (memory is not None and key is not None), "if you specify memory" \
+                                                                                             " variables, also specify" \
+                                                                                             " key variables"
+
+        self.memory, self.key, self.targets, self.predicate = memory, key, targets, predicate
+        self.bn = nn.BatchNorm1d(z_size)
+        self.n_mems, self.output_size = n_mems, output_size
+        self.bidirectional = bidirectional
+        self.att_vals = None
+
+        if embedding is not None:
+            self.sbn = sbn
+            if sbn is not None:
+                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
+            else:
+                z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
+
+        assert self.residual is None, "Named links still can't have residuals"
+
+    def forward(self, x, z_prev=None, lens=None):
+        memory = torch.cat([v for k, v in x.items() if k in self.memory], dim=-1)[..., 0, :]
+        memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
+
+        key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
+        predicate = torch.cat([v for k, v in x.items() if k in self.predicate], dim=-1)[..., :1, :]
+        if self.old:
+            key = key.view((*key.shape[:-1], 1, int(self.key_size / self.n_mems)))
+        else:
+            key = key.view((*key.shape[:-1], self.key_size))
+        key = self.key_to_hidden(key).view((*key.shape[:-1], self.n_keys, self.output_size * (self.n_layers or 1)))
+        targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
+
+        if memory.ndim > 3:
+            batch_orig_shape = memory.shape[:-2]
+            memory = memory.view(-1, *memory.shape[-2:])
+            key = key.view(-1, *key.shape[-2:])
+            targets = targets.view(-1, *targets.shape[-2:])
+            predicate = predicate.view(-1, *predicate.shape[-2:])
+        else:
+            batch_orig_shape = None
+
+        memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
+        memory = torch.cat([self.p_to_hidden(predicate), memory], dim=-2)
+
+        if not self.simple_zs_use:
+            key = key.transpose(-2, 0)
+            key_inputs = self.key_inputs.unsqueeze(1).expand(self.key_inputs.shape[0], key.shape[-2],
+                                                             self.key_inputs.shape[1])
+            key = self.key_enc(tgt=key_inputs, memory=key)
+            key = key.transpose(-2, 0)
+
+        if self.n_layers > 0:
+            key = key.view(*key.shape[:-1], self.n_layers, int(key.shape[-1] / self.n_layers)).unbind(-2)
+            memory = memory.view(*memory.shape[:-1], self.n_layers, int(memory.shape[-1] / self.n_layers)).unbind(-2)
+            load_BART_kv_hacks(self.transformer_dec, key, memory)
+        else:
+            n_layers = len(self.transformer_dec.layers)
+            load_BART_kv_hacks(self.transformer_dec, [key] * n_layers, [memory] * n_layers)
+        outputs = self.transformer_dec(inputs_embeds=targets, encoder_hidden_states=memory,
+                                       output_attentions=self.get_att)
+        clear_BART_kv_hacks(self.transformer_dec)
+        if self.get_att:
+            self.att_vals = [att.mean(1) for att in outputs.cross_attentions]
+        outputs = outputs.last_hidden_state
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) + EPSILON for param, activation in
+                    self.params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                        ).view(out_shape).exp()
 
         return z_params
 
@@ -1376,12 +1526,13 @@ class LVARTransformerLink(NamedLink):
     get_att = False
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, dropout=0., bidirectional=False,
-                 n_lv=20, lv_size=None, z0=None, zc=None, nheads=2):
+                 n_lv=20, lv_size=None, z0_size=None, z0=None, zc=None, nheads=2):
         super(LVARTransformerLink, self).__init__(input_size, output_size, z_size, depth, params, embedding, False,
                                                   dropout=dropout, batchnorm=False, residual=None)
 
         self.mem_size = lv_size or int(output_size/n_lv)
-        self.z0_to_hidden = nn.Linear(self.mem_size, output_size)
+        self.z0_size = z0_size or self.mem_size
+        self.z0_to_hidden = nn.Linear(self.z0_size, output_size)
         self.zc_to_hidden = nn.Linear(self.mem_size, output_size)
 
         self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,

@@ -44,7 +44,7 @@ class ZInferi(Gaussian):
 
 class ZpInfer(Gaussian):
     def __init__(self, h_params):
-        size = int(h_params.z_size/ max(h_params.n_latents))
+        size = h_params.z_size
         super(ZpInfer, self).__init__(size, 'zp', h_params.device, stl=True, repnet=None, sequence_lv=True)
 
 
@@ -62,7 +62,7 @@ class ZprevGeni(Gaussian):
 
 class ZpGen(Gaussian):
     def __init__(self, h_params, allow_prior=True):
-        size = int(h_params.z_size/ max(h_params.n_latents))
+        size = h_params.z_size
         super(ZpGen, self).__init__(size, 'zp', h_params.device, allow_prior=allow_prior, repnet=None,
                                     sequence_lv=True)
 
