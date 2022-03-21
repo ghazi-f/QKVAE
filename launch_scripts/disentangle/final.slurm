@@ -9,6 +9,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
 #SBATCH --ntasks-per-node=1
+#SBATCH -A jrp@gpu
 
 
 #srun python final_disent.py --test_name "Disentanglement2/BCNX_beta0.6.0.6.1.4" --kl_beta 0.6 --n_latents 4 --data bc\
