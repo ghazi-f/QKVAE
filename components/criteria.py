@@ -277,7 +277,7 @@ class ELBo(BaseCriterion):
                         raise NotImplementedError('Unrecognized KL annealing scheme {}.'.format(self.h_params.anneal_kl_type))
                     zs_beta = zs_beta * (self.h_params.kl_beta_zs/self.h_params.kl_beta)
                     zg_beta = zg_beta * (self.h_params.kl_beta_zg/self.h_params.kl_beta)
-                    beta_i = {lv_n: (zs_beta if lv_n=='zs' else zg_beta if lv_n=='zg' else 1)
+                    beta_i = {lv_n: (zs_beta if lv_n=='zs' else zg_beta if lv_n in ('zg', 'zp') else 1)
                               for lv_n in self.infer_lvs.keys()}
                     kl = sum([kullback_liebler(self.infer_lvs[lv_n], self.gen_lvs[lv_n], thr=thr) * beta_i[lv_n]
                               for lv_n in self.infer_lvs.keys() if observed is None or (lv_n not in observed)])
