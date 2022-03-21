@@ -105,7 +105,7 @@ if False:
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec = True
     # flags.lr_sched = 0.00003
-    flags.batch_size = 64
+    flags.batch_size = 12
     flags.grad_accu = 1
     flags.max_len = 4
     flags.bart_l = 3
