@@ -480,7 +480,7 @@ class BARTOpenWT:
         train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'val.txt'), \
                                             os.path.join(folder, 'test.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
-                                    quoting=csv.QUOTE_NONE,
+                                    quoting=csv.QUOTE_NONE, keep_default_na=False,
                                     delimiter='\t', column_names=['text', 'next', 'neg'], keep_in_memory=True)
 
         # print("Original text Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
