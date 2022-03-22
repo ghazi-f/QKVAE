@@ -533,9 +533,9 @@ class BARTOpenWT:
         assert split in ('train', 'valid', 'test')
         rrange = np.arange(len(self.dataset[split]['text']))
         np.random.shuffle(rrange)
-        self.dataset[split]['text'] = np.array(self.dataset[split]['text'])[rrange].tolist()
-        self.dataset[split]['next'] = np.array(self.dataset[split]['next'])[rrange].tolist()
-        self.dataset[split]['neg'] = np.array(self.dataset[split]['neg'])[rrange].tolist()
+        self.dataset[split]['text'] = [self.dataset[split]['text'][i] for i in rrange]
+        self.dataset[split]['next'] = [self.dataset[split]['next'][i] for i in rrange]
+        self.dataset[split]['neg'] = [self.dataset[split]['neg'][i] for i in rrange]
 
     def reinit_iterator(self, split):
         if split == 'train':
