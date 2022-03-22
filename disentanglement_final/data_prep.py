@@ -1343,15 +1343,9 @@ class MyTripletIter:
             next = self.data_obj.tokenizer(self.dat["next"][i: i + this_bs], max_length=self.data_obj.max_len,
                                            truncation=True, padding="max_length",
                                            return_tensors='pt')["input_ids"].to(device)
-            try:
-                neg = self.data_obj.tokenizer(self.dat["neg"][i: i + this_bs], max_length=self.data_obj.max_len,
-                                               truncation=True, padding="max_length",
-                                               return_tensors='pt')["input_ids"].to(device)
-            except ValueError as e:
-                print('text', self.dat["text"][i: i + this_bs])
-                print('next', self.dat["next"][i: i + this_bs])
-                print('neg', self.dat["neg"][i: i + this_bs])
-                raise e
+            neg = self.data_obj.tokenizer(self.dat["neg"][i: i + this_bs], max_length=self.data_obj.max_len,
+                                           truncation=True, padding="max_length",
+                                           return_tensors='pt')["input_ids"].to(device)
             yield TripletExample(text, next, neg)
 
     def __len__(self):
