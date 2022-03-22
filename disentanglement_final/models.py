@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pandas as pd
 
 from disentanglement_final.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2, BARTNLI, BARTNewsCategory, \
-    BARTFrSbt, BARTWiki, BARTBookCorpus
+    BARTFrSbt, BARTWiki, BARTBookCorpus, BARTOpenWT
 from disentanglement_final.h_params import *
 from disentanglement_final.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
@@ -55,7 +55,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             global const_parser
             const_parser = Parser.load('crf-con-xlmr')
         self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI, BARTNewsCategory,
-                                                                      BARTFrSbt, BARTWiki, BARTBookCorpus]])
+                                                                      BARTFrSbt, BARTWiki, BARTBookCorpus, BARTOpenWT]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
         self.beam_size = 1
@@ -1513,7 +1513,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return scores
 
 
-
 class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None):
         self.dataset = dataset
@@ -1522,7 +1521,7 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
             global const_parser
             const_parser = Parser.load('crf-con-xlmr')
         self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI, BARTNewsCategory,
-                                                                      BARTFrSbt, BARTWiki, BARTBookCorpus]])
+                                                                      BARTFrSbt, BARTWiki, BARTBookCorpus, BARTOpenWT]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
         self.beam_size = 1
@@ -1715,11 +1714,12 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         orig_zp_sample = orig_zp_sample or zp_gen.prior_sample(shape)[0]
         zst_gen = self.gen_bn.name_to_v['zs']
         z_gen = self.gen_bn.name_to_v['z1']
+        z_i_size = int(self.h_params.z_size/self.h_params.n_latents[0])
         orig_z_sample = torch.zeros((*orig_zp_sample.shape[:-1], 0)).to(self.h_params.device)
         for i in range(self.h_params.n_latents[0]):
             self.gen_bn({'zp': orig_zp_sample.unsqueeze(1), 'z_prev1': orig_z_sample.unsqueeze(1), 'x_prev': None},
                         target=self.gen_bn.name_to_v['z1'])
-            orig_z_sample = torch.cat([orig_z_sample, z_gen.post_samples[..., -orig_zp_sample.shape[-1]:].squeeze(1)],
+            orig_z_sample = torch.cat([orig_z_sample, z_gen.post_samples[..., -z_i_size:].squeeze(1)],
                                        dim=-1)
         self.gen_bn({'zp': orig_zp_sample.unsqueeze(1), 'x_prev': None, 'z_prev1': None}, target=self.gen_bn.name_to_v['zs'])
         orig_zst_sample = zst_gen.post_samples.squeeze(1)
@@ -1768,7 +1768,6 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
             z_input = {'z1': torch.cat([z_samples_1, z_samples_2]).unsqueeze(1),
                        'zs': torch.cat([zst_samples_1, zst_samples_2]).unsqueeze(1),
                        'zp': torch.cat([zp_samples_1, zp_samples_2]).unsqueeze(1)}
-
             # Normal Autoregressive generation
             x_prev = self.generate_from_z(z_input, x_prev, gen_len=gen_len, only_z_sampling=True)
 
@@ -2033,8 +2032,13 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         infer_inputs = {'x': samples['x+'],  'x_prev': samples['x_prev+']}
         self.infer_bn(infer_inputs, complete=True)
         zp_plus, zc_plus = zp_var.post_samples, zc_var.post_samples
-        shift_idx = np.array(range(zp_plus.shape[0]))-1
-        zp_minus, zc_minus = zp_plus[shift_idx], zc_plus[shift_idx]
+        if 'x-' in samples:
+            infer_inputs = {'x': samples['x-'],  'x_prev': samples['x_prev-']}
+            self.infer_bn(infer_inputs, complete=True)
+            zp_minus, zc_minus = zp_var.post_samples, zc_var.post_samples
+        else:
+            shift_idx = np.array(range(zp_plus.shape[0]))-1
+            zp_minus, zc_minus = zp_plus[shift_idx], zc_plus[shift_idx]
 
         # Get updated semantic graph sample
         init_g = self.init_g.unsqueeze(0).expand(zp_plus.shape[0], *self.init_g.shape)
@@ -2057,7 +2061,7 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         # Calculating contrastive loss
         # lmbd = 1.0
         klplus, klminus = gauss_kl(g_params_plus, g_params), gauss_kl(g_params_minus, g_params)
-        loss = (klplus-klminus).mean()#torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
+        loss = (klplus/(klplus+klminus)).mean()#torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
 
         return loss
 

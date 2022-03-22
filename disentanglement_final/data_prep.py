@@ -3,6 +3,7 @@ import io
 import os
 import json
 import re
+import csv
 
 import torchtext.data as data
 from torchtext.data import Dataset, Example
@@ -458,6 +459,101 @@ class BARTBookCorpus:
         elif split == 'test':
             self.shuffle_split('test')
             self.test_iter = MyNextIter(self, self.dataset['test'], divide_bs=self.divide_bs)
+        else:
+            raise NameError('Misspelled split name : {}'.format(split))
+
+
+class BARTOpenWT:
+    def __init__(self, max_len, batch_size, max_epochs, device, unsup_proportion=1., sup_proportion=1., dev_index=1,
+                 pretrained=False):
+
+        self.device = device
+        self.max_len = max_len
+        self.batch_size = batch_size
+        self.n_epochs = 0
+        self.max_epochs = max_epochs
+        self.divide_bs = TEST_DIVIDE_BS
+
+        np.random.seed(42)
+        # Loading Data
+        folder = os.path.join(".data", "openwt")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'val.txt'), \
+                                            os.path.join(folder, 'test.txt')
+        self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
+                                    quoting=csv.QUOTE_NONE,
+                                    delimiter='\t', column_names=['text', 'next', 'neg'], keep_in_memory=True)
+
+        # print("Original text Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['text'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Original text length:", np.mean(tr_len))
+        # print("Paraphrase Quantiles [0.5, 0.7, 0.9, 0.95, 0.99]")
+        # tr_len = [len(ex['para'].split()) for i, ex in enumerate(self.dataset['train']) if i < 50000]
+        # print(np.quantile(tr_len, [0.5, 0.7, 0.9, 0.95, 0.99]))
+        # print("Mean Paraphrase length:", np.mean(tr_len))
+        self.dataset = {'train': self.dataset['train'][:],
+                        'valid': self.dataset['valid'][:],
+                        'test': self.dataset['test'][:]}
+
+        # Getting Tokenizer
+        self.tokenizer = BartTokenizerFast.from_pretrained('facebook/bart-base', local_files_only=LOCAL_ONLY)
+
+        # Getting vocabulary object
+        stoi = self.tokenizer.get_vocab()
+        itos = [None] * len(stoi)
+        for k, v in stoi.items():
+            itos[v] = k
+        self.vocab = MyVocab(itos, stoi)
+
+        # Setting up iterators
+        self.shuffle_split('train'), self.shuffle_split('valid'), self.shuffle_split('test')
+        self.train_iter, self.enc_train_iter = MyTripletIter(self, self.dataset['train']), \
+                                               MyTripletIter(self, self.dataset['train'])
+        self.val_iter, self.test_iter = MyTripletIter(self, self.dataset['valid'], divide_bs=self.divide_bs), \
+                                        MyTripletIter(self, self.dataset['test'], divide_bs=self.divide_bs)
+
+        self.tags, self.wvs = None, None
+
+    def redefine_max_len(self, new_len):
+        folder = os.path.join(".data", "bookcorpus")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'val.txt'), \
+                                            os.path.join(folder, 'test.txt')
+        print("Reloading the data with max words per sentence : ", new_len)
+        self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
+                                    delimiter='\t', column_names=['text', 'next', 'neg'], keep_in_memory=True)
+        self.dataset = self.dataset.filter(lambda x: len(x['text'].split()) < new_len)
+        self.dataset = {'train': self.dataset['train'][:],
+                        'valid': self.dataset['valid'][:],
+                        'test': self.dataset['test'][:]}
+        self.reinit_iterator('train')
+        self.reinit_iterator('valid')
+        self.reinit_iterator('test')
+
+    def shuffle_split(self, split):
+        assert split in ('train', 'valid', 'test')
+        rrange = np.arange(len(self.dataset[split]['text']))
+        np.random.shuffle(rrange)
+        self.dataset[split]['text'] = np.array(self.dataset[split]['text'])[rrange].tolist()
+        self.dataset[split]['next'] = np.array(self.dataset[split]['next'])[rrange].tolist()
+        self.dataset[split]['neg'] = np.array(self.dataset[split]['neg'])[rrange].tolist()
+
+    def reinit_iterator(self, split):
+        if split == 'train':
+            self.n_epochs += 1
+            print("Finished epoch n°{}".format(self.n_epochs))
+            if self.n_epochs < self.max_epochs:
+                self.shuffle_split('train')
+                self.train_iter = MyTripletIter(self, self.dataset['train'])
+            else:
+                print("Reached n_epochs={} and finished training !".format(self.n_epochs))
+                self.train_iter = None
+
+        elif split == 'valid':
+            self.shuffle_split('valid')
+            self.val_iter = MyTripletIter(self, self.dataset['valid'], divide_bs=self.divide_bs)
+        elif split == 'test':
+            self.shuffle_split('test')
+            self.test_iter = MyTripletIter(self, self.dataset['test'], divide_bs=self.divide_bs)
         else:
             raise NameError('Misspelled split name : {}'.format(split))
 
@@ -1165,6 +1261,13 @@ class NextExample:
         self.next = next
 
 
+class TripletExample:
+    def __init__(self, text, next, neg):
+        self.text = text
+        self.next = next
+        self.neg = neg
+
+
 class MyIter:
     def __init__(self, data_obj, dat, divide_bs=1):
         self.data_obj = data_obj
@@ -1223,6 +1326,31 @@ class MyNextIter:
 
     def __len__(self):
         return int(len(self.dat['text'])/(self.data_obj.batch_size/self.divide_bs))
+
+
+class MyTripletIter:
+    def __init__(self, data_obj, dat, divide_bs=1):
+        self.data_obj = data_obj
+        self.dat = dat
+        self.divide_bs = divide_bs
+
+    def __iter__(self):
+        this_bs, device = int(self.data_obj.batch_size/self.divide_bs), self.data_obj.device
+        for i in range(0, len(self.dat["text"]), this_bs):
+            text = self.data_obj.tokenizer(self.dat["text"][i: i + this_bs], max_length=self.data_obj.max_len,
+                                           truncation=True, padding="max_length",
+                                           return_tensors='pt')["input_ids"].to(device)
+            next = self.data_obj.tokenizer(self.dat["next"][i: i + this_bs], max_length=self.data_obj.max_len,
+                                           truncation=True, padding="max_length",
+                                           return_tensors='pt')["input_ids"].to(device)
+            neg = self.data_obj.tokenizer(self.dat["neg"][i: i + this_bs], max_length=self.data_obj.max_len,
+                                           truncation=True, padding="max_length",
+                                           return_tensors='pt')["input_ids"].to(device)
+            yield TripletExample(text, next, neg)
+
+    def __len__(self):
+        return int(len(self.dat['text'])/(self.data_obj.batch_size/self.divide_bs))
+
 
 class LanguageModelingDataset(data.Dataset):
     """Defines a dataset for language modeling."""

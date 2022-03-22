@@ -11,7 +11,7 @@ import numpy as np
 from allennlp.training.learning_rate_schedulers import PolynomialDecay
 
 from disentanglement_final.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
-    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki, BARTBookCorpus
+    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki, BARTBookCorpus, BARTOpenWT
 from disentanglement_final.models import DisentanglementTransformerVAE, StructuredDisentanglementVAE
 from disentanglement_final.h_params import DefaultTransformerHParams as HParams
 from disentanglement_final.graphs import *
@@ -22,7 +22,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 2, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt', 'news', 'fr_sbt', 'wiki',
-                                                      'bc'], type=str)
+                                                      'bc', 'owt'], type=str)
 parser.add_argument("--csv_out", default='disentqkv3.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--init_len", default=None, type=int)
@@ -105,13 +105,13 @@ if False:
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec = True
     # flags.lr_sched = 0.00003
-    flags.batch_size = 12
+    flags.batch_size = 8
     flags.grad_accu = 1
     flags.max_len = 4
     flags.bart_l = 3
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "bc"#"fr_sbt"
+    flags.data = "owt"#"fr_sbt"
     flags.sem_coeff = 1.0
     flags.n_latents = [4]
     flags.n_keys = 16
@@ -177,7 +177,7 @@ if flags.data in ('news', 'fr_sbt', 'wiki'): assert flags.use_bart
 Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
         "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
         "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData,
-        "news": BARTNewsCategory, "wiki": BARTWiki, "bc": BARTBookCorpus,
+        "news": BARTNewsCategory, "wiki": BARTWiki, "bc": BARTBookCorpus, "owt": BARTOpenWT,
         'fr_sbt': BARTFrSbt}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
@@ -285,6 +285,9 @@ def main():
             if flags.graph == "NQKV":
                 train_inp["x+"] = training_batch.next[..., 1:]
                 train_inp["x_prev+"] = training_batch.next[..., :-1]
+                if flags.data in ["owt"]:
+                    train_inp["x-"] = training_batch.neg[..., 1:]
+                    train_inp["x_prev-"] = training_batch.neg[..., :-1]
             loss = model.opt_step(train_inp)
             if flags.lr_sched > 0:
                 decay.step_batch()
@@ -309,6 +312,9 @@ def main():
                     if flags.graph == "NQKV":
                         test_inp["x+"] = test_batch.next[..., 1:]
                         test_inp["x_prev+"] = test_batch.next[..., :-1]
+                        if flags.data in ["owt"]:
+                            test_inp["x-"] = test_batch.neg[..., 1:]
+                            test_inp["x_prev-"] = test_batch.neg[..., :-1]
                     is_complete = (int(model.step / (len(LOSSES))) % COMPLETE_TEST_FREQ == COMPLETE_TEST_FREQ-1)\
                                    and (model.step > flags.anneal_kl0) and (model.step > flags.anneal_kl1)
                     model(test_inp, sem_loss=not is_complete)
