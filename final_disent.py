@@ -107,7 +107,7 @@ if False:
     # flags.lr_sched = 0.00003
     flags.batch_size = 8
     flags.grad_accu = 1
-    flags.max_len = 4
+    flags.max_len = 5
     flags.bart_l = 3
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
