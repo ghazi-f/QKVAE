@@ -2772,6 +2772,7 @@ def get_lin_parse_tree(sens):
 
 def template_match(l1, l2, lv, verbose=0, filter_empty=True):
     if filter_empty:
+
         not_empty1 = [any([c != " " for c in li1]) for li1 in l1]
         not_empty2 = [any([c != " " for c in li2]) for li2 in l2]
         l1 = [li1 for li1, ne1, ne2 in zip(l1, not_empty1, not_empty2) if ne1 and ne2]
