@@ -804,7 +804,7 @@ def get_qkvNext(h_params, word_embeddings):
     # =============================== Auxiliart Semantics Graph ===============================
     zp_aux, z0_aux, g_prev, g_aux = ZpGen(h_params), ZGeni(h_params, None, index=0), GPrevAuxGen(h_params), \
                                     GAuxGen(h_params)
-    zp_z0_gprev_to_g = ConditionalCoattentiveQKVTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.decoder_l,
+    zp_z0_gprev_to_g = ConditionalCoattentiveQKVTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
                                                                 Gaussian.parameter_activations,dropout=h_params.dropout,
                                                                 bidirectional=True,n_mems=h_params.n_latents[0],
                                                                 mem_size=int(zin_size/h_params.n_latents[0]),
