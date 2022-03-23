@@ -21,6 +21,6 @@
 # --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 --sem_coeff 100.0 --bart_l 3
 
 srun python final_disent.py --test_name "Disentanglement2/OWTNm5_beta1.0.1.0.1.4" --kl_beta 1.0 --n_latents 4 --data owt\
- --n_epochs 40 --graph NQKV --max_len 40 --kl_beta_zs 1.0 --kl_beta_zg 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.05 \
+ --n_epochs 40 --graph NQKV --max_len 40 --kl_beta_zs 0.8 --kl_beta_zg 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.01 \
  --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --zg_anneal_kl0 7000 --zg_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 \
  --sem_coeff 100.0 --bart_l 3 --aux_l 3
