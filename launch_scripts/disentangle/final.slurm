@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=NQKm3
+#SBATCH --job-name=NQKm4
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./NQKm3.txt
-#SBATCH --error=./NQKm3.err
+#SBATCH --output=./NQKm4.txt
+#SBATCH --error=./NQKm4.err
 #SBATCH --time=60:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
@@ -20,7 +20,7 @@
 # --n_epochs 40 --graph NQKV --max_len 40 --kl_beta_zs 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.05 \
 # --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 --sem_coeff 100.0 --bart_l 3
 
-srun python final_disent.py --test_name "Disentanglement2/OWTNm3_beta1.0.1.0.1.4" --kl_beta 1.0 --n_latents 4 --data owt\
- --n_epochs 40 --graph NQKV --max_len 40 --kl_beta_zs 1.0 --kl_beta_zg 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.0 \
+srun python final_disent.py --test_name "Disentanglement2/OWTNm4_beta1.0.0.6.1.4" --kl_beta 1.0 --n_latents 4 --data owt\
+ --n_epochs 40 --graph NQKV --max_len 40 --kl_beta_zs 0.6 --kl_beta_zg 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.05 \
  --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --zg_anneal_kl0 7000 --zg_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 \
  --sem_coeff 100.0 --bart_l 3
