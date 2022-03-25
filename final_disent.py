@@ -113,8 +113,8 @@ if False:
     flags.aux_l=4
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "owt"#"fr_sbt"
-    flags.sem_coeff = 1.0
+    flags.data = "paranmt"#"owt"
+    flags.sem_coeff = 0.0
     flags.n_latents = [4]
     flags.n_keys = 16
     flags.graph = "NQKV"  # "Vanilla"
@@ -284,7 +284,7 @@ def main():
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
             train_inp = {'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}
-            if flags.graph == "NQKV":
+            if flags.graph == "NQKV" and flags.sem_coeff>0:
                 train_inp["x+"] = training_batch.next[..., 1:]
                 train_inp["x_prev+"] = training_batch.next[..., :-1]
                 if flags.data in ["owt"]:
@@ -311,7 +311,7 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     test_inp = {'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]}
-                    if flags.graph == "NQKV":
+                    if flags.graph == "NQKV" and flags.sem_coeff>0:
                         test_inp["x+"] = test_batch.next[..., 1:]
                         test_inp["x_prev+"] = test_batch.next[..., :-1]
                         if flags.data in ["owt"]:
