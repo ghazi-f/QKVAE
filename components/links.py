@@ -1735,6 +1735,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         return mask
 
 
+
 class ConditionalCoattentiveTransformerLink2(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, sn_mems=20, tn_mems=20, memory=None,
@@ -1969,7 +1970,9 @@ class HackedBARTAttention(BartAttention):
         self.k_v_hack = None
 
     def load_kv_hack(self, keys, values):
-        self.k_v_hack = (keys, values)
+        bsz = keys.shape[0]
+        self.k_v_hack = (self._shape(keys, -1, bsz), self._shape(values, -1, bsz))
+        # self.k_v_hack = (keys, values)
 
     def clear_kv_hack(self):
         self.k_v_hack = None
