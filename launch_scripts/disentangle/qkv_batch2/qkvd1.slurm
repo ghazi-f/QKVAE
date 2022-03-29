@@ -9,6 +9,8 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
 #SBATCH --ntasks-per-node=1
+#SBATCH -A jrp@gpu
+
 
 srun python qkv_train.py --test_name "Disentanglement2/PQBmTXL64_1_beta0.8.0.6.05.4" --kl_beta 0.8 --n_latents 4 --data paranmt\
  --n_epochs 40 --graph QKV --max_len 40 --kl_beta_zs 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.05 \
