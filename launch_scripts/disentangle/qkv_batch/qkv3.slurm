@@ -10,8 +10,8 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --ntasks-per-node=1
 
-srun python qkv_train.py --test_name "Disentanglement2/PQBmTXL64_3_beta0.6.0.6.05.4" --kl_beta 0.6 --n_latents 4 --data paranmt\
- --n_epochs 40 --graph QKV --max_len 40 --kl_beta_zs 0.6 --use_bart --batch_size 64 --z_size 768 --kl_th 0.05 \
- --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0
+srun python qkv_train.py --test_name "Disentanglement2/PQBmTXLminc64_3_beta0.6.0.3.01.4" --kl_beta 0.6 --n_latents 4 --data paranmt\
+ --n_epochs 40 --graph QKV --max_len 40 --kl_beta_zs 0.3 --use_bart --batch_size 64 --z_size 768 --kl_th 0.01 \
+ --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --layer_wise_qkv --grad_clip 100.0 --bart_l 4
 
 
