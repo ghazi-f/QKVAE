@@ -1039,6 +1039,7 @@ class NLIGenData2:
         text_field = data.Field(lower=True, batch_first=True,  fix_length=max_len, init_token='<go>', eos_token='<eos>',
                                 unk_token='<unk>', pad_token='<pad>')
 
+        self.divide_bs = 8
         # make splits for data
         unsup_train, unsup_val, unsup_test = NLIGen.splits(text_field)
 
@@ -1051,7 +1052,7 @@ class NLIGenData2:
         self.enc_train_iter, _,  _ = data.BucketIterator.splits(
             (unsup_train, unsup_val, unsup_test), batch_size=batch_size, device=device, shuffle=True, sort=False)
         _, self.val_iter,  self.test_iter = data.BucketIterator.splits(
-            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/10), device=device, shuffle=True, sort=False)
+            (unsup_train, unsup_val, unsup_test), batch_size=int(batch_size/self.divide_bs), device=device, shuffle=True, sort=False)
 
         self.vocab = text_field.vocab
         self.tags = None

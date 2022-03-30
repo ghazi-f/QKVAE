@@ -97,9 +97,24 @@ flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
     # flags.optimizer="sgd"
-    flags.use_bart = True
-    flags.layer_wise_qkv = True
-    flags.tr_enc_in_dec=True
+    # -----------------------------------
+    # Supervised Non-Bart QKV args
+    flags.use_bart = False
+    flags.layer_wise_qkv = False
+    flags.tr_enc_in_dec = False
+    flags.data = "yelp"#"fr_sbt"
+    flags.decoder_h = 192
+    flags.encoder_h = 192
+    flags.embedding_dim = 192
+    flags.encoder_l = 2
+    flags.decoder_l = 2
+
+    # Unsupervised QKV args
+    # flags.use_bart = True
+    # flags.layer_wise_qkv = True
+    # flags.tr_enc_in_dec=True
+    # flags.data = "bc"#"fr_sbt"
+    # -----------------------------------
     # flags.lr_sched = 0.00003
     flags.batch_size = 20
     flags.grad_accu = 1
@@ -107,7 +122,6 @@ if False:
     flags.bart_l = None
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "bc"#"fr_sbt"
     flags.n_latents = [4]
     flags.n_keys = 16
     flags.graph = "QKV"  # "Vanilla"
@@ -261,7 +275,7 @@ def main():
     # print(model.get_syn_disent_encoder(split="valid"))
     # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     # pp_ub = model.get_perplexity(data.val_iter)
-    while data.train_iter is not None:
+    while data.train_iter is not None :
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
             # print("Training iter ", i, flush=True)
@@ -358,7 +372,6 @@ def main():
         data.reinit_iterator('train')
     print("================= Finished training : Getting Scores on test set ============")
     model.eval()
-
     print("================= Old Disentanglement Scores ============")
     val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
         = model.get_disentanglement_summaries2(data.val_iter)
@@ -395,23 +408,22 @@ def main():
     print("Perplexity: {}".format(test_pp_ub))
     dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
     test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
-    relations = ['subj', 'verb', 'dobj', 'pobj']
+    relations = ['nsubj', 'verb', 'dobj', 'pobj']
     temps = ['syntemp', 'lextemp']
     enc_tasks, dec_tasks = ["template", "paraphrase"], ["tma2", "tma3", "bleu"]
     enc_vars, dec_vars = ["zs", "zc"], ["zs", "zc", "copy"]
     if not os.path.exists(flags.csv_out):
         with open(flags.csv_out, 'w') as f:
-            label_line = ['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents', 'n_keys',
+            label_line = ['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents',
                                'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
-                              'dev_tot_en_disent', 'dev_dec_disent_subj', 'dev_dec_disent_verb', 'dev_dec_disent_dobj',
+                              'dev_tot_en_disent',  *['dev_dec_disent_'+r for r in relations],
                               'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
-                              'dev_dec_disent_pobj', 'dev_enc_disent_subj', 'dev_enc_disent_verb', 'dev_enc_disent_dobj',
-                              'dev_enc_disent_pobj', 'dev_rec_error', 'dev_decoder_Ndisent_vars', 'dev_encoder_Ndisent_vars',
+                              *['dev_enc_disent_' + r for r in relations],
+                              'dev_rec_error', 'dev_decoder_Ndisent_vars', 'dev_encoder_Ndisent_vars',
                               'test_kl', 'test_kl_std', 'test_ppl', 'test_tot_dec_disent',
-                              'test_tot_en_disent', 'test_dec_disent_subj', 'test_dec_disent_verb', 'test_dec_disent_dobj',
-                              'test_dec_disent_syntemp', 'test_dec_disent_lextemp',
-                              'test_dec_disent_pobj', 'test_enc_disent_subj', 'test_enc_disent_verb', 'test_enc_disent_dobj',
-                              'test_enc_disent_pobj', 'test_rec_error', 'test_decoder_Ndisent_vars', 'test_encoder_Ndisent_vars',
+                              'test_tot_en_disent', *['test_dec_disent_'+r for r in relations],
+                              'test_dec_disent_syntemp', 'test_dec_disent_lextemp',*['test_enc_disent_'+r for r in relations],
+                              'test_rec_error', 'test_decoder_Ndisent_vars', 'test_encoder_Ndisent_vars',
                               'dev_mi', 'test_mi']
             for t in enc_tasks:
                 for v in enc_vars:
@@ -424,12 +436,12 @@ def main():
     with open(flags.csv_out, 'a') as f:
         value_line = [flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
                            str(flags.kl_beta), str(flags.n_latents), str(flags.n_keys),
-                           str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum(val_dec_lab_wise_disent.values())),
-                           str(sum(val_enc_lab_wise_disent.values())),
+                           str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum([val_dec_lab_wise_disent[k] for k in relations])),
+                           str(sum([val_enc_lab_wise_disent[k] for k in relations])),
                            *[str(val_dec_lab_wise_disent[k]) for k in relations+temps],
                            *[str(val_enc_lab_wise_disent[k]) for k in relations], str(dev_rec),
                            str(val_decoder_Ndisent_vars), str(val_encoder_Ndisent_vars),
-                           str(test_kl), str(test_kl_std), str(test_pp_ub), str(sum(test_dec_lab_wise_disent.values())),
+                           str(test_kl), str(test_kl_std), str(test_pp_ub), str(sum([test_dec_lab_wise_disent[k] for k in relations])),
                            str(sum(test_enc_lab_wise_disent.values())),
                            *[str(test_dec_lab_wise_disent[k]) for k in relations+temps],
                            *[str(test_enc_lab_wise_disent[k]) for k in relations], str(test_rec),

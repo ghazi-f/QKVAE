@@ -953,13 +953,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         lv_scores = []
         for lv in range(sum(self.h_params.n_latents)):
-            found = {'subj': [], 'verb': [], 'dobj': [], 'pobj': []}
+            found = {'nsubj': [], 'verb': [], 'dobj': [], 'pobj': []}
             for att, rel_pos in zip(att_maxes, rel_idx):
                 for k in found.keys():
                     if len(rel_pos[k]):
                         found[k].append(att[lv] in rel_pos[k])
             lv_scores.append(found)
-        enc_att_scores = {'subj': [], 'verb': [], 'dobj': [], 'pobj': []}
+        enc_att_scores = {'nsubj': [], 'verb': [], 'dobj': [], 'pobj': []}
         for lv in range(sum(self.h_params.n_latents)):
             for k, v in lv_scores[lv].items():
                 enc_att_scores[k].append(np.mean(v))
@@ -1205,7 +1205,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 encoder_Ndisent_vars = len(set(enc_disent_vars.values()))
                 self.writer.add_scalar('test/encoder_Ndisent_vars', encoder_Ndisent_vars, self.step)
             else:
-                enc_lab_wise_disent, encoder_Ndisent_vars = {'subj': 0, 'verb': 0, 'dobj': 0, 'pobj': 0}, 0
+                enc_lab_wise_disent, encoder_Ndisent_vars = {'nsubj': 0, 'verb': 0, 'dobj': 0, 'pobj': 0}, 0
 
             dec_disent_score, dec_lab_wise_disent, dec_var_wise_scores, dec_disent_vars\
                 = self._get_stat_data_frame2(n_samples=n_samples)
@@ -1746,8 +1746,8 @@ def shallow_dependencies(sents):
                 dobj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
             if tok.dep_ == 'pobj' and pobj[0] == '':
                 pobj = [' '.join([toki.text for toki in tok.subtree]), [toki.i for toki in tok.subtree]]
-        relations.append({'text':{'subj': subj[0], 'verb': verb[0], 'dobj': dobj[0], 'pobj': pobj[0]},
-                         'idx':{'subj': subj[1], 'verb': verb[1], 'dobj': dobj[1], 'pobj': pobj[1]}})
+        relations.append({'text':{'nsubj': subj[0], 'verb': verb[0], 'dobj': dobj[0], 'pobj': pobj[0]},
+                         'idx':{'nsubj': subj[1], 'verb': verb[1], 'dobj': dobj[1], 'pobj': pobj[1]}})
     return relations
 
 def shallow_dependencies2(sents, parser, roles=None):

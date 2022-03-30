@@ -1607,7 +1607,7 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         self.mem_ids = nn.Embedding(n_mems, mem_size).weight
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
-        self.key_size = key_size or self.mem_size
+        self.key_size = key_size or self.mem_size*n_mems
         self.simple_zs_use = simple_zs_use
         self.n_keys = n_mems if simple_zs_use else n_keys
         self.memory_to_hidden = nn.Linear(self.mem_size*2, output_size)
