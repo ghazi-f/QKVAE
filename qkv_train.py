@@ -11,7 +11,7 @@ import numpy as np
 from allennlp.training.learning_rate_schedulers import PolynomialDecay
 
 from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
-    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki, BARTBookCorpus
+    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki, BARTBookCorpus, SupYelpData, SupNLIData
 from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
@@ -22,7 +22,7 @@ from torch.nn import MultiheadAttention
 k, kz, klstm = 2, 4, 2
 parser.add_argument("--test_name", default='unnamed', type=str)
 parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt', 'news', 'fr_sbt', 'wiki',
-                                                      'bc'], type=str)
+                                                      "sup_yelp", "sup_nli", 'bc'], type=str)
 parser.add_argument("--csv_out", default='disentqkv3.csv', type=str)
 parser.add_argument("--max_len", default=17, type=int)
 parser.add_argument("--init_len", default=None, type=int)
@@ -83,6 +83,9 @@ parser.add_argument("--kl_beta", default=0.3, type=float)
 parser.add_argument("--kl_beta_zs", default=0.1, type=float)
 parser.add_argument("--kl_beta_zg", default=0.1, type=float)
 parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
+parser.add_argument("--sup_coeff", default=0.0, type=float)
+parser.add_argument("--dec_sup_coeff", default=0.0, type=float)
+parser.add_argument("--sup_loss_choice", default='multi', choices=["multi", "single"], type=str)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -99,10 +102,13 @@ if False:
     # flags.optimizer="sgd"
     # -----------------------------------
     # Supervised Non-Bart QKV args
+    flags.sup_loss_choice = 'single'
+    flags.sup_coeff = 100.
+    flags.dec_sup_coeff = 0.
     flags.use_bart = False
     flags.layer_wise_qkv = False
     flags.tr_enc_in_dec = False
-    flags.data = "yelp"#"fr_sbt"
+    flags.data = "sup_yelp"#"fr_sbt"
     flags.decoder_h = 192
     flags.encoder_h = 192
     flags.embedding_dim = 192
@@ -183,7 +189,7 @@ if flags.losses == "LagVAE":
 
 if flags.data in ('news', 'fr_sbt', 'wiki'): assert flags.use_bart
 Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
-        "yelp": BARTYelp if flags.use_bart else HuggingYelp2,
+        "yelp": BARTYelp if flags.use_bart else HuggingYelp2, "sup_yelp": SupYelpData, "sup_nli": SupNLIData,
         "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData,
         "news": BARTNewsCategory, "wiki": BARTWiki, "bc": BARTBookCorpus,
         'fr_sbt': BARTFrSbt}[flags.data]
@@ -194,6 +200,8 @@ N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
 DEVICE = device(flags.device)
+SUPERVISED = flags.data.startswith("sup_")
+print('This run is {}supervised'.format("" if SUPERVISED else 'not '))
 # This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
 if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
@@ -228,6 +236,7 @@ def main():
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
+                       sup_coeff=flags.sup_coeff, dec_sup_coeff=flags.dec_sup_coeff, sup_loss_choice=flags.sup_loss_choice,
                        fr=flags.data == 'fr_sbt', bart_l=flags.bart_l)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
@@ -289,7 +298,10 @@ def main():
                     print('Saved model after it\'s pure reconstruction phase')
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
-            loss = model.opt_step({'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]})
+            inp = {'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}
+            if SUPERVISED:
+                inp['sup'] = training_batch.label
+            loss = model.opt_step(inp)
             if flags.lr_sched > 0:
                 decay.step_batch()
 
@@ -309,7 +321,10 @@ def main():
                     val_iterator = iter(data.val_iter)
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
-                    model({'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]})
+                    inp = {'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]}
+                    if SUPERVISED:
+                        inp['sup'] = test_batch.label
+                    model(inp)
                     for loss in model.losses:
                         print(type(loss), ":")
                         print(loss._prepared_metrics, flush=True)
@@ -435,7 +450,7 @@ def main():
             f.write('\t'.join(label_line)+'\n')
     with open(flags.csv_out, 'a') as f:
         value_line = [flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
-                           str(flags.kl_beta), str(flags.n_latents), str(flags.n_keys),
+                           str(flags.kl_beta), str(flags.n_latents),
                            str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum([val_dec_lab_wise_disent[k] for k in relations])),
                            str(sum([val_enc_lab_wise_disent[k] for k in relations])),
                            *[str(val_dec_lab_wise_disent[k]) for k in relations+temps],

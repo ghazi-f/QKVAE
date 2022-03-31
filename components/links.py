@@ -1304,6 +1304,8 @@ class CoattentiveTransformerLink2(NamedLink):
         self.mem_to_hidden = nn.Linear(mem_size, output_size) if mem_size else None
         self.transformer_dec = TransformerDecoder(TransformerDecoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
+        for l in self.transformer_dec.layers:
+            l.multihead_attn.dropout = 0.
         self.transformer_enc = TransformerEncoder(TransformerEncoderLayer(output_size, nheads, dim_feedforward=output_size,
                                                                       dropout=dropout, activation='gelu'), depth)
         self.pe = PositionalEncoding(output_size)
@@ -1492,9 +1494,14 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             self.att_vals = []
             out = targets
             for mod in self.transformer_dec.layers:
-                self.att_vals.append(
-                mod.multihead_attn(out, memory, memory)[1])
+                tgt = self.self_attn(out, out, out, attn_mask=target_mask)[0]
+                tgt = out + self.dropout1(tgt)
+                tgt = self.norm1(tgt)
+                self.att_vals.append(mod.multihead_attn(tgt, memory, memory)[1])
                 out = mod(out, memory, tgt_mask=target_mask)
+
+                if self.transformer_dec.norm is not None:
+                    out = self.norm(out)
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
                     self.params.items()}
@@ -1643,6 +1650,8 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
         assert (memory is None and key is None) or (memory is not None and key is not None), "if you specify memory" \
                                                                                              " variables, also specify" \
                                                                                              " key variables"
+        for l in self.transformer_dec.layers:
+            l.multihead_attn.dropout = 0.
         self.memory, self.key, self.targets = memory, key, targets
         self.pe = PositionalEncoding(output_size)
         self.bn = nn.BatchNorm1d(z_size)
@@ -1703,11 +1712,11 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
 
         if self.get_att:
             self.att_vals = []
-            out = targets
             for mod in self.transformer_dec.layers:
-                self.att_vals.append(
-                mod.multihead_attn(out, memory, memory)[1])
-                out = mod(out, x)
+                self.att_vals.append(mod.att_vals)
+
+        for mod in self.transformer_dec.layers:
+            mod.att_vals = None
 
         z_params = {param: activation(self.hidden_to_z_params[param](outputs))+EPSILON for param, activation in
                     self.params.items()}
@@ -1894,6 +1903,9 @@ class SpecialTransformerEncoder(TransformerEncoderLayer):
 
 
 class QKVTransformerDecoderLayer(TransformerDecoderLayer):
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
+        super(QKVTransformerDecoderLayer, self).__init__(d_model, nhead, dim_feedforward, dropout, activation)
+        self.att_vals = None
 
     def forward(self, tgt, memory, key, tgt_mask = None, memory_mask= None,
                 tgt_key_padding_mask= None, memory_key_padding_mask= None):
@@ -1914,8 +1926,8 @@ class QKVTransformerDecoderLayer(TransformerDecoderLayer):
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
-        tgt2 = self.multihead_attn(tgt, key, memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
+        tgt2, self.att_vals = self.multihead_attn(tgt, key, memory, attn_mask=memory_mask,
+                                                  key_padding_mask=memory_key_padding_mask)
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))

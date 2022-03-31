@@ -89,7 +89,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         self.has_zg = 'zg' in self.gen_bn.name_to_v
 
         # Setting up categorical variable indexes
-        self.index = {self.generated_v: vocab_index}
+        self.index = {self.generated_v: vocab_index, "sup": tag_index}
 
         # The losses
         self.losses = [loss(self, w) for loss, w in zip(h_params.losses, h_params.loss_params)]
@@ -128,7 +128,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #     padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
         #     infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
 
-        if self.h_params.lv_kl_coeff > 0:
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
             activate_all_attention_outputs()
 
         if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
@@ -136,10 +136,13 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                    prev_states=self.infer_last_states, complete=True)
         else:
             self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
-        if self.h_params.lv_kl_coeff > 0:
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
             deactivate_all_attention_outputs()
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
+
+        if self.h_params.dec_sup_coeff > 0 :
+            activate_all_attention_outputs()
         if self.iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
         if self.step < self.h_params.anneal_kl[0] and self.h_params.anneal_kl_type == "linear":
@@ -147,6 +150,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                prev_states=self.gen_last_states)
         else:
             self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
+        if self.h_params.dec_sup_coeff > 0 :
+            deactivate_all_attention_outputs()
 
         # Loss computation and backward pass
         losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
@@ -155,6 +160,16 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             if self.step % 128 : print("kl_loss:", kl_loss)
             self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
             losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
+        if self.h_params.sup_coeff > 0:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss(samples['sup'])
+            self.writer.add_scalar('train' + '/' + 'sup_loss', sup_loss, self.step)
+            losses_uns.append(self.h_params.sup_coeff * sup_loss)
+        if self.h_params.dec_sup_coeff > 0:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss_dec(samples['sup'])
+            self.writer.add_scalar('train' + '/' + 'dec_sup_loss', sup_loss, self.step)
+            losses_uns.append(self.h_params.dec_sup_coeff * sup_loss)
         sum(losses_uns).backward()
         if not self.h_params.contiguous_lm:
             self.infer_last_states, self.gen_last_states = None, None
@@ -181,10 +196,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         #                          ----------- Unsupervised Forward ----------------
         # Forward pass
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
+            activate_all_attention_outputs()
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
 
         infer_prev = self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval,
                                    prev_states=infer_prev, force_iw=force_iw, complete=True)
+        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
+            deactivate_all_attention_outputs()
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw or force_iw:
@@ -194,8 +213,20 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #                            complete=True)
         # else:
 
+        if  self.h_params.dec_sup_coeff > 0:
+            activate_all_attention_outputs()
         gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
+        if  self.h_params.dec_sup_coeff > 0:
+            deactivate_all_attention_outputs()
 
+        if self.h_params.sup_coeff > 0 and not force_iw:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss(samples['sup'])
+            self.writer.add_scalar('test' + '/' + 'sup_loss', sup_loss, self.step)
+        if self.h_params.dec_sup_coeff > 0 and not force_iw:
+            assert 'sup' in samples
+            sup_loss = self.get_sup_att_loss_dec(samples['sup'])
+            self.writer.add_scalar('test' + '/' + 'dec_sup_loss', sup_loss, self.step)
         # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
 
@@ -929,6 +960,129 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                                 torch.log_softmax(logit1, dim=-1))
                     kl_list.append(torch.sum(kl_per_dim, dim=-1).unsqueeze(0))
         return - torch.mean(torch.cat(kl_list))
+
+    def get_sup_att_loss(self, sup):
+        if self.h_params.sup_loss_choice == 'multi':
+            return self._get_sup_att_loss_multi(sup)
+        elif self.h_params.sup_loss_choice == 'single':
+            return self._get_sup_att_loss_single(sup)
+        else:
+            raise NotImplementedError("Unrecognized supervised loss "
+                                      "choice :\"{}\"".format(self.h_params.sup_loss_choice))
+
+    def _get_sup_att_loss_single(self, sup):
+        # This performs mutli_class classification with attention values
+        # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
+        att_vals = self.get_enc_att_vals()[..., :-1]
+        # averaging over layers which leads to shape [sent, lv, tok]
+        att_vals = att_vals.mean(-2)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx].transpose(-1, -2)
+
+        #Making new dimension for classification
+        att_vals = torch.cat([att_vals.unsqueeze(-1), 1-att_vals.unsqueeze(-1)], -1)
+        sup = torch.cat([sup.unsqueeze(-1), 1-sup.unsqueeze(-1)], -1)
+
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup).mean()
+        return c_e
+
+    def _get_sup_att_loss_multi(self, sup):
+        # For this one, each target LV is a classifier for a determined syntactic role
+        # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
+        att_vals = self.get_enc_att_vals()[..., :-1]
+        # averaging over layers which leads to shape [sent, lv, tok]
+        att_vals = att_vals.mean(-2)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+        # transposing lv and tok dimension to get the softmax right
+        att_vals = att_vals.transpose(-1, -2)
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        mask = 1-(sup == o_idx).int().unsqueeze(-1)
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx]
+        # Making it so that values sum to 1 on the lv axis without a softmax
+        att_vals = att_vals / att_vals.sum(-1).unsqueeze(-1)
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
+        return c_e
+
+    def get_dec_att(self):
+        # att_weights shape:[layer, sent, tok, lv] -->[sent, layer, tok, lv]
+        att_weights = self.gen_bn.approximator[self.generated_v].att_vals
+        att_vals = torch.stack(att_weights).transpose(1, 0)
+        return att_vals
+
+    def get_sup_att_loss_dec(self, sup):
+        if self.h_params.sup_loss_choice == 'multi':
+            return self._get_sup_att_loss_dec_multi(sup)
+        elif self.h_params.sup_loss_choice == 'single':
+            return self._get_sup_att_loss_dec_single(sup)
+        else:
+            raise NotImplementedError("Unrecognized supervised decoder loss "
+                                      "choice :\"{}\"".format(self.h_params.sup_loss_choice))
+
+    def _get_sup_att_loss_dec_multi(self, sup):
+        # att_vals shape:[sent, layer, tok, lv], averaging over layers which leads to shape [sent, tok, lv]
+        att_vals = self.get_dec_att().mean(1)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+        # One_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        mask = 1-(sup == o_idx).int().unsqueeze(-1)
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx]
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
+        return c_e
+
+    def _get_sup_att_loss_dec_single(self, sup):
+        # att_vals shape:[sent, layer, tok, lv], average on layers and transpose which leads to shape [sent, lv, tok]
+        att_vals = self.get_dec_att().mean(1).transpose(-1, -2)
+        # Avoiding the importance sampled forward passes
+        if len(att_vals.shape)>3:
+            return 0.
+        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
+        o_idx = self.index['sup'].stoi['o']
+        unk_idx = self.index['sup'].unk_index
+        sup = F.one_hot(sup, len(self.index['sup']))
+        role_idx = list(range(sup.shape[-1]))
+        role_idx.remove(unk_idx)
+        role_idx.remove(o_idx)
+        sup = sup[..., role_idx].transpose(-1, -2)
+
+        #Making new dimension for classification
+        att_vals = torch.cat([att_vals.unsqueeze(-1), 1-att_vals.unsqueeze(-1)], -1)
+        sup = torch.cat([sup.unsqueeze(-1), 1-sup.unsqueeze(-1)], -1)
+
+
+        # Calculating cross entropy
+        c_e = -(torch.log(att_vals)*sup).mean()
+        return c_e
 
     def _get_real_sent_argmaxes(self, sents, maxes):
         text = [[self.index[self.generated_v].itos[w] for w in sen] for sen in sents]
