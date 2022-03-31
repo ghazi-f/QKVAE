@@ -1390,8 +1390,12 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         with torch.no_grad():
             for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Stats")):
                 if batch.text.shape[1] < 2: continue
-                infer_prev, gen_prev = self({'x': batch.text[..., 1:],
-                                             'x_prev': batch.text[..., :-1]}, prev_states=(infer_prev, gen_prev))
+            for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Stats")):
+                if batch.text.shape[1] < 2: continue
+                inp = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
+                if self.h_params.sup_coeff > 0 or self.h_params.dec_sup_coeff > 0:
+                    inp['sup'] = batch.label
+                infer_prev, gen_prev = self(inp, prev_states=(infer_prev, gen_prev))
                 if not self.h_params.contiguous_lm:
                     infer_prev, gen_prev = None, None
                 nsamples += batch.text.shape[0]
