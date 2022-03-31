@@ -26,7 +26,7 @@ sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'whit
 # import spacy_udpipe
 # nlp = spacy_udpipe.load("en")
 nlp = spacy.load("en_core_web_sm")
-de_nlp = spacy.load("de_core_news_sm")
+de_nlp = None#spacy.load("de_core_news_sm")
 
 predictor = None#Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/structured-prediction-srl-bert.2020.12.15.tar.gz")
 
