@@ -23,7 +23,7 @@ import seaborn as sns
 import itertools
 sns.set_style("ticks", {"xtick.major.color": 'white', "ytick.major.color": 'white'})
 
-import spacy_udpipe
+# import spacy_udpipe
 # nlp = spacy_udpipe.load("en")
 nlp = spacy.load("en_core_web_sm")
 de_nlp = spacy.load("de_core_news_sm")
