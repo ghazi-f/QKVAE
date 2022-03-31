@@ -15,7 +15,7 @@ import spacy
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from allennlp.predictors.predictor import Predictor
-import allennlp_models.tagging
+# import allennlp_models.tagging
 
 
 import matplotlib.pyplot as plt
