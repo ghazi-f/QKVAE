@@ -1494,9 +1494,9 @@ class ConditionalCoattentiveTransformerLink(NamedLink):
             self.att_vals = []
             out = targets
             for mod in self.transformer_dec.layers:
-                tgt = self.self_attn(out, out, out, attn_mask=target_mask)[0]
-                tgt = out + self.dropout1(tgt)
-                tgt = self.norm1(tgt)
+                tgt = mod.self_attn(out, out, out, attn_mask=target_mask)[0]
+                tgt = out + mod.dropout1(tgt)
+                tgt = mod.norm1(tgt)
                 self.att_vals.append(mod.multihead_attn(tgt, memory, memory)[1])
                 out = mod(out, memory, tgt_mask=target_mask)
 
