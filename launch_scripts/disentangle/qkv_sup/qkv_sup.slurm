@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=QKVSup100
+#SBATCH --job-name=QKVSup1000
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./QKVSup100.txt
-#SBATCH --error=./QKVSup100.err
+#SBATCH --output=./QKVSup1000.txt
+#SBATCH --error=./QKVSup1000.err
 #SBATCH --time=60:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
@@ -15,7 +15,7 @@
 
 
 # Experiments on the SNLI Dataset with ADVAE
-for SUP in 100.0
+for SUP in 1000.0
 do
 for BETA in 0.3 0.4 0.5
 do
@@ -28,7 +28,7 @@ done
 
 
 # Experiments on the Yelp Dataset with ADVAE
-for SUP in 100.0
+for SUP in 1000.0
 do
 for BETA in 0.3 0.4 0.5
 do
