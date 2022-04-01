@@ -973,6 +973,133 @@ class ConditionalCoattentiveBARTTransformerLink(NamedLink):
         return z_params
 
 
+class GatedBartTransformerLink(NamedLink):
+    get_att = False
+
+    def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
+                 dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, kv=None,
+                 gate=None, targets=None, nheads=2, kv_size=None, fr=False, gate_size=None, bart_l=None):
+        super(GatedBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
+                                                     params, embedding, highway, dropout=dropout,
+                                                     batchnorm=batchnorm, residual=residual)
+        self.transformer_dec = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY).decoder if fr else \
+            BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY).decoder
+        assert output_size == self.transformer_dec.config.d_model, "Output size {}, different from BART model " \
+                                                                   "dimension {}" \
+                                                                   "".format(output_size,
+                                                                             self.transformer_dec.config.d_model)
+        if bart_l:
+            dec_layers = len(self.transformer_dec.layers)
+            self.transformer_dec.layers = self.transformer_dec.layers[dec_layers - bart_l:]
+
+        self.n_layers = len(self.transformer_dec.layers)
+        self.n_heads = self.transformer_dec.layers[0].encoder_attn.num_heads
+        output_size = self.transformer_dec.config.d_model
+        hack_BART(self.transformer_dec)
+
+        # output_size = int(output_size/n_mems)
+        self.kv_size = kv_size or int(input_size / n_mems)
+        self.gate_size = gate_size or kv_size * n_mems
+        self.n_mems = n_mems
+
+        self.mem_ids = nn.Embedding(n_mems, kv_size).weight
+        self.kv_to_v = nn.Linear(self.kv_size * 2, output_size * self.n_layers)
+        self.kv_to_k = nn.Linear(self.kv_size * 2, output_size * self.n_layers)
+        self.target_to_hidden = nn.Linear(input_size, output_size)
+        self.transformer_enc, self.memory_to_hidden1 = None, None
+
+        g2h_layers = []
+        if depth > 1:
+            g2h_layers.append(nn.Linear(self.gate_size, output_size))
+            g2h_layers.append(nn.GELU())
+            for _ in range(depth - 2):
+                g2h_layers.append(nn.Linear(output_size, output_size))
+                g2h_layers.append(nn.GELU())
+
+            g2h_layers.append(nn.Linear(output_size, self.n_heads * self.n_mems * (self.n_layers or 1)))
+        else:
+            if output_size < self.gate_size:  # to minimize this layer's size
+                g2h_layers.append(nn.Linear(self.gate_size, output_size))
+                g2h_layers.append(nn.Linear(output_size, self.n_mems * (self.n_layers or 1)))
+            else:
+                g2h_layers.append(nn.Linear(self.gate_size, self.n_heads * self.n_mems * (self.n_layers or 1)))
+
+        self.gate_to_hidden = nn.Sequential(*g2h_layers)
+
+        self.kv, self.gate, self.targets = kv, gate, targets
+        self.bn = nn.BatchNorm1d(z_size)
+        self.n_mems, self.output_size = n_mems, output_size
+        self.bidirectional = bidirectional
+        self.att_vals = None
+
+        if embedding is not None:
+            self.sbn = sbn
+            if sbn is not None:
+                z_params_size = int(embedding.weight.shape[1] / sbn.n_experts)
+            else:
+                z_params_size = embedding.weight.shape[1]
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_params_size)
+                                                     for param in params})
+        else:
+            self.hidden_to_z_params = nn.ModuleDict({param: nn.Linear(output_size, z_size) for param in params})
+
+        assert self.residual is None, "Named links still can't have residuals"
+
+    def forward(self, x, z_prev=None, lens=None):
+        kv = torch.cat([v for k, v in x.items() if k in self.kv], dim=-1)[..., 0, :]
+        kv = kv.view((*kv.shape[:-1], self.n_mems, self.kv_size))
+
+        gate = torch.cat([v for k, v in x.items() if k in self.gate], dim=-1)[..., 0, :]
+        gate = gate.view((*gate.shape[:-1], self.gate_size))
+        gate = self.gate_to_hidden(gate).view((*gate.shape[:-1], self.n_mems, self.n_layers, self.n_heads))
+        targets = torch.cat([v for k, v in x.items() if k in self.targets], dim=-1)
+
+        if kv.ndim > 3:
+            batch_orig_shape = kv.shape[:-2]
+            kv = kv.view(-1, *kv.shape[-2:])
+            gate = gate.view(-1, *gate.shape[-2:])
+            targets = targets.view(-1, *targets.shape[-2:])
+        else:
+            batch_orig_shape = None
+
+        val = self.kv_to_v(torch.cat([kv, self.mem_ids.expand(kv.shape)], dim=-1))
+        key = self.kv_to_k(torch.cat([kv, self.mem_ids.expand(kv.shape)], dim=-1))
+        targets = self.target_to_hidden(targets)
+
+        # Gating
+        gate = F.softmax(gate, -1).unsqueeze(-1)
+        val = val.view(*val.shape[:-1], self.n_layers, self.n_heads, -1)*gate
+
+        # Feeding keys and values to transformer
+        key = key.view(*key.shape[:-1], self.n_layers, self.output_size).unbind(-2)
+        val = val.view(*val.shape[:2], self.n_layers, self.output_size).unbind(-2)
+        load_BART_kv_hacks(self.transformer_dec, key, val)
+        outputs = self.transformer_dec(inputs_embeds=targets, encoder_hidden_states=val,
+                                       output_attentions=self.get_att)
+        clear_BART_kv_hacks(self.transformer_dec)
+        if self.get_att:
+            self.att_vals = [att.mean(1) for att in outputs.cross_attentions]
+        outputs = outputs.last_hidden_state
+
+        z_params = {param: activation(self.hidden_to_z_params[param](outputs)) + EPSILON for param, activation in
+                    self.params.items()}
+        if batch_orig_shape is not None:
+            z_params = {k: v.view((*batch_orig_shape, *v.shape[-2:])) for k, v in z_params.items()}
+
+        if self.embedding is not None:
+            if self.sbn is not None:
+                z_params['logits'] = self.sbn(z_params['logits'], self.embedding.weight)
+            else:
+                z_params['logits'] = torch.matmul(z_params['logits'], self.embedding.weight.transpose(0, 1))
+        if 'loc' in z_params and self.batchnorm:
+            out_shape = z_params['loc'].shape
+            z_params['loc'] = self.bn(z_params['loc'].view(-1, out_shape[-1])).view(out_shape)
+            out_shape = z_params['scale'].shape
+            z_params['scale'] = self.bn(z_params['scale'].view(-1, out_shape[-1]).log()
+                                        ).view(out_shape).exp()
+
+        return z_params
+
 class QKVBartTransformerLink(NamedLink):
     get_att = False
 
@@ -1611,7 +1738,6 @@ class ConditionalCoattentiveQKVTransformerLink(NamedLink):
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=batchnorm, residual=residual)
         # output_size = int(output_size/n_mems)
-        self.mem_ids = nn.Embedding(n_mems, mem_size).weight
         self.input_to_hidden = nn.Linear(input_size, output_size)
         self.mem_size = mem_size or int(output_size/n_mems)
         self.key_size = key_size or self.mem_size*n_mems
