@@ -34,6 +34,7 @@ class DefaultHParams:
                  bart_l=None,
                  layer_wise_qkv=False,
                  tr_enc_in_dec=False,
+                 z_ids=True,
                  losses=None,
                  loss_params=None,
                  piwo=False,
@@ -113,6 +114,7 @@ class DefaultHParams:
 
         self.layer_wise_qkv = layer_wise_qkv
         self.tr_enc_in_dec = tr_enc_in_dec
+        self.z_ids = z_ids
         self.n_keys = n_keys
         self.n_latents = n_latents
         self.graph_generator = graph_generator

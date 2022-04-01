@@ -168,7 +168,7 @@ def get_qkv_graph2(h_params, word_embeddings):
                                                                  highway=h_params.highway, sbn=None,
                                                                  dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
                                                                  memory=[z.name for z in z_gens], targets=['x_prev'],
-                                                                 key=['zs'], nheads=4, bidirectional=False,
+                                                                 key=['zs'], nheads=4, bidirectional=False,z_ids=h_params.z_ids,
                                                                  mem_size=int(z_sizes[0]/h_params.n_latents[0]),
                                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys)
     z_prior = [CoattentiveTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
@@ -491,7 +491,7 @@ def get_qkv_graphBART(h_params, word_embeddings):
                                              memory=[z.name for z in z_gens], targets=['x_prev'],
                                              key=['zs'], nheads=4, bidirectional=False, mem_enc=h_params.tr_enc_in_dec,
                                              mem_size=int(z_sizes[0]/h_params.n_latents[0]),
-                                             minimal_enc=h_params.minimal_enc, n_keys=n_keys,
+                                             minimal_enc=h_params.minimal_enc, n_keys=n_keys, z_ids=h_params.z_ids,
                                                layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, bart_l=h_params.bart_l)
     z_prior = [CoattentiveBARTTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]), z_sizes[i+1],
                                               h_params.decoder_l, Gaussian.parameter_activations,

@@ -761,7 +761,7 @@ def get_qkvNext(h_params, word_embeddings):
                                                  dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
                                                  memory=['z1'], predicate=['zp'], targets=['x_prev'], key=['zs'],
                                                  p_size=zp_gen.size, key_size=zst_gen.size,
-                                                 mem_size=int(zin_size/h_params.n_latents[0]),
+                                                 mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
                                                  layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
     zp_to_zst = MLPLink(zpin_size, h_params.decoder_h, zstout_size, h_params.decoder_l, Gaussian.parameter_activations,

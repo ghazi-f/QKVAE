@@ -57,6 +57,9 @@ parser.set_defaults(use_bart=False)
 parser.add_argument('--layer_wise_qkv', dest='layer_wise_qkv', action='store_true')
 parser.add_argument('--no-layer_wise_qkv', dest='layer_wise_qkv', action='store_false')
 parser.set_defaults(layer_wise_qkv=False)
+parser.add_argument('--z_ids', dest='z_ids', action='store_true')
+parser.add_argument('--no-z_ids', dest='z_ids', action='store_false')
+parser.set_defaults(z_ids=True)
 parser.add_argument('--tr_enc_in_dec', dest='tr_enc_in_dec', action='store_true')
 parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_false')
 parser.set_defaults(tr_enc_in_dec=False)
@@ -102,25 +105,26 @@ if False:
     # flags.optimizer="sgd"
     # -----------------------------------
     # Supervised Non-Bart QKV args
-    flags.sup_loss_choice = 'single'
-    flags.sup_coeff = 100.
-    flags.dec_sup_coeff = 0.
-    flags.use_bart = False
-    flags.layer_wise_qkv = False
-    flags.tr_enc_in_dec = False
-    flags.data = "sup_yelp"#"fr_sbt"
-    flags.decoder_h = 192
-    flags.encoder_h = 192
-    flags.embedding_dim = 192
-    flags.encoder_l = 2
-    flags.decoder_l = 2
+    # flags.sup_loss_choice = 'single'
+    # flags.sup_coeff = 100.
+    # flags.dec_sup_coeff = 0.
+    # flags.use_bart = False
+    # flags.layer_wise_qkv = False
+    # flags.tr_enc_in_dec = False
+    # flags.data = "sup_yelp"#"fr_sbt"
+    # flags.decoder_h = 192
+    # flags.encoder_h = 192
+    # flags.embedding_dim = 192
+    # flags.encoder_l = 2
+    # flags.decoder_l = 2
 
     # Unsupervised QKV args
-    # flags.use_bart = True
-    # flags.layer_wise_qkv = True
-    # flags.tr_enc_in_dec=True
-    # flags.data = "bc"#"fr_sbt"
+    flags.use_bart = True
+    flags.layer_wise_qkv = True
+    flags.tr_enc_in_dec=True
+    flags.data = "bc"#"fr_sbt"
     # -----------------------------------
+    flags.z_ids = False
     # flags.lr_sched = 0.00003
     flags.batch_size = 20
     flags.grad_accu = 1
@@ -237,7 +241,7 @@ def main():
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
                        sup_coeff=flags.sup_coeff, dec_sup_coeff=flags.dec_sup_coeff, sup_loss_choice=flags.sup_loss_choice,
-                       fr=flags.data == 'fr_sbt', bart_l=flags.bart_l)
+                       fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, z_ids=flags.z_ids)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
     print("Loss Type: ", flags.losses)

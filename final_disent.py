@@ -60,6 +60,9 @@ parser.set_defaults(use_bart=False)
 parser.add_argument('--layer_wise_qkv', dest='layer_wise_qkv', action='store_true')
 parser.add_argument('--no-layer_wise_qkv', dest='layer_wise_qkv', action='store_false')
 parser.set_defaults(layer_wise_qkv=False)
+parser.add_argument('--z_ids', dest='z_ids', action='store_true')
+parser.add_argument('--no-z_ids', dest='z_ids', action='store_false')
+parser.set_defaults(z_ids=True)
 parser.add_argument('--tr_enc_in_dec', dest='tr_enc_in_dec', action='store_true')
 parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_false')
 parser.set_defaults(tr_enc_in_dec=False)
@@ -102,6 +105,7 @@ flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
     # flags.optimizer="sgd"
+    flags.z_ids = False
     flags.use_bart = True
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec = True
@@ -113,8 +117,8 @@ if False:
     flags.aux_l=4
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
-    flags.data = "paranmt"#"owt"
-    flags.sem_coeff = 0.0
+    flags.data = "owt"#"owt"
+    flags.sem_coeff = 0.1
     flags.n_latents = [4]
     flags.n_keys = 16
     flags.graph = "NQKV"  # "Vanilla"
@@ -222,7 +226,7 @@ def main():
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,sem_coeff=flags.sem_coeff,
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
-                       fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, aux_l=flags.aux_l)
+                       fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, aux_l=flags.aux_l, z_ids=flags.z_ids)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
     print("Loss Type: ", flags.losses)
