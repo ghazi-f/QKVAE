@@ -2060,7 +2060,7 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
 
         # Calculating contrastive loss
         # lmbd = 1.0
-        klplus, klminus = gauss_kl(g_params_plus, g_params), gauss_kl(g_params_minus, g_params)
+        klplus, klminus = gauss_ce(g_params_plus, g_params), gauss_ce(g_params_minus, g_params)
         loss = (klplus/(klplus+klminus)).mean()#torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
 
         return loss
@@ -2810,9 +2810,10 @@ def deactivate_all_attention_outputs():
     CoattentiveBARTTransformerLink.get_att, ConditionalCoattentiveBARTTransformerLink.get_att = False, False
 
 
-def gauss_kl(params0, params1):
+def gauss_ce(params0, params1):
     sig0, sig1 = params0['scale'] ** 2, params1['scale'] ** 2
     mu0, mu1 = params0['loc'], params1['loc']
 
     kl_per_dim = 0.5 * (sig0 / sig1 + (mu1 - mu0) ** 2 / sig1 + torch.log(sig1) - torch.log(sig0) - 1)
-    return torch.sum(kl_per_dim, dim=-1)
+    entropy_per_dim0 = 0.5*torch.log(sig0)  # Didn't include the 0.5*log(2*Pi*e)
+    return torch.sum(kl_per_dim-entropy_per_dim0, dim=-1)
