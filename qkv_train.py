@@ -76,7 +76,7 @@ parser.add_argument("--zs_anneal_kl1", default=10000, type=int)
 parser.add_argument("--zg_anneal_kl0", default=7000, type=int)
 parser.add_argument("--zg_anneal_kl1", default=10000, type=int)
 parser.add_argument("--anneal_kl_type", default="linear", choices=["linear", "sigmoid"], type=str)
-parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd"], type=str)
+parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd", "radam"], type=str)
 parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
@@ -123,6 +123,7 @@ if False:
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec=True
     flags.data = "bc"#"fr_sbt"
+    flags.optimizer = "radam"
     # -----------------------------------
     flags.z_ids = False
     # flags.lr_sched = 0.00003
@@ -169,9 +170,10 @@ if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
 
 
 if flags.use_bart and flags.optimizer == "adam": flags.optimizer = "adafactor"
-OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor}[flags.optimizer]
+OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor, "radam":optim.RAdam}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
+              'radam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
               'adafactor': {'lr': flags.lr, 'relative_step': False,
                             'weight_decay': flags.l2_reg}}[flags.optimizer]
 
