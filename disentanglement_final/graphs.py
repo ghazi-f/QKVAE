@@ -736,8 +736,7 @@ def get_hqkv_graph_discrete_zsBART(h_params, word_embeddings):
     return {'infer': nn.ModuleList(infer_edges), 'gen':   nn.ModuleList(gen_edges)}, None, x_gen
 
 
-
-# ============================ QKVNext BART GRAPHS =========================================================================
+# ============================ QKVNext BART GRAPHS =====================================================================
 
 def get_qkvNext(h_params, word_embeddings):
     # This a version of the network where the hparams to dimensions configuration is reworked
@@ -821,3 +820,239 @@ def get_qkvNext(h_params, word_embeddings):
 
     return {'infer': nn.ModuleList(infer_edges), 'gen':   nn.ModuleList(gen_edges),
             'aux':nn.ModuleList(aux_edges)}, None, x_gen
+
+
+def get_qkvNext_indep_zs(h_params, word_embeddings):
+    # This a version of the network where the hparams to dimensions configuration is reworked
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    n_keys = h_params.n_keys
+    zstin_size, zstout_size = h_params.z_size, h_params.z_size
+    zpin_size, zpout_size = h_params.z_size, h_params.z_size
+    n_lvls = len(h_params.n_latents)
+    lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
+    # =============================== Generation Graph ===============================
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gen = ZGeni(h_params, None, 0)
+    z_prev_gen = ZprevGeni(h_params, None, 0)
+    zp_gen = ZpGen(h_params)
+    zst_gen = ZStGen(h_params, allow_prior=True)
+
+    zst_zp_z_xprev_to_x = SQKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+                                                 Categorical.parameter_activations, word_embeddings,
+                                                 highway=h_params.highway, sbn=None,
+                                                 dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                 memory=['z1'], predicate=['zp'], targets=['x_prev'], key=['zs'],
+                                                 p_size=zp_gen.size, key_size=zst_gen.size,
+                                                 mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
+                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+    z_zprev_p_to_z0 = LVARTransformerLink(zpin_size, h_params.decoder_h, zout_size, h_params.decoder_l,
+                                   Gaussian.parameter_activations, dropout=h_params.dropout,
+                                   n_lv=sum(h_params.n_latents)+1, lv_size=int(zin_size/h_params.n_latents[0]), z0_size=zpin_size,
+                                   z0=[zp_gen.name], zc=[z_prev_gen.name], nheads=h_params.n_heads)
+    number_parameters = sum(p.numel() for p in zst_zp_z_xprev_to_x.parameters() if p.requires_grad)
+    print("reconstruction net size:", "{0:05.2f} M".format(number_parameters/1e6))
+
+    gen_edges = [nn.ModuleList([var, zst_zp_z_xprev_to_x, x_gen]) for var in [z_gen, xprev_gen, zst_gen, zp_gen]]+\
+        [nn.ModuleList([z_prev_gen, z_zprev_p_to_z0, z_gen]), nn.ModuleList([zp_gen, z_zprev_p_to_z0, z_gen])]
+    # =============================== Inference Graph ===============================
+    x_inf, z_inf, zp_inf, zst_inf = XInfer(h_params, word_embeddings, has_rep=False), ZInferi(h_params, None, 0),\
+                            ZpInfer(h_params), ZStInfer(h_params)
+    x_to_z = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zin_size, h_params.encoder_l,
+                                            Gaussian.parameter_activations, n_mems=None, dropout=h_params.dropout,
+                                            n_targets=h_params.n_latents[0], fr=h_params.fr, bart_l=h_params.bart_l)
+    x_to_zst = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                              fr=h_params.fr, bart_l=h_params.bart_l)
+    x_to_zp = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zpout_size, h_params.encoder_l,
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                             fr=h_params.fr, bart_l=h_params.bart_l)
+    # Sharing BART encoder
+    x_to_z.transformer = x_to_zst.transformer
+    x_to_zp.transformer = x_to_zst.transformer
+    x_to_z.input_to_hidden = x_to_zst.input_to_hidden
+    x_to_zp.input_to_hidden = x_to_zst.input_to_hidden
+
+    infer_edges = [nn.ModuleList([x_inf, x_to_z, z_inf]), nn.ModuleList([x_inf, x_to_zst, zst_inf]),
+                   nn.ModuleList([x_inf, x_to_zp, zp_inf])]
+
+    number_parameters = sum(p.numel() for p in x_to_z.parameters() if p.requires_grad)
+    print("x to z1 size:", "{0:05.2f} M".format(number_parameters/1e6))
+    number_parameters = sum(p.numel() for p in x_to_zst.parameters() if p.requires_grad)
+    print("x to zst size:", "{0:05.2f} M".format(number_parameters/1e6))
+    # =============================== Auxiliart Semantics Graph ===============================
+    zp_aux, z0_aux, g_prev, g_aux = ZpGen(h_params), ZGeni(h_params, None, index=0), GPrevAuxGen(h_params), \
+                                    GAuxGen(h_params)
+    # zp_z0_gprev_to_g = ConditionalCoattentiveQKVTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
+    #                                                             Gaussian.parameter_activations,dropout=h_params.dropout,
+    #                                                             bidirectional=True,n_mems=h_params.n_latents[0],
+    #                                                             mem_size=int(zin_size/h_params.n_latents[0]),
+    #                                                             key_size=zp_aux.size, memory=[z0_aux.name], key=[zp_aux.name],
+    #                                                             targets=[g_prev.name],nheads=h_params.n_heads)
+
+    zp_z0_gprev_to_g = GatedBartTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
+                                                Gaussian.parameter_activations,dropout=h_params.dropout,
+                                                bidirectional=True,n_mems=h_params.n_latents[0],
+                                                kv_size=int(zin_size/h_params.n_latents[0]),
+                                                gate_size=zp_aux.size, kv=[z0_aux.name], gate=[zp_aux.name],
+                                                targets=[g_prev.name],nheads=h_params.n_heads, bart_l=3)
+    aux_edges = [nn.ModuleList([var, zp_z0_gprev_to_g, g_aux]) for var in [zp_aux, z0_aux, g_prev]]
+
+    return {'infer': nn.ModuleList(infer_edges), 'gen':   nn.ModuleList(gen_edges),
+            'aux':nn.ModuleList(aux_edges)}, None, x_gen
+
+
+def get_qkvNext_indep_zc(h_params, word_embeddings):
+    # This a version of the network where the hparams to dimensions configuration is reworked
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    n_keys = h_params.n_keys
+    zstin_size, zstout_size = h_params.z_size, h_params.z_size
+    zpin_size, zpout_size = h_params.z_size, h_params.z_size
+    n_lvls = len(h_params.n_latents)
+    lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
+    # =============================== Generation Graph ===============================
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gen = ZGeni(h_params, None, 0, allow_prior=True)
+    zp_gen = ZpGen(h_params)
+    zst_gen = ZStGen(h_params, allow_prior=False)
+
+    zst_zp_z_xprev_to_x = SQKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+                                                 Categorical.parameter_activations, word_embeddings,
+                                                 highway=h_params.highway, sbn=None,
+                                                 dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                 memory=['z1'], predicate=['zp'], targets=['x_prev'], key=['zs'],
+                                                 p_size=zp_gen.size, key_size=zst_gen.size,
+                                                 mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
+                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+    zp_to_zst = MLPLink(zpin_size, h_params.decoder_h, zstout_size, h_params.decoder_l, Gaussian.parameter_activations,
+                      dropout=h_params.dropout)
+    number_parameters = sum(p.numel() for p in zst_zp_z_xprev_to_x.parameters() if p.requires_grad)
+    print("reconstruction net size:", "{0:05.2f} M".format(number_parameters/1e6))
+
+    gen_edges = [nn.ModuleList([var, zst_zp_z_xprev_to_x, x_gen]) for var in [z_gen, xprev_gen, zst_gen, zp_gen]]+\
+        [nn.ModuleList([zp_gen, zp_to_zst, zst_gen])]
+    # =============================== Inference Graph ===============================
+    x_inf, z_inf, zp_inf, zst_inf = XInfer(h_params, word_embeddings, has_rep=False), ZInferi(h_params, None, 0),\
+                            ZpInfer(h_params), ZStInfer(h_params)
+    x_to_z = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zin_size, h_params.encoder_l,
+                                            Gaussian.parameter_activations, n_mems=None, dropout=h_params.dropout,
+                                            n_targets=h_params.n_latents[0], fr=h_params.fr, bart_l=h_params.bart_l)
+    x_to_zst = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                              fr=h_params.fr, bart_l=h_params.bart_l)
+    x_to_zp = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zpout_size, h_params.encoder_l,
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                             fr=h_params.fr, bart_l=h_params.bart_l)
+    # Sharing BART encoder
+    x_to_z.transformer = x_to_zst.transformer
+    x_to_zp.transformer = x_to_zst.transformer
+    x_to_z.input_to_hidden = x_to_zst.input_to_hidden
+    x_to_zp.input_to_hidden= x_to_zst.input_to_hidden
+
+    infer_edges = [nn.ModuleList([x_inf, x_to_z, z_inf]), nn.ModuleList([x_inf, x_to_zst, zst_inf]),
+                   nn.ModuleList([x_inf, x_to_zp, zp_inf])]
+
+    number_parameters = sum(p.numel() for p in x_to_z.parameters() if p.requires_grad)
+    print("x to z1 size:", "{0:05.2f} M".format(number_parameters/1e6))
+    number_parameters = sum(p.numel() for p in x_to_zst.parameters() if p.requires_grad)
+    print("x to zst size:", "{0:05.2f} M".format(number_parameters/1e6))
+    # =============================== Auxiliart Semantics Graph ===============================
+    zp_aux, z0_aux, g_prev, g_aux = ZpGen(h_params), ZGeni(h_params, None, index=0), GPrevAuxGen(h_params), \
+                                    GAuxGen(h_params)
+    # zp_z0_gprev_to_g = ConditionalCoattentiveQKVTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
+    #                                                             Gaussian.parameter_activations,dropout=h_params.dropout,
+    #                                                             bidirectional=True,n_mems=h_params.n_latents[0],
+    #                                                             mem_size=int(zin_size/h_params.n_latents[0]),
+    #                                                             key_size=zp_aux.size, memory=[z0_aux.name], key=[zp_aux.name],
+    #                                                             targets=[g_prev.name],nheads=h_params.n_heads)
+
+    zp_z0_gprev_to_g = GatedBartTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
+                                                Gaussian.parameter_activations,dropout=h_params.dropout,
+                                                bidirectional=True,n_mems=h_params.n_latents[0],
+                                                kv_size=int(zin_size/h_params.n_latents[0]),
+                                                gate_size=zp_aux.size, kv=[z0_aux.name], gate=[zp_aux.name],
+                                                targets=[g_prev.name],nheads=h_params.n_heads, bart_l=3)
+    aux_edges = [nn.ModuleList([var, zp_z0_gprev_to_g, g_aux]) for var in [zp_aux, z0_aux, g_prev]]
+
+    return {'infer': nn.ModuleList(infer_edges), 'gen':   nn.ModuleList(gen_edges),
+            'aux':nn.ModuleList(aux_edges)}, None, x_gen
+
+
+def get_qkvNext_indep(h_params, word_embeddings):
+    # This a version of the network where the hparams to dimensions configuration is reworked
+    xin_size, zin_size = h_params.embedding_dim, h_params.z_size
+    xout_size, zout_size = h_params.vocab_size, h_params.z_size
+    n_keys = h_params.n_keys
+    zstin_size, zstout_size = h_params.z_size, h_params.z_size
+    zpin_size, zpout_size = h_params.z_size, h_params.z_size
+    n_lvls = len(h_params.n_latents)
+    lv_size_props = [lv_n/max(h_params.n_latents) for lv_n in h_params.n_latents]
+    # =============================== Generation Graph ===============================
+    x_gen, xprev_gen = XGen(h_params, word_embeddings), XPrevGen(h_params, word_embeddings, has_rep=False)
+    z_gen = ZGeni(h_params, None, 0, allow_prior=True)
+    zp_gen = ZpGen(h_params)
+    zst_gen = ZStGen(h_params, allow_prior=True)
+
+    zst_zp_z_xprev_to_x = SQKVBartTransformerLink(zin_size, h_params.decoder_h, xout_size, h_params.decoder_l,
+                                                 Categorical.parameter_activations, word_embeddings,
+                                                 highway=h_params.highway, sbn=None,
+                                                 dropout=h_params.dropout, n_mems=sum(h_params.n_latents),
+                                                 memory=['z1'], predicate=['zp'], targets=['x_prev'], key=['zs'],
+                                                 p_size=zp_gen.size, key_size=zst_gen.size,
+                                                 mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
+                                                 minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+    number_parameters = sum(p.numel() for p in zst_zp_z_xprev_to_x.parameters() if p.requires_grad)
+    print("reconstruction net size:", "{0:05.2f} M".format(number_parameters/1e6))
+
+    gen_edges = [nn.ModuleList([var, zst_zp_z_xprev_to_x, x_gen]) for var in [z_gen, xprev_gen, zst_gen, zp_gen]]
+    # =============================== Inference Graph ===============================
+    x_inf, z_inf, zp_inf, zst_inf = XInfer(h_params, word_embeddings, has_rep=False), ZInferi(h_params, None, 0),\
+                            ZpInfer(h_params), ZStInfer(h_params)
+    x_to_z = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zin_size, h_params.encoder_l,
+                                            Gaussian.parameter_activations, n_mems=None, dropout=h_params.dropout,
+                                            n_targets=h_params.n_latents[0], fr=h_params.fr, bart_l=h_params.bart_l)
+    x_to_zst = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zstout_size, h_params.encoder_l,
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                              fr=h_params.fr, bart_l=h_params.bart_l)
+    x_to_zp = CoattentiveBARTTransformerLink(xin_size, h_params.encoder_h, zpout_size, h_params.encoder_l,
+                                          Gaussian.parameter_activations, dropout=h_params.dropout, n_targets=1,
+                                             fr=h_params.fr, bart_l=h_params.bart_l)
+    # Sharing BART encoder
+    x_to_z.transformer = x_to_zst.transformer
+    x_to_zp.transformer = x_to_zst.transformer
+    x_to_z.input_to_hidden = x_to_zst.input_to_hidden
+    x_to_zp.input_to_hidden= x_to_zst.input_to_hidden
+
+    infer_edges = [nn.ModuleList([x_inf, x_to_z, z_inf]), nn.ModuleList([x_inf, x_to_zst, zst_inf]),
+                   nn.ModuleList([x_inf, x_to_zp, zp_inf])]
+
+    number_parameters = sum(p.numel() for p in x_to_z.parameters() if p.requires_grad)
+    print("x to z1 size:", "{0:05.2f} M".format(number_parameters/1e6))
+    number_parameters = sum(p.numel() for p in x_to_zst.parameters() if p.requires_grad)
+    print("x to zst size:", "{0:05.2f} M".format(number_parameters/1e6))
+    # =============================== Auxiliart Semantics Graph ===============================
+    zp_aux, z0_aux, g_prev, g_aux = ZpGen(h_params), ZGeni(h_params, None, index=0), GPrevAuxGen(h_params), \
+                                    GAuxGen(h_params)
+    # zp_z0_gprev_to_g = ConditionalCoattentiveQKVTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
+    #                                                             Gaussian.parameter_activations,dropout=h_params.dropout,
+    #                                                             bidirectional=True,n_mems=h_params.n_latents[0],
+    #                                                             mem_size=int(zin_size/h_params.n_latents[0]),
+    #                                                             key_size=zp_aux.size, memory=[z0_aux.name], key=[zp_aux.name],
+    #                                                             targets=[g_prev.name],nheads=h_params.n_heads)
+
+    zp_z0_gprev_to_g = GatedBartTransformerLink(zin_size,h_params.decoder_h,zout_size,h_params.aux_l,
+                                                Gaussian.parameter_activations,dropout=h_params.dropout,
+                                                bidirectional=True,n_mems=h_params.n_latents[0],
+                                                kv_size=int(zin_size/h_params.n_latents[0]),
+                                                gate_size=zp_aux.size, kv=[z0_aux.name], gate=[zp_aux.name],
+                                                targets=[g_prev.name],nheads=h_params.n_heads, bart_l=3)
+    aux_edges = [nn.ModuleList([var, zp_z0_gprev_to_g, g_aux]) for var in [zp_aux, z0_aux, g_prev]]
+
+    return {'infer': nn.ModuleList(infer_edges), 'gen':   nn.ModuleList(gen_edges),
+            'aux':nn.ModuleList(aux_edges)}, None, x_gen
+
+

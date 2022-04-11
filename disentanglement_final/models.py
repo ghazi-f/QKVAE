@@ -1714,15 +1714,21 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         orig_zp_sample = orig_zp_sample or zp_gen.prior_sample(shape)[0]
         zst_gen = self.gen_bn.name_to_v['zs']
         z_gen = self.gen_bn.name_to_v['z1']
-        z_i_size = int(self.h_params.z_size/self.h_params.n_latents[0])
-        orig_z_sample = torch.zeros((*orig_zp_sample.shape[:-1], 0)).to(self.h_params.device)
-        for i in range(self.h_params.n_latents[0]):
-            self.gen_bn({'zp': orig_zp_sample.unsqueeze(1), 'z_prev1': orig_z_sample.unsqueeze(1), 'x_prev': None},
-                        target=self.gen_bn.name_to_v['z1'])
-            orig_z_sample = torch.cat([orig_z_sample, z_gen.post_samples[..., -z_i_size:].squeeze(1)],
-                                       dim=-1)
-        self.gen_bn({'zp': orig_zp_sample.unsqueeze(1), 'x_prev': None, 'z_prev1': None}, target=self.gen_bn.name_to_v['zs'])
-        orig_zst_sample = zst_gen.post_samples.squeeze(1)
+        if z_gen in self.gen_bn.parent:
+            z_i_size = int(self.h_params.z_size/self.h_params.n_latents[0])
+            orig_z_sample = torch.zeros((*orig_zp_sample.shape[:-1], 0)).to(self.h_params.device)
+            for i in range(self.h_params.n_latents[0]):
+                self.gen_bn({'zp': orig_zp_sample.unsqueeze(1), 'z_prev1': orig_z_sample.unsqueeze(1), 'x_prev': None},
+                            target=self.gen_bn.name_to_v['z1'])
+                orig_z_sample = torch.cat([orig_z_sample, z_gen.post_samples[..., -z_i_size:].squeeze(1)],
+                                           dim=-1)
+        else:
+            orig_z_sample = z_gen.prior_sample(shape)[0]
+        if zst_gen in self.gen_bn.parent:
+            self.gen_bn({'zp': orig_zp_sample.unsqueeze(1), 'x_prev': None, 'z_prev1': None}, target=self.gen_bn.name_to_v['zs'])
+            orig_zst_sample = zst_gen.post_samples.squeeze(1)
+        else:
+            orig_zst_sample = zst_gen.prior_sample(shape)[0]
 
         return orig_zp_sample, orig_z_sample, orig_zst_sample
 

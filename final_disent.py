@@ -68,8 +68,7 @@ parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_fa
 parser.set_defaults(tr_enc_in_dec=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs",
-                                                          "NQKV"],
-                    type=str)
+                                                          "NQKV", "NQKVindepzs", "NQKVindepzc", "NQKVindep"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
@@ -110,18 +109,18 @@ if False:
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec = True
     # flags.lr_sched = 0.00003
-    flags.batch_size = 16
+    flags.batch_size = 8
     flags.grad_accu = 1
     flags.max_len = 5
-    flags.bart_l = 3
-    flags.aux_l=4
+    flags.bart_l = 2
+    flags.aux_l=2
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
     flags.data = "owt"#"owt"
     flags.sem_coeff = 0.1
     flags.n_latents = [4]
     flags.n_keys = 16
-    flags.graph = "NQKV"  # "Vanilla"
+    flags.graph = "NQKVindepzs"  # "Vanilla"
     flags.z_size = 192
     flags.losses = "VAE"
     flags.kl_beta = 0.4
@@ -169,7 +168,8 @@ GRAPH = {"Vanilla": get_vanilla_graph,
          "SQKV": get_min_struct_qkv_graphBART if flags.use_bart else None,
          "HQKV": get_hqkv_graphBART if flags.use_bart else get_hqkv_graph,
          "HQKVDiscZs": get_hqkv_graph_discrete_zsBART if flags.use_bart else get_hqkv_graph_discrete_zs,
-         "NQKV":get_qkvNext}[flags.graph]
+         "NQKV": get_qkvNext, "NQKVindepzs": get_qkvNext_indep_zs, "NQKVindepzc": get_qkvNext_indep_zc,
+         "NQKVindep": get_qkvNext_indep}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
@@ -230,7 +230,7 @@ def main():
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
     print("Loss Type: ", flags.losses)
-    if flags.graph == "NQKV":
+    if flags.graph.startswith("NQKV"):
         model = StructuredDisentanglementVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
     else:
         model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
@@ -288,7 +288,7 @@ def main():
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
             train_inp = {'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}
-            if flags.graph == "NQKV" and flags.sem_coeff>0:
+            if flags.graph.startswith("NQKV") and flags.sem_coeff>0:
                 train_inp["x+"] = training_batch.next[..., 1:]
                 train_inp["x_prev+"] = training_batch.next[..., :-1]
                 if flags.data in ["owt"]:
@@ -315,7 +315,7 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     test_inp = {'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]}
-                    if flags.graph == "NQKV" and flags.sem_coeff>0:
+                    if flags.graph.startswith("NQKV") and flags.sem_coeff>0:
                         test_inp["x+"] = test_batch.next[..., 1:]
                         test_inp["x_prev+"] = test_batch.next[..., :-1]
                         if flags.data in ["owt"]:
