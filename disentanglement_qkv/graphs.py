@@ -430,7 +430,7 @@ def get_BARTADVAE(h_params, word_embeddings):
                                                               memory=[z.name for z in z_gens], targets=['x_prev'],
                                                               bidirectional=False,
                                                               mem_size=int(z_sizes[0]/h_params.n_latents[0]),
-                                                              fr=h_params.fr)
+                                                              fr=h_params.fr, bart_l=h_params.bart_l)
     z_prior = [ConditionalCoattentiveBARTTransformerLink(z_sizes[i], int(h_params.decoder_h*lv_size_props[i+1]),
                                                          z_sizes[i+1], h_params.decoder_l,
                                           Gaussian.parameter_activations,
@@ -457,7 +457,7 @@ def get_BARTADVAE(h_params, word_embeddings):
                                                   n_mems=sum(h_params.n_latents[i+1:n_lvls]) or None,
                                                   dropout=h_params.dropout,
                                                   n_targets=h_params.n_latents[i],
-                                                  fr=h_params.fr) for i in range(n_lvls)]
+                                                  fr=h_params.fr, bart_l=h_params.bart_l) for i in range(n_lvls)]
     infer_edges = [nn.ModuleList([x_inf, z_posti, z_infi]) for z_posti, z_infi in zip(z_posterior, z_infs)]
     # for retrocompatibility:
     infer_edges = [infer_edges[0]]+infer_edges[n_lvls:]+infer_edges[1:n_lvls]

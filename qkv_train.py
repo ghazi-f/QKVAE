@@ -122,20 +122,20 @@ if False:
     flags.use_bart = True
     flags.layer_wise_qkv = True
     flags.tr_enc_in_dec=True
-    flags.data = "bc"#"fr_sbt"
-    flags.optimizer = "radam"
+    flags.data = "paranmt"#"fr_sbt"
+    # flags.optimizer = "radam"
     # -----------------------------------
-    flags.z_ids = False
+    # flags.z_ids = False
     # flags.lr_sched = 0.00003
-    flags.batch_size = 20
+    flags.batch_size = 8
     flags.grad_accu = 1
     flags.max_len = 5
-    flags.bart_l = None
+    flags.bart_l = 2
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
     flags.n_latents = [4]
     flags.n_keys = 16
-    flags.graph = "QKV"  # "Vanilla"
+    flags.graph = "IndepInfer"  # "Vanilla"
     flags.z_size = 192
     flags.losses = "VAE"
     flags.kl_beta = 0.4

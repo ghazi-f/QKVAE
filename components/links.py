@@ -909,12 +909,17 @@ class ConditionalCoattentiveBARTTransformerLink(NamedLink):
 
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., bidirectional=False, n_mems=20, memory=None, targets=None,
-                 mem_size=None, fr=False):
+                 mem_size=None, fr=False, bart_l=None):
         super(ConditionalCoattentiveBARTTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                                     params, embedding, highway, dropout=dropout,
                                                                     batchnorm=False, residual=None)
         self.transformer = AutoModel.from_pretrained(BARTHEZ_LINK, local_files_only=LOCAL_ONLY) if fr else \
             BartModel.from_pretrained(BART_LINK, local_files_only=LOCAL_ONLY)
+        if bart_l:
+            dec_layers = len(self.transformer.decoder.layers)
+            self.transformer.decoder.layers = self.transformer.decoder.layers[dec_layers - bart_l:]
+            self.transformer.encoder.layers = self.transformer.encoder.layers[dec_layers - bart_l:]
+
         assert output_size == self.transformer.config.d_model
         output_size = self.transformer.config.d_model
 
