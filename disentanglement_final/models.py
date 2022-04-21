@@ -1614,8 +1614,8 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         self.infer_bn.clear_values(), self.gen_bn.clear_values()
         if self.h_params.sem_coeff > 0:
             sem_loss = self.get_sem_loss(samples)
-            self.writer.add_scalar('train' + '/' + 'sem_loss', sem_loss, self.step)
-            # print("sem loss equal :", sem_loss)
+            self.writer.add_scalar('train' + '/' + 'sem_loss', 1-torch.exp(-sem_loss), self.step)
+            # print("sem loss equal :", sem_loss, 1-torch.exp(-sem_loss))
             losses_uns.append(self.h_params.sem_coeff * sem_loss)
         torch.cuda.empty_cache()
         self.infer_bn.clear_values(), self.gen_bn.clear_values()
@@ -1662,7 +1662,7 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         # self.infer_bn.clear_values(), self.gen_bn.clear_values()
         if sem_loss and self.h_params.sem_coeff > 0:
             sem_loss_val = self.get_sem_loss(samples)
-            self.writer.add_scalar('test' + '/' + 'sem_loss', sem_loss_val, self.step)
+            self.writer.add_scalar('test' + '/' + 'sem_loss', 1-torch.exp(-sem_loss_val), self.step)
         # self.infer_bn.clear_values(), self.gen_bn.clear_values()
 
         if self.h_params.contiguous_lm:
@@ -2067,7 +2067,8 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         # Calculating contrastive loss
         # lmbd = 1.0
         klplus, klminus = gauss_ce(g_params_plus, g_params), gauss_ce(g_params_minus, g_params)
-        loss = (klplus/(klplus+klminus)).mean()#torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
+        # loss = (klplus/(klplus+klminus)).mean()#torch.max(klplus-(klminus-lmbd), torch.zeros_like(klplus)).mean()
+        loss = - torch.log(1 - klplus / (klplus + klminus)).mean()
 
         return loss
 
@@ -2512,36 +2513,54 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
                     t3.append(l[:-1])
 
         ezs1, ezc1, ezp1, ezs2, ezc2, ezp2, ezs3, ezc3, ezp3 = None, None, None, None, None, None, None, None, None
+        ezg1, ezg2, ezg3 = None, None, None
+        g_var = self.aux_bn.name_to_v['g']
+        init_g = self.init_g.unsqueeze(0).expand(batch_size, *self.init_g.shape)
         for i in range(int(len(t1) / batch_size)):
             ezs1i, ezc1i, ezp1i = self.embed_sents(t1[i * batch_size:(i + 1) * batch_size])
             ezs2i, ezc2i, ezp2i = self.embed_sents(t2[i * batch_size:(i + 1) * batch_size])
             ezs3i, ezc3i, ezp3i = self.embed_sents(t3[i * batch_size:(i + 1) * batch_size])
+
+            aux_inputs1 = {'zp': ezp1i.unsqueeze(-2), 'z1': ezc1i.unsqueeze(-2), 'g_prev': init_g}
+            aux_inputs2 = {'zp': ezp2i.unsqueeze(-2), 'z1': ezc2i.unsqueeze(-2), 'g_prev': init_g}
+            aux_inputs3 = {'zp': ezp3i.unsqueeze(-2), 'z1': ezc3i.unsqueeze(-2), 'g_prev': init_g}
+            self.aux_bn(aux_inputs1, complete=True)
+            ezg1i = g_var.post_params['loc']
+            self.aux_bn(aux_inputs2, complete=True)
+            ezg2i = g_var.post_params['loc']
+            self.aux_bn(aux_inputs3, complete=True)
+            ezg3i = g_var.post_params['loc']
             if ezs1 is None:
-                ezs1, ezc1, ezp1 = ezs1i, ezc1i, ezp1i
-                ezs2, ezc2, ezp2 = ezs2i, ezc2i, ezp2i
-                ezs3, ezc3, ezp3 = ezs3i, ezc3i, ezp3i
+                ezs1, ezc1, ezp1, ezg1 = ezs1i, ezc1i, ezp1i, ezg1i
+                ezs2, ezc2, ezp2, ezg2 = ezs2i, ezc2i, ezp2i, ezg2i
+                ezs3, ezc3, ezp3, ezg3 = ezs3i, ezc3i, ezp3i, ezg3i
             else:
                 ezs1, ezc1, ezp1 = torch.cat([ezs1, ezs1i]), torch.cat([ezc1, ezc1i]), torch.cat([ezp1, ezp1i])
                 ezs2, ezc2, ezp2 = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i]), torch.cat([ezp2, ezp2i])
                 ezs3, ezc3, ezp3 = torch.cat([ezs3, ezs3i]), torch.cat([ezc3, ezc3i]), torch.cat([ezp3, ezp3i])
+                ezg1, ezg2, ezg3 = torch.cat([ezg2, ezg1i]), torch.cat([ezg2, ezg2i]), torch.cat([ezg3, ezg3i])
         ezpc1, ezpc2, ezpc3 = torch.cat([ezc1, ezp1], dim=-1), torch.cat([ezc2, ezp2], dim=-1), \
                               torch.cat([ezc3, ezp3], dim=-1)
 
         s13sims, s23sims = l2_sim(ezs1, ezs3), l2_sim(ezs2, ezs3)
         c13sims, c23sims = l2_sim(ezc1, ezc3), l2_sim(ezc2, ezc3)
         p13sims, p23sims = l2_sim(ezp1, ezp3), l2_sim(ezp2, ezp3)
+        g13sims, g23sims = l2_sim(ezp1, ezg3), l2_sim(ezg2, ezg3)
         pc13sims, pc23sims = l2_sim(ezpc1, ezpc3), l2_sim(ezpc2, ezpc3)
 
         zs_acc = np.mean(s13sims.cpu().detach().numpy() < s23sims.cpu().detach().numpy())
         zc_acc = np.mean(c13sims.cpu().detach().numpy() > c23sims.cpu().detach().numpy())
         zp_acc = np.mean(p13sims.cpu().detach().numpy() > p23sims.cpu().detach().numpy())
+        zg_acc = np.mean(g13sims.cpu().detach().numpy() > g23sims.cpu().detach().numpy())
         zpc_acc = np.mean(pc13sims.cpu().detach().numpy() > pc23sims.cpu().detach().numpy())
-        print("Paraphrase detection: with zs {}, with zc {}, zp {}, zpc{}".format(1-zs_acc, zc_acc, zp_acc, zpc_acc))
+        print("Paraphrase detection: with zs {}, with zc {}, zp {}, zpc{}, zg{}".format(1-zs_acc, zc_acc, zp_acc,
+                                                                                        zpc_acc, zg_acc))
         self.writer.add_scalar('test/hard_zs_enc_acc', zs_acc, self.step)
         self.writer.add_scalar('test/hard_zc_enc_acc', zc_acc, self.step)
         self.writer.add_scalar('test/hard_zp_enc_acc', zp_acc, self.step)
+        self.writer.add_scalar('test/hard_zg_enc_acc', zg_acc, self.step)
         self.writer.add_scalar('test/hard_zpc_enc_acc', zpc_acc, self.step)
-        return zs_acc, zc_acc, zp_acc, zpc_acc
+        return zs_acc, zc_acc, zp_acc, zpc_acc, zg_acc
 
     def _get_syn_disent_encoder_easy(self, split="valid", batch_size=100):
         template_file = {"valid": os.path.join(".data", "paranmt2", "dev_input.txt"),
@@ -2559,47 +2578,63 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
                         t2.append(l.split("\t")[1])
 
             ezs1, ezc1, ezp1, ezs2, ezc2, ezp2 = None, None, None, None, None, None
+            ezg1, ezg2 = None, None
+            g_var = self.aux_bn.name_to_v['g']
+            init_g = self.init_g.unsqueeze(0).expand(batch_size, *self.init_g.shape)
             for i in range(int(len(t1) / batch_size)):
                 ezs1i, ezc1i, ezp1i = self.embed_sents(t1[i * batch_size:(i + 1) * batch_size])
                 ezs2i, ezc2i, ezp2i = self.embed_sents(t2[i * batch_size:(i + 1) * batch_size])
+
+                aux_inputs1 = {'zp': ezp1i.unsqueeze(-2), 'z1': ezc1i.unsqueeze(-2), 'g_prev': init_g}
+                aux_inputs2 = {'zp': ezp2i.unsqueeze(-2), 'z1': ezc2i.unsqueeze(-2), 'g_prev': init_g}
+                self.aux_bn(aux_inputs1, complete=True)
+                ezg1i = g_var.post_params['loc']
+                self.aux_bn(aux_inputs2, complete=True)
+                ezg2i = g_var.post_params['loc']
                 if ezs1 is None:
-                    ezs1, ezc1, ezp1 = ezs1i, ezc1i, ezp1i
-                    ezs2, ezc2, ezp2 = ezs2i, ezc2i, ezp2i
+                    ezs1, ezc1, ezp1, ezg1 = ezs1i, ezc1i, ezp1i, ezg1i
+                    ezs2, ezc2, ezp2, ezg2 = ezs2i, ezc2i, ezp2i, ezg2i
                 else:
                     ezs1, ezc1, ezp1 = torch.cat([ezs1, ezs1i]), torch.cat([ezc1, ezc1i]), torch.cat([ezp1, ezp1i])
                     ezs2, ezc2, ezp2 = torch.cat([ezs2, ezs2i]), torch.cat([ezc2, ezc2i]), torch.cat([ezp2, ezp2i])
+                    ezg1, ezg2 = torch.cat([ezg1, ezg1i]), torch.cat([ezg2, ezg2i])
             rep_n = 100
             perm_idx = torch.randperm(ezs1.shape[0] * rep_n)
             ezs1, ezc1, ezp1 = my_repeat(ezs1, rep_n), my_repeat(ezc1, rep_n), my_repeat(ezp1, rep_n)
             ezs2, ezc2, ezp2 = my_repeat(ezs2, rep_n), my_repeat(ezc2, rep_n), my_repeat(ezp2, rep_n)
-            ezs3, ezc3, ezp3 = ezs1[perm_idx], ezc1[perm_idx], ezp1[perm_idx]
+            ezg1, ezg2 = my_repeat(ezg1, rep_n), my_repeat(ezg2, rep_n)
+            ezs3, ezc3, ezp3, ezg3 = ezs1[perm_idx], ezc1[perm_idx], ezp1[perm_idx], ezg1[perm_idx]
             ezpc1, ezpc2, ezpc3 = torch.cat([ezp1, ezc1], dim=-1), torch.cat([ezp2, ezc2], dim=-1), \
                                   torch.cat([ezp3, ezc3], dim=-1)
 
             s12sims, s13sims = l2_sim(ezs1, ezs2), l2_sim(ezs1, ezs3)
             c12sims, c13sims = l2_sim(ezc1, ezc2), l2_sim(ezc1, ezc3)
             p12sims, p13sims = l2_sim(ezp1, ezp2), l2_sim(ezp1, ezp3)
+            g12sims, g13sims = l2_sim(ezg1, ezg2), l2_sim(ezg1, ezg3)
             pc12sims, pc13sims = l2_sim(ezpc1, ezpc2), l2_sim(ezpc1, ezpc3)
             syn_emb_sc = np.mean(s12sims.cpu().detach().numpy() > s13sims.cpu().detach().numpy())
             cont_emb_sc = np.mean(c12sims.cpu().detach().numpy() > c13sims.cpu().detach().numpy())
             pred_emb_sc = np.mean(p12sims.cpu().detach().numpy() > p13sims.cpu().detach().numpy())
+            g_emb_sc = np.mean(g12sims.cpu().detach().numpy() > g13sims.cpu().detach().numpy())
             pc_emb_sc = np.mean(pc12sims.cpu().detach().numpy() > pc13sims.cpu().detach().numpy())
-            accuracies[task] = {"zs": syn_emb_sc, "zc": cont_emb_sc, "zp": pred_emb_sc, "zpc":pc_emb_sc}
+            accuracies[task] = {"zs": syn_emb_sc, "zc": cont_emb_sc, "zp": pred_emb_sc, "zpc":pc_emb_sc, "zg": g_emb_sc}
         print("Paraphrase results 1 : ", accuracies)
         self.writer.add_scalar('test/zs_enc_para_acc', accuracies["paraphrase"]["zs"], self.step)
         self.writer.add_scalar('test/zc_enc_para_acc', accuracies["paraphrase"]["zc"], self.step)
         self.writer.add_scalar('test/zp_enc_para_acc', accuracies["paraphrase"]["zp"], self.step)
+        self.writer.add_scalar('test/zg_enc_para_acc', accuracies["paraphrase"]["zg"], self.step)
         self.writer.add_scalar('test/zs_enc_temp_acc', accuracies["template"]["zs"], self.step)
         self.writer.add_scalar('test/zc_enc_temp_acc', accuracies["template"]["zc"], self.step)
         self.writer.add_scalar('test/zp_enc_temp_acc', accuracies["template"]["zp"], self.step)
+        self.writer.add_scalar('test/zg_enc_temp_acc', accuracies["template"]["zg"], self.step)
         return accuracies
 
     def get_syn_disent_encoder(self, split="valid", batch_size=100):
-        easy_scores = self._get_syn_disent_encoder_easy(split=split, batch_size=batch_size)
-        hard_zs_score, hard_zc_score, hard_zp_score, hard_zpc_score = \
+        easy_scores = {}#self._get_syn_disent_encoder_easy(split=split, batch_size=batch_size)
+        hard_zs_score, hard_zc_score, hard_zp_score, hard_zpc_score, hard_zg_score = \
             self._get_syn_disent_encoder_hard(split=split, batch_size=batch_size)
         scores = {**easy_scores, "hard": {"zs": hard_zs_score, "zc": hard_zc_score, "zp": hard_zp_score,
-                                          "zpc": hard_zpc_score}}
+                                          "zpc": hard_zpc_score, "zg": hard_zg_score}}
         return scores
 
 

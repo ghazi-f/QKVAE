@@ -69,6 +69,7 @@ parser.set_defaults(tr_enc_in_dec=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs",
                                                           "NQKV", "NQKVindepzs", "NQKVindepzc", "NQKVindep"], type=str)
+parser.add_argument("--p_use", default="zc", choices=["none", "zc", "id"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
@@ -79,7 +80,7 @@ parser.add_argument("--zs_anneal_kl1", default=10000, type=int)
 parser.add_argument("--zg_anneal_kl0", default=7000, type=int)
 parser.add_argument("--zg_anneal_kl1", default=10000, type=int)
 parser.add_argument("--anneal_kl_type", default="linear", choices=["linear", "sigmoid"], type=str)
-parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd"], type=str)
+parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd", "radam"], type=str)
 parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
@@ -104,16 +105,18 @@ flags = parser.parse_args()
 # Manual Settings, Deactivate before pushing
 if False:
     # flags.optimizer="sgd"
-    flags.z_ids = False
+    flags.z_ids = True
+    # flags.optimizer = 'radam'
+    flags.p_use = 'zc'
     flags.use_bart = True
     flags.layer_wise_qkv = True
-    flags.tr_enc_in_dec = True
+    flags.tr_enc_in_dec = False
     # flags.lr_sched = 0.00003
     flags.batch_size = 8
     flags.grad_accu = 1
     flags.max_len = 5
-    flags.bart_l = 2
-    flags.aux_l=2
+    flags.bart_l = 1
+    flags.aux_l=1
     flags.test_name = "nliLM/TestBart"
     # flags.lv_kl_coeff = 1.0
     flags.data = "owt"#"owt"
@@ -155,9 +158,10 @@ if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
 
 
 if flags.use_bart and flags.optimizer == "adam": flags.optimizer = "adafactor"
-OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor}[flags.optimizer]
+OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor, "radam":optim.RAdam}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
+              'radam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
               'adafactor': {'lr': flags.lr, 'relative_step': False,
                             'weight_decay': flags.l2_reg}}[flags.optimizer]
 
@@ -224,7 +228,7 @@ def main():
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
                        max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,sem_coeff=flags.sem_coeff,
-                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
+                       z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta, p_use=flags.p_use,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
                        fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, aux_l=flags.aux_l, z_ids=flags.z_ids)
     val_iterator = iter(data.val_iter)

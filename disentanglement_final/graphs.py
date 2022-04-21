@@ -762,7 +762,7 @@ def get_qkvNext(h_params, word_embeddings):
                                                  p_size=zp_gen.size, key_size=zst_gen.size,
                                                  mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
-                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, p_use=h_params.p_use)
     zp_to_zst = MLPLink(zpin_size, h_params.decoder_h, zstout_size, h_params.decoder_l, Gaussian.parameter_activations,
                       dropout=h_params.dropout)
     z_zprev_p_to_z0 = LVARTransformerLink(zpin_size, h_params.decoder_h, zout_size, h_params.decoder_l,
@@ -846,7 +846,7 @@ def get_qkvNext_indep_zs(h_params, word_embeddings):
                                                  p_size=zp_gen.size, key_size=zst_gen.size,
                                                  mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
-                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, p_use=h_params.p_use)
     z_zprev_p_to_z0 = LVARTransformerLink(zpin_size, h_params.decoder_h, zout_size, h_params.decoder_l,
                                    Gaussian.parameter_activations, dropout=h_params.dropout,
                                    n_lv=sum(h_params.n_latents)+1, lv_size=int(zin_size/h_params.n_latents[0]), z0_size=zpin_size,
@@ -926,7 +926,7 @@ def get_qkvNext_indep_zc(h_params, word_embeddings):
                                                  p_size=zp_gen.size, key_size=zst_gen.size,
                                                  mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
-                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, p_use=h_params.p_use)
     zp_to_zst = MLPLink(zpin_size, h_params.decoder_h, zstout_size, h_params.decoder_l, Gaussian.parameter_activations,
                       dropout=h_params.dropout)
     number_parameters = sum(p.numel() for p in zst_zp_z_xprev_to_x.parameters() if p.requires_grad)
@@ -1004,7 +1004,7 @@ def get_qkvNext_indep(h_params, word_embeddings):
                                                  p_size=zp_gen.size, key_size=zst_gen.size,
                                                  mem_size=int(zin_size/h_params.n_latents[0]), z_ids=h_params.z_ids,
                                                  minimal_enc=h_params.minimal_enc, n_keys=n_keys, bart_l=h_params.bart_l,
-                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr)
+                                                 layer_wise=h_params.layer_wise_qkv, fr=h_params.fr, p_use=h_params.p_use)
     number_parameters = sum(p.numel() for p in zst_zp_z_xprev_to_x.parameters() if p.requires_grad)
     print("reconstruction net size:", "{0:05.2f} M".format(number_parameters/1e6))
 

@@ -36,6 +36,7 @@ class DefaultHParams:
                  bart_l=None,
                  aux_l=2,
                  layer_wise_qkv=False,
+                 p_use='zc',
                  tr_enc_in_dec=False,
                  z_ids=True,
                  losses=None,
@@ -115,6 +116,7 @@ class DefaultHParams:
         self.aux_l = aux_l
 
         self.layer_wise_qkv = layer_wise_qkv
+        self.p_use = p_use
         self.tr_enc_in_dec = tr_enc_in_dec
         self.z_ids = z_ids
         self.n_keys = n_keys

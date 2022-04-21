@@ -1274,7 +1274,8 @@ class SQKVBartTransformerLink(NamedLink):
     def __init__(self, input_size, output_size, z_size, depth, params, embedding=None, highway=False, sbn=None,
                  dropout=0., batchnorm=False, residual=None, bidirectional=False, n_mems=20, n_keys=1, predicate=None,
                  memory=None, key=None, targets=None, nheads=2, minimal_enc=False, mem_size=None, p_size=None,
-                 old_ver=False, simple_zs_use=True, layer_wise=False, fr=False, key_size=None, bart_l=None, z_ids=True):
+                 old_ver=False, simple_zs_use=True, layer_wise=False, fr=False, key_size=None, bart_l=None, z_ids=True,
+                 p_use="zc"):
         super(SQKVBartTransformerLink, self).__init__(input_size, output_size, z_size, depth,
                                                      params, embedding, highway, dropout=dropout,
                                                      batchnorm=batchnorm, residual=residual)
@@ -1284,6 +1285,8 @@ class SQKVBartTransformerLink(NamedLink):
                                                                    "dimension {}" \
                                                                    "".format(output_size,
                                                                              self.transformer_dec.config.d_model)
+        assert p_use in ('zc', 'none', 'id'), " 'p_use' argument only allows values in [zc, none, id]"
+
         if bart_l:
             dec_layers = len(self.transformer_dec.layers)
             self.transformer_dec.layers = self.transformer_dec.layers[dec_layers - bart_l:]
@@ -1297,16 +1300,24 @@ class SQKVBartTransformerLink(NamedLink):
         self.key_size = key_size or mem_size * n_mems
         self.p_size = p_size or self.mem_size
         self.simple_zs_use = simple_zs_use
-        self.n_keys = (n_mems+1) if simple_zs_use else n_keys
-
-        if not z_ids:
+        self.n_keys = (n_mems+(1 if p_use=='zc' else 0)) if simple_zs_use else n_keys
+        self.p_use = p_use
+        if p_use == 'id':
             self.mem_ids = None
-            self.memory_to_hidden = nn.Linear(self.mem_size, output_size * (self.n_layers or 1))
-            self.transformer_enc, self.memory_to_hidden1 = None, None
-        else:
-            self.mem_ids = nn.Embedding(n_mems, mem_size).weight
             self.memory_to_hidden = nn.Linear(self.mem_size * 2, output_size * (self.n_layers or 1))
-        self.p_to_hidden = nn.Linear(self.p_size, output_size * (self.n_layers or 1))
+            self.p_to_hidden = nn.Linear(self.p_size, self.mem_size * n_mems * (self.n_layers or 1))
+        else:
+            if not z_ids:
+                self.mem_ids = None
+                self.memory_to_hidden = nn.Linear(self.mem_size, output_size * (self.n_layers or 1))
+                self.transformer_enc, self.memory_to_hidden1 = None, None
+            else:
+                self.mem_ids = nn.Embedding(n_mems, mem_size).weight
+                self.memory_to_hidden = nn.Linear(self.mem_size * 2, output_size * (self.n_layers or 1))
+            if self.p_use == 'zc':
+                self.p_to_hidden = nn.Linear(self.p_size, output_size * (self.n_layers or 1))
+            else:
+                self.p_to_hidden = None
         self.old = old_ver
         if self.old:
             self.key_to_hidden = nn.Linear(int(self.key_size / n_mems), output_size * self.n_keys)
@@ -1362,7 +1373,10 @@ class SQKVBartTransformerLink(NamedLink):
         memory = memory.view((*memory.shape[:-1], self.n_mems, self.mem_size))
 
         key = torch.cat([v for k, v in x.items() if k in self.key], dim=-1)[..., 0, :]
-        predicate = torch.cat([v for k, v in x.items() if k in self.predicate], dim=-1)[..., :1, :]
+        if self.p_use != 'none':
+            predicate = torch.cat([v for k, v in x.items() if k in self.predicate], dim=-1)[..., :1, :]
+        else:
+            predicate = None
         if self.old:
             key = key.view((*key.shape[:-1], 1, int(self.key_size / self.n_mems)))
         else:
@@ -1375,14 +1389,19 @@ class SQKVBartTransformerLink(NamedLink):
             memory = memory.view(-1, *memory.shape[-2:])
             key = key.view(-1, *key.shape[-2:])
             targets = targets.view(-1, *targets.shape[-2:])
-            predicate = predicate.view(-1, *predicate.shape[-2:])
+            if predicate is not None:
+                predicate = predicate.view(-1, *predicate.shape[-2:])
         else:
             batch_orig_shape = None
+
         if self.mem_ids is not None:
-            memory = self.memory_to_hidden(torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1))
-        else:
-            memory = self.memory_to_hidden(memory)
-        memory = torch.cat([self.p_to_hidden(predicate), memory], dim=-2)
+            memory = torch.cat([memory, self.mem_ids.expand(memory.shape)], dim=-1)
+        elif self.p_use == 'id':
+            mem_ids = self.p_to_hidden(predicate)
+            memory = torch.cat([memory, mem_ids.reshape(memory.shape)], dim=-1)
+        memory = self.memory_to_hidden(memory)
+        if self.p_use == 'zc':
+            memory = torch.cat([self.p_to_hidden(predicate), memory], dim=-2)
 
         if not self.simple_zs_use:
             key = key.transpose(-2, 0)
