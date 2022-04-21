@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=OWRadam
+#SBATCH --job-name=OWNoDr
 #SBATCH --gres=gpu:1
 #SBATCH --qos=qos_gpu-t4
 #SBATCH --cpus-per-task=5
-#SBATCH --output=./OWRadam.txt
-#SBATCH --error=./OWRadam.err
+#SBATCH --output=./OWNoDr.txt
+#SBATCH --error=./OWNoDr.err
 #SBATCH --time=60:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
@@ -105,7 +105,7 @@
 # --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --zg_anneal_kl0 3000 --zg_anneal_kl1 6000 --layer_wise_qkv --grad_clip 100.0 \
 # --bart_l 3 --aux_l 3 --sem_coeff 100.0
 
-srun python final_disent.py --test_name "Disentanglement2/OWRadammin_beta0.8.0.8.01.4" --kl_beta 0.8 --n_latents 4 --data owt\
+srun python final_disent.py --test_name "Disentanglement2/OWNoDrmin_beta0.8.0.8.01.4" --kl_beta 0.8 --n_latents 4 --data owt\
  --n_epochs 40 --graph NQKV --max_len 40 --kl_beta_zs 0.8 --kl_beta_zg 0.8 --use_bart --batch_size 64 --z_size 768 --kl_th 0.01 \
  --zs_anneal_kl0 7000 --zs_anneal_kl1 20000 --zg_anneal_kl0 3000 --zg_anneal_kl1 6000 --layer_wise_qkv --grad_clip 100.0 \
- --bart_l 3 --aux_l 3 --sem_coeff 10.0 --optimizer radam
+ --bart_l 3 --aux_l 3 --sem_coeff 10.0 --dropout 0.0
