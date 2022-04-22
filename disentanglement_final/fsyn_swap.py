@@ -416,10 +416,10 @@ with torch.no_grad():
               "air support arrives in 2 minutes ?",
               "you lost your family in a fire ?"]
 
-    ezs, ezc = model.embed_sents(sents1)
-    enc_samples1 = {"z1": ezc, "zs": ezs, "zg":torch.zeros_like(ezs)}
-    ezs, ezc = model.embed_sents(sents2)
-    enc_samples2 = {"z1": ezc, "zs": ezs, "zg":torch.zeros_like(ezs)}
+    ezs, ezc, ezp = model.embed_sents(sents1)
+    enc_samples1 = {"z1": ezc, "zs": ezs, "zp":ezp}
+    ezs, ezc, ezp = model.embed_sents(sents2)
+    enc_samples2 = {"z1": ezc, "zs": ezs, "zp":ezp}
 
     rec_text1, _, _ = swap_syntax(model, enc_samples1, enc_samples1)
     rec_text2, _, _ = swap_syntax(model, enc_samples2, enc_samples2)
