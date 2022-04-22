@@ -60,13 +60,16 @@ parser.set_defaults(use_bart=False)
 parser.add_argument('--layer_wise_qkv', dest='layer_wise_qkv', action='store_true')
 parser.add_argument('--no-layer_wise_qkv', dest='layer_wise_qkv', action='store_false')
 parser.set_defaults(layer_wise_qkv=False)
+parser.add_argument('--z_ids', dest='z_ids', action='store_true')
+parser.add_argument('--no-z_ids', dest='z_ids', action='store_false')
+parser.set_defaults(z_ids=True)
 parser.add_argument('--tr_enc_in_dec', dest='tr_enc_in_dec', action='store_true')
 parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_false')
 parser.set_defaults(tr_enc_in_dec=False)
 parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
 parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs",
-                                                          "NQKV"],
-                    type=str)
+                                                          "NQKV", "NQKVindepzs", "NQKVindepzc", "NQKVindep"], type=str)
+parser.add_argument("--p_use", default="zc", choices=["none", "zc", "id"], type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
 parser.add_argument("--test_prior_samples", default=10, type=int)
@@ -77,7 +80,7 @@ parser.add_argument("--zs_anneal_kl1", default=10000, type=int)
 parser.add_argument("--zg_anneal_kl0", default=7000, type=int)
 parser.add_argument("--zg_anneal_kl1", default=10000, type=int)
 parser.add_argument("--anneal_kl_type", default="linear", choices=["linear", "sigmoid"], type=str)
-parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd"], type=str)
+parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd", "radam"], type=str)
 parser.add_argument("--grad_clip", default=5., type=float)
 parser.add_argument("--kl_th", default=0., type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
@@ -99,7 +102,9 @@ parser.add_argument("--save_all", default=True, type=bool)
 
 flags = parser.parse_args()
 
+# Manual Settings, Deactivate before pushing
 if True:
+
     # flags.optimizer="sgd"
     flags.use_bart = True
     flags.layer_wise_qkv = True
@@ -108,11 +113,12 @@ if True:
     #flags.test_name = "Disentanglement2/ParaQKVBARTminiLag_beta0.4.0.4.1.8"
     #flags.test_name = "Disentanglement2/ParaQKVBARTminiThr_beta0.2.0.2.1.8"
     #flags.test_name = "Disentanglement2/BCQBmTX_beta0.6.0.6.1.4"
-    flags.test_name = "Disentanglement2/PQBmTXLmini64_beta0.6.0.6.1.4"
+    flags.test_name = "Disentanglement2/OWindepzs3min_beta0.8.0.6.01.4"
     #flags.test_name = "Disentanglement2/WikiXNoDrop_beta0.3.0.3.1.4"
     flags.data = "owt"
     #flags.data = "bc"
-    flags.bart_l = 3
+    flags.bart_l = 2
+    flags.tr_enc_in_dec = False
     flags.n_latents = [4]
     flags.graph = "NQKV"
     flags.kl_beta = 0.3
@@ -120,15 +126,24 @@ if True:
     flags.kl_beta_zs = 0.3
     flags.z_size = 768#192
     ML, BS, NS, NAS = 20, 20, 5, 3 # GenLen, Beam Size, Gen NSamples, NAlternative samples
+    TEST = False
 if flags.use_bart:
+    # flags.z_size = 768
     flags.decoder_h = 768
     flags.encoder_h = 768
     flags.embedding_dim = 768
 
+if flags.anneal_kl_type == "sigmoid" and flags.anneal_kl0 < flags.anneal_kl1:
+    flags.anneal_kl0, flags.anneal_kl1 = 2000, 500
+    flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 4000, 500
+    flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 4000, 500
+
+
 if flags.use_bart and flags.optimizer == "adam": flags.optimizer = "adafactor"
-OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor}[flags.optimizer]
+OPTIMIZER = {'sgd': optim.SGD, 'adam': optim.Adam, "adafactor": Adafactor, "radam":optim.RAdam}[flags.optimizer]
 OPT_KWARGS = {'sgd': {'lr': flags.lr, 'weight_decay': flags.l2_reg},  # 't0':100, 'lambd':0.},
               'adam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
+              'radam': {'lr': flags.lr, 'weight_decay': flags.l2_reg, 'betas': (0.9, 0.99)},
               'adafactor': {'lr': flags.lr, 'relative_step': False,
                             'weight_decay': flags.l2_reg}}[flags.optimizer]
 
@@ -139,7 +154,8 @@ GRAPH = {"Vanilla": get_vanilla_graph,
          "SQKV": get_min_struct_qkv_graphBART if flags.use_bart else None,
          "HQKV": get_hqkv_graphBART if flags.use_bart else get_hqkv_graph,
          "HQKVDiscZs": get_hqkv_graph_discrete_zsBART if flags.use_bart else get_hqkv_graph_discrete_zs,
-         "NQKV":get_qkvNext}[flags.graph]
+         "NQKV": get_qkvNext, "NQKVindepzs": get_qkvNext_indep_zs, "NQKVindepzc": get_qkvNext_indep_zc,
+         "NQKVindep": get_qkvNext_indep}[flags.graph]
 if flags.graph == "NormalLSTM":
     flags.encoder_h = int(flags.encoder_h/k*klstm)
 if flags.graph == "Vanilla":
@@ -192,13 +208,13 @@ h_params = HParams(len(data.vocab.itos), len(data.tags.itos) if (flags.data == '
                    markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                    test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
                    max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,sem_coeff=flags.sem_coeff,
-                   z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
+                   z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta, p_use=flags.p_use,
                    kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
-                   fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, aux_l=flags.aux_l)
+                   fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, aux_l=flags.aux_l, z_ids=flags.z_ids)
 val_iterator = iter(data.val_iter)
 print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
 print("Loss Type: ", flags.losses)
-if flags.graph == "NQKV":
+if flags.graph.startswith("NQKV"):
     model = StructuredDisentanglementVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
 else:
     model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
@@ -245,6 +261,57 @@ with torch.no_grad():
         print("-->", text[i], '|<', '><'.join(alt_text[i::len(text)]), '>', flush=True)
 
 
+    def swap_latents(mdl, prev_latent_vals, var_z_ids, gen_len, complete=None, no_unk=True):
+        has_struct = 'zs' in mdl.gen_bn.name_to_v
+        has_zg = 'zg' in mdl.gen_bn.name_to_v
+
+        n_orig_sentences = prev_latent_vals['z1'].shape[0]
+        n_samples = n_orig_sentences
+        go_symbol = torch.ones([n_samples * n_orig_sentences]).long() * \
+                    mdl.index[mdl.generated_v].stoi[mdl.go_symbol]
+        go_symbol = go_symbol.to(mdl.h_params.device).unsqueeze(-1)
+        x_prev = go_symbol
+        if complete is not None:
+            for token in complete.split(' '):
+                x_prev = torch.cat([x_prev, torch.ones([n_samples * n_orig_sentences, 1]).long().to(mdl.h_params.device) * \
+                                    mdl.index[mdl.generated_v].stoi[token]], dim=1)
+            gen_len = gen_len - len(complete.split(' '))
+        temp = 1.
+        orig_z = prev_latent_vals['z1'].unsqueeze(1).repeat(1, n_samples, 1)
+        orig_zp = prev_latent_vals['zp'].unsqueeze(1).repeat(1, n_samples, 1)
+        z_sample = orig_z.reshape(n_samples * n_orig_sentences, -1)
+        orig_z = orig_z.transpose(0, 1).reshape(n_samples * n_orig_sentences, -1)
+        zp_sample = orig_zp.reshape(n_samples * n_orig_sentences, -1)
+        orig_zp = orig_zp.transpose(0, 1).reshape(n_samples * n_orig_sentences, -1)
+        if has_struct:
+            orig_zst = prev_latent_vals['zs'].unsqueeze(1).repeat(1, n_samples, 1)
+            zst_sample = orig_zst.reshape(n_samples * n_orig_sentences, -1)
+            orig_zst = orig_zst.transpose(0, 1).reshape(n_samples * n_orig_sentences, -1)
+        if has_zg:
+            orig_zg = prev_latent_vals['zg'].unsqueeze(1).repeat(1, n_samples, 1)
+            orig_zg = orig_zg.transpose(0, 1).reshape(n_samples * n_orig_sentences, -1)
+
+        for id in var_z_ids:
+            if id < sum(h_params.n_latents):
+                z_number = sum([id > sum(h_params.n_latents[:i + 1]) for i in range(len(h_params.n_latents))])
+                z_index = id - sum(h_params.n_latents[:z_number])
+                start, end = int(h_params.z_size / max(h_params.n_latents) * z_index), \
+                             int(h_params.z_size / max(h_params.n_latents) * (z_index + 1))
+                source, destination = [z_sample][z_number], [orig_z][z_number]
+                destination[:, start:end] = source[:, start:end]
+            elif id == sum(h_params.n_latents) and has_struct:
+                orig_zst = zst_sample
+            else:
+                raise IndexError("You gave a too high z_id for swapping with this model")
+
+        z_input = {'z1': orig_z.unsqueeze(1), **({'zs': orig_zst.unsqueeze(1)} if has_struct else {}), 'zp':orig_zp.unsqueeze(1)
+                   **({'zg': orig_zg.unsqueeze(1)} if has_zg else {})}
+
+        x_prev = mdl.generate_from_z2(z_input, x_prev, beam_size=mdl.beam_size)
+        text = mdl.decode_to_text2(x_prev, mdl.h_params.vocab_size, mdl.index[mdl.generated_v])
+        return text, {'z1': orig_z}
+
+
     def swap_syntax(mdl, prev_latent_vals, syn_src_lvs):
         assert 'zs' in mdl.gen_bn.name_to_v
         has_zg = 'zg' in mdl.gen_bn.name_to_v
@@ -256,12 +323,13 @@ with torch.no_grad():
         go_symbol = go_symbol.to(mdl.h_params.device).unsqueeze(-1)
         x_prev = go_symbol
         orig_z = prev_latent_vals['z1']
+        orig_zp = prev_latent_vals['zp']
         orig_zst = syn_src_lvs['zs']
         if has_zg:
             orig_zg = prev_latent_vals['zg'].unsqueeze(1).repeat(1, n_samples, 1)
             orig_zg = orig_zg.transpose(0, 1).reshape(n_samples * n_orig_sentences, -1)
 
-        z_input = {'z1': orig_z.unsqueeze(1), **({'zs': orig_zst.unsqueeze(1)}),
+        z_input = {'z1': orig_z.unsqueeze(1), 'zp':orig_zp.unsqueeze(1), **({'zs': orig_zst.unsqueeze(1)}),
                    **({'zg': orig_zg.unsqueeze(1)} if has_zg else {})}
 
         x_prev, seq_scores = mdl.generate_from_z2(z_input, x_prev, beam_size=mdl.beam_size, return_seq_scores=True)
@@ -274,8 +342,7 @@ with torch.no_grad():
     torch.cuda.empty_cache()
     model.beam_size = BS
     print("========== BEAM SIZE: {} ==================".format(model.beam_size), flush=True)
-    semp
-    sw_text, sw_samples, _ = swap_syntax(model, samples)
+    sw_text, sw_samples = swap_latents(model, samples, sw_zs, ML, complete=None, no_unk=True)
     print(text, flush=True)
     for i in range(len(text)):
         for j in range(len(text)):
@@ -283,7 +350,7 @@ with torch.no_grad():
                 print("z_from: ", text[i], "|z_to: ", text[j], "|result: ", sw_text[len(text) * i + j], flush=True)
     model.beam_size = 1
     print("========== BEAM SIZE: {} ==================".format(model.beam_size), flush=True)
-    sw_text, sw_samples, _ = swap_syntax(model, samples)
+    sw_text, sw_samples = swap_latents(model, samples, sw_zs, ML, complete=None, no_unk=True)
     print(text, flush=True)
     for i in range(len(text)):
         for j in range(len(text)):
@@ -309,11 +376,11 @@ with torch.no_grad():
     # "let 's sleep .",
     ]
 
-    ezs, ezc = model.embed_sents(sents)
-    enc_samples = {"z1":ezc, "zs":ezs, "zg":torch.zeros_like(ezs)}
+    ezs, ezc, ezp = model.embed_sents(sents)
+    enc_samples = {"z1":ezc, "zs":ezs, "zp":ezp}
     print("========== Reconstructions==================", flush=True)
     sw_zs = [sum(h_params.n_latents)]
-    sw_text, sw_samples, = swap_syntax(model, enc_samples)
+    sw_text, sw_samples = swap_latents(model, enc_samples, sw_zs, 16, complete=None, no_unk=True)
     for i in range(len(sents)):
         print("z_from: ", sents[i], "|z_to: ", sents[i], "|result: ", sw_text[len(sents) * i + i], flush=True)
     print("========== Transfer==================", flush=True)
@@ -362,7 +429,7 @@ with torch.no_grad():
         print("rec_cont_src :[", rec_text1[i], "], rec_syn_src: [", rec_text2[i], "]")
         print(" result rec (sc={}):> ".format(seqsco[i]), sw_text[i], flush=True)
 
-    eval_file = os.path.join('.data', 'paranmt2', 'test_input.txt')
+    eval_file = os.path.join('.data', 'paranmt2', ('test_input.txt' if TEST else 'dev_input.txt'))
     sents1, sents2 = [], []
     res_sens = []
     with open(eval_file, 'r') as f:
@@ -370,23 +437,23 @@ with torch.no_grad():
             l_sens = line.split('\t')
             sents1.append(l_sens[0]), sents2.append(l_sens[1][:-1])
             if len(sents1) == 10:
-                ezs, ezc = model.embed_sents(sents1)
-                enc_samples1 = {"z1": ezc, "zs": ezs, "zg":torch.zeros_like(ezs)}
-                ezs, ezc = model.embed_sents(sents2)
-                enc_samples2 = {"z1": ezc, "zs": ezs, "zg":torch.zeros_like(ezs)}
+                ezs, ezc, ezp = model.embed_sents(sents1)
+                enc_samples1 = {"z1": ezc, "zs": ezs, "zp":ezp}
+                ezs, ezc, ezp = model.embed_sents(sents2)
+                enc_samples2 = {"z1": ezc, "zs": ezs, "zp":ezp}
                 sw_text, _, seqsco = swap_syntax(model, enc_samples1, enc_samples2)
                 res_sens.extend(sw_text)
                 sents1, sents2 = [], []
                 print("swapped {} senteces".format(len(res_sens)))
 
         if len(sents1) > 0:
-            ezs, ezc = model.embed_sents(sents1)
-            enc_samples1 = {"z1": ezc, "zs": ezs, "zg": torch.zeros_like(ezs)}
-            ezs, ezc = model.embed_sents(sents2)
-            enc_samples2 = {"z1": ezc, "zs": ezs, "zg": torch.zeros_like(ezs)}
+            ezs, ezc, ezp = model.embed_sents(sents1)
+            enc_samples1 = {"z1": ezc, "zs": ezs, "zp": ezp}
+            ezs, ezc, ezp = model.embed_sents(sents2)
+            enc_samples2 = {"z1": ezc, "zs": ezs, "zp": ezp}
             sw_text, _, seqsco = swap_syntax(model, enc_samples1, enc_samples2)
             res_sens.extend(sw_text)
-    res_file = os.path.join(os.path.split(h_params.test_name)[-1]+"_synswap_testres.txt")
+    res_file = os.path.join(os.path.split(h_params.test_name)[-1]+('_test' if TEST else '')+"_synswap_res.txt")
     with open(res_file, 'w') as f:
         for sen in res_sens:
             f.write(sen+'\n')
