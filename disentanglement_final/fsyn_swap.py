@@ -117,7 +117,8 @@ if True:
     #flags.test_name = "Disentanglement2/WikiXNoDrop_beta0.3.0.3.1.4"
     flags.data = "owt"
     #flags.data = "bc"
-    flags.bart_l = 2
+    flags.bart_l = 3
+    flags.aux_l = 3
     flags.tr_enc_in_dec = False
     flags.n_latents = [4]
     flags.graph = "NQKV"
@@ -304,7 +305,7 @@ with torch.no_grad():
             else:
                 raise IndexError("You gave a too high z_id for swapping with this model")
 
-        z_input = {'z1': orig_z.unsqueeze(1), **({'zs': orig_zst.unsqueeze(1)} if has_struct else {}), 'zp':orig_zp.unsqueeze(1)
+        z_input = {'z1': orig_z.unsqueeze(1), **({'zs': orig_zst.unsqueeze(1)} if has_struct else {}), 'zp':orig_zp.unsqueeze(1),
                    **({'zg': orig_zg.unsqueeze(1)} if has_zg else {})}
 
         x_prev = mdl.generate_from_z2(z_input, x_prev, beam_size=mdl.beam_size)
