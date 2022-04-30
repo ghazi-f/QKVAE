@@ -1,2 +1,8 @@
-# VAE LMs
-A working environment made to build VAE language models, and further Graphical Model based Language embedding algorithms
+# QKVAE
+This repo contains the code for our paper "Exploiting Inductive Bias in Transformers for Unsupervised Disentanglement
+ of Syntax and Semantics with VAEs".
+ 
+ ### To Be Done:
+  - Upload the model.
+  - Provide usage instructions.
+  - Better clean the code.
