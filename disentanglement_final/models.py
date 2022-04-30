@@ -2545,7 +2545,7 @@ class StructuredDisentanglementVAE(nn.Module, metaclass=abc.ABCMeta):
         s13sims, s23sims = l2_sim(ezs1, ezs3), l2_sim(ezs2, ezs3)
         c13sims, c23sims = l2_sim(ezc1, ezc3), l2_sim(ezc2, ezc3)
         p13sims, p23sims = l2_sim(ezp1, ezp3), l2_sim(ezp2, ezp3)
-        g13sims, g23sims = l2_sim(ezp1, ezg3), l2_sim(ezg2, ezg3)
+        g13sims, g23sims = l2_sim(ezg1, ezg3), l2_sim(ezg2, ezg3)
         pc13sims, pc23sims = l2_sim(ezpc1, ezpc3), l2_sim(ezpc2, ezpc3)
 
         zs_acc = np.mean(s13sims.cpu().detach().numpy() < s23sims.cpu().detach().numpy())
