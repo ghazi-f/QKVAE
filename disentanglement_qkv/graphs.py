@@ -3,7 +3,7 @@ from itertools import chain
 
 import torch.nn as nn
 
-from components.links import  ConditionalCoattentiveTransformerLink, LastStateMLPLink, \
+from components.links import  ConditionalCoattentiveTransformerLink, \
     LSTMLink, ConditionalCoattentiveQKVTransformerLink, MLPLink
 from components.links import CoattentiveTransformerLink2 as CoattentiveTransformerLink
 from components.links import ConditionalCoattentiveBARTTransformerLink, CoattentiveBARTTransformerLink,\

@@ -8,8 +8,7 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
-from disentanglement_qkv.data_prep import BinaryYelp, BARTParaNMT, BARTYelp, NLIGenData2, BARTNLI, BARTNewsCategory, \
-    BARTFrSbt, BARTWiki, BARTBookCorpus
+from disentanglement_qkv.data_prep import BARTParaNMT, BARTFrSbt
 from disentanglement_qkv.h_params import *
 from disentanglement_qkv.graphs import get_vanilla_graph
 from components.links import CoattentiveTransformerLink, ConditionalCoattentiveTransformerLink, \
@@ -54,8 +53,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             print("Loading Multilingual parser")
             global const_parser
             const_parser = Parser.load('crf-con-xlmr')
-        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTYelp, BARTNLI, BARTNewsCategory,
-                                                                      BARTFrSbt, BARTWiki, BARTBookCorpus]])
+        self.uses_bart = any([isinstance(self.dataset, cl) for cl in [BARTParaNMT, BARTFrSbt]])
         self.go_symbol = "<s>" if self.uses_bart else "<go>"
         self.eos_symbol = "</s>" if self.uses_bart else "<eos>"
         self.beam_size = 1
@@ -116,33 +114,14 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         #                          ----------- Unsupervised Forward/Backward ----------------
         # Forward pass
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
-        alter = np.random.choice(['skip', 'crop'])
-        # if alter == 'skip':
-        #     shift = np.random.randint(7)
-        #     shifted_x = infer_inputs['x'][..., shift:]
-        #     padding = torch.zeros_like(infer_inputs['x'])[..., :shift]
-        #     infer_inputs['x'] = torch.cat([shifted_x, padding], -1)
-        # else:
-        #     cropt_at = np.random.randint(12)
-        #     cropped_x = infer_inputs['x'][..., :cropt_at]
-        #     padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
-        #     infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
-
-        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
-            activate_all_attention_outputs()
-
         if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
             self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
                                                    prev_states=self.infer_last_states, complete=True)
         else:
             self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
-        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
-            deactivate_all_attention_outputs()
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
 
-        if self.h_params.dec_sup_coeff > 0 :
-            activate_all_attention_outputs()
         if self.iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
         if self.step < self.h_params.anneal_kl[0] and self.h_params.anneal_kl_type == "linear":
@@ -150,26 +129,9 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                                                prev_states=self.gen_last_states)
         else:
             self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
-        if self.h_params.dec_sup_coeff > 0 :
-            deactivate_all_attention_outputs()
 
         # Loss computation and backward pass
         losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
-        if self.h_params.lv_kl_coeff > 0:
-            kl_loss = self.get_lv_kl_loss()
-            if self.step % 128 : print("kl_loss:", kl_loss)
-            self.writer.add_scalar('train' + '/' + 'kl_loss', kl_loss, self.step)
-            losses_uns.append(self.h_params.lv_kl_coeff * kl_loss)
-        if self.h_params.sup_coeff > 0:
-            assert 'sup' in samples
-            sup_loss = self.get_sup_att_loss(samples['sup'])
-            self.writer.add_scalar('train' + '/' + 'sup_loss', sup_loss, self.step)
-            losses_uns.append(self.h_params.sup_coeff * sup_loss)
-        if self.h_params.dec_sup_coeff > 0:
-            assert 'sup' in samples
-            sup_loss = self.get_sup_att_loss_dec(samples['sup'])
-            self.writer.add_scalar('train' + '/' + 'dec_sup_loss', sup_loss, self.step)
-            losses_uns.append(self.h_params.dec_sup_coeff * sup_loss)
         sum(losses_uns).backward()
         if not self.h_params.contiguous_lm:
             self.infer_last_states, self.gen_last_states = None, None
@@ -196,37 +158,17 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
         #                          ----------- Unsupervised Forward ----------------
         # Forward pass
-        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
-            activate_all_attention_outputs()
         infer_inputs = {'x': samples['x'],  'x_prev': samples['x_prev']}
 
         infer_prev = self.infer_bn(infer_inputs, n_iw=self.h_params.testing_iw_samples, eval=eval,
                                    prev_states=infer_prev, force_iw=force_iw, complete=True)
-        if self.h_params.lv_kl_coeff > 0 or self.h_params.sup_coeff > 0 :
-            deactivate_all_attention_outputs()
         gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
                       **{'x': samples['x'], 'x_prev': samples['x_prev']}}
         if self.iw or force_iw:
             gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.testing_iw_samples)
-        # if self.step < self.h_params.anneal_kl[0]:
-        #     gen_prev = self.gen_bn(gen_inputs, target=self.generated_v, eval=eval, prev_states=gen_prev,
-        #                            complete=True)
-        # else:
 
-        if  self.h_params.dec_sup_coeff > 0:
-            activate_all_attention_outputs()
         gen_prev = self.gen_bn(gen_inputs, eval=eval, prev_states=gen_prev, complete=True)
-        if  self.h_params.dec_sup_coeff > 0:
-            deactivate_all_attention_outputs()
 
-        if self.h_params.sup_coeff > 0 and not force_iw:
-            assert 'sup' in samples
-            sup_loss = self.get_sup_att_loss(samples['sup'])
-            self.writer.add_scalar('test' + '/' + 'sup_loss', sup_loss, self.step)
-        if self.h_params.dec_sup_coeff > 0 and not force_iw:
-            assert 'sup' in samples
-            sup_loss = self.get_sup_att_loss_dec(samples['sup'])
-            self.writer.add_scalar('test' + '/' + 'dec_sup_loss', sup_loss, self.step)
         # Loss computation
         [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
 
@@ -637,61 +579,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
             return orig_mod_bleu, para_mod_bleu, rec_bleu
 
-    def get_disentanglement_summaries(self):
-        df = self._get_stat_data_frame(n_samples=80, n_alterations=10, batch_size=20)
-        df.to_csv(os.path.join(self.h_params.viz_path, 'statdf_{}.csv'.format(self.step)))
-        # df = pd.read_csv('Autoreg5stats2.csv')
-        df['new_rels'] = df['new_rels'].map(revert_to_l1)
-        df['rel_diff'] = df['rel_diff'].map(revert_to_l1)
-        rel_types = np.unique(np.concatenate(df['new_rels'].array))
-        for ty in rel_types:
-            concerned = []
-            for deps in df['new_rels'].array:
-                concerned.append(ty in deps)
-            df[ty] = concerned
-        d_rel_types = ['d_' + ty for ty in np.unique(np.concatenate(df['rel_diff'].array))]
-        for ty in d_rel_types:
-            concerned = []
-            for deps in df['rel_diff'].array:
-                concerned.append(str(ty[2:]) in deps)
-            df[ty] = concerned
-        grouped = df.groupby('alteration_id')
-        # MIG analogous quantity
-        dis_diffs1 = 0
-        for ty in d_rel_types:
-            largest2 = np.array(grouped.mean().nlargest(2, ty)[ty].array)
-            dis_diffs1 += largest2[0] - largest2[1]
-        dis_diffs2 = 0
-        for ty in rel_types:
-            largest2 = np.array(grouped.mean().nlargest(2, ty)[ty].array)
-            dis_diffs2 += largest2[0] - largest2[1]
-        # MIG-sup analogous quantity
-        sup_dis_diffs1 = 0
-        for i in range(sum(self.h_params.n_latents)):
-            try:
-                largest2 = np.array(grouped.mean()[d_rel_types].transpose().nlargest(2, i)[i].array)
-                sup_dis_diffs1 += largest2[0] - largest2[1]
-            except BaseException as e:
-                print(d_rel_types, grouped)
-                print("/_!_\\ Could not influence any type of relations /_!_\\ ")
-                return  0, 0, None, None
-        sup_dis_diffs2 = 0
-        for i in range(sum(self.h_params.n_latents)):
-            largest2 = np.array(grouped.mean()[rel_types].transpose().nlargest(2, i)[i].array)
-            sup_dis_diffs2 += largest2[0] - largest2[1]
-        plt.figure(figsize=(20, 5))
-        img_arr1 = get_hm_array(grouped.mean()[d_rel_types].transpose())
-        img_arr2 = get_hm_array(grouped.mean()[rel_types].transpose())
-        img_arr1 = torch.from_numpy(img_arr1).permute(2, 0, 1)
-        img_arr2 = torch.from_numpy(img_arr2).permute(2, 0, 1)
-        self.writer.add_scalar('test/diff_disent', dis_diffs1, self.step)
-        self.writer.add_scalar('test/struct_disent', dis_diffs2, self.step)
-        self.writer.add_scalar('test/sup_diff_disent', sup_dis_diffs1, self.step)
-        self.writer.add_scalar('test/sup_struct_disent', sup_dis_diffs2, self.step)
-        self.writer.add_image('test/struct_dis_img', img_arr2, self.step)
-        self.writer.add_image('test/diff_dis_img', img_arr1, self.step)
-        return dis_diffs1, dis_diffs2, img_arr1, img_arr2
-
     def _get_alternative_sentences(self, prev_latent_vals, params, var_z_ids, n_samples, gen_len, complete=None):
         h_params = self.h_params
 
@@ -875,37 +762,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         final_samples = {k: torch.cat([v_i.unsqueeze(0) for v_i in v]) for k, v in final_samples.items()}
         return final_text, final_samples, final_params
 
-    def _get_stat_data_frame(self, n_samples=50, n_alterations=10, batch_size=25):
-        stats = []
-        nlatents = self.h_params.n_latents
-        # Generating n_samples sentences
-        text, samples, params = self.get_sentences(n_samples=n_samples, gen_len=self.h_params.max_len-1, sample_w=False,
-                                                   vary_z=True, complete=None)
-        orig_rels = batch_sent_relations(text)
-        for i in range(int(n_samples / batch_size)):
-            for j in tqdm(range(sum(nlatents)), desc="Processing sample {}".format(str(i))):
-                # Altering the sentences
-                alt_text, _ = self._get_alternative_sentences(
-                                                           prev_latent_vals={k: v[i * batch_size:(i + 1) * batch_size]
-                                                                             for k, v in samples.items()},
-                                                           params=None, var_z_ids=[j], n_samples=n_alterations,
-                                                           gen_len=self.h_params.max_len-1, complete=None)
-                alt_rels = batch_sent_relations(alt_text)
-                # Getting alteration statistics
-                for k in range(n_alterations * batch_size):
-                    orig_text = text[(i * batch_size) + k % batch_size]
-                    try:
-                        new_rels, rel_diff = get_sentence_statistics(orig_text, alt_text[k],
-                                                                     orig_rels[(i * batch_size) + k % batch_size],
-                                                                     alt_rels[k])
-                    except RecursionError or IndexError:
-                        continue
-                    stats.append([orig_text, alt_text[k], j, new_rels, rel_diff])
-
-        header = ['original', 'altered', 'alteration_id', 'new_rels', 'rel_diff']
-        df = pd.DataFrame(stats, columns=header)
-        return df
-
     def get_att_and_rel_idx(self, text_in):
         max_len = text_in.shape[-1]
         text_sents = [self.decode_indices(s) for s in text_in]
@@ -947,142 +803,11 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         att_vals = torch.stack(att_weights).transpose(2, 1).transpose(1, 0)
         return att_vals
 
-    def get_lv_kl_loss(self):
-        att_vals = self.get_enc_att_vals()
-        kl_list = []
-        n_lv = sum(self.h_params.n_latents)
-        # Calculating pairwise KL divergences between latent variable attention distributions
-        for i in range(n_lv):
-            for j in range(n_lv):
-                if i!=j:
-                    logit0, logit1 = att_vals[:, i], att_vals[:, j]
-                    kl_per_dim = torch.softmax(logit0, dim=-1)*(torch.log_softmax(logit0, dim=-1) -
-                                                                torch.log_softmax(logit1, dim=-1))
-                    kl_list.append(torch.sum(kl_per_dim, dim=-1).unsqueeze(0))
-        return - torch.mean(torch.cat(kl_list))
-
-    def get_sup_att_loss(self, sup):
-        if self.h_params.sup_loss_choice == 'multi':
-            return self._get_sup_att_loss_multi(sup)
-        elif self.h_params.sup_loss_choice == 'single':
-            return self._get_sup_att_loss_single(sup)
-        else:
-            raise NotImplementedError("Unrecognized supervised loss "
-                                      "choice :\"{}\"".format(self.h_params.sup_loss_choice))
-
-    def _get_sup_att_loss_single(self, sup):
-        # This performs mutli_class classification with attention values
-        # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
-        att_vals = self.get_enc_att_vals()[..., :-1]
-        # averaging over layers which leads to shape [sent, lv, tok]
-        att_vals = att_vals.mean(-2)
-        # Avoiding the importance sampled forward passes
-        if len(att_vals.shape)>3:
-            return 0.
-
-        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
-        o_idx = self.index['sup'].stoi['o']
-        unk_idx = self.index['sup'].unk_index
-        sup = F.one_hot(sup, len(self.index['sup']))
-        role_idx = list(range(sup.shape[-1]))
-        role_idx.remove(unk_idx)
-        role_idx.remove(o_idx)
-        sup = sup[..., role_idx].transpose(-1, -2)
-
-        #Making new dimension for classification
-        att_vals = torch.cat([att_vals.unsqueeze(-1), 1-att_vals.unsqueeze(-1)], -1)
-        sup = torch.cat([sup.unsqueeze(-1), 1-sup.unsqueeze(-1)], -1)
-
-
-        # Calculating cross entropy
-        c_e = -(torch.log(att_vals)*sup).mean()
-        return c_e
-
-    def _get_sup_att_loss_multi(self, sup):
-        # For this one, each target LV is a classifier for a determined syntactic role
-        # att_vals shape:[sent, lv, layer, tok+1] the +1 is for the rest of the attention outside of the sentence
-        att_vals = self.get_enc_att_vals()[..., :-1]
-        # averaging over layers which leads to shape [sent, lv, tok]
-        att_vals = att_vals.mean(-2)
-        # Avoiding the importance sampled forward passes
-        if len(att_vals.shape)>3:
-            return 0.
-        # transposing lv and tok dimension to get the softmax right
-        att_vals = att_vals.transpose(-1, -2)
-        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
-        o_idx = self.index['sup'].stoi['o']
-        unk_idx = self.index['sup'].unk_index
-        mask = 1-(sup == o_idx).int().unsqueeze(-1)
-        sup = F.one_hot(sup, len(self.index['sup']))
-        role_idx = list(range(sup.shape[-1]))
-        role_idx.remove(unk_idx)
-        role_idx.remove(o_idx)
-        sup = sup[..., role_idx]
-        # Making it so that values sum to 1 on the lv axis without a softmax
-        att_vals = att_vals / att_vals.sum(-1).unsqueeze(-1)
-
-        # Calculating cross entropy
-        c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
-        return c_e
-
     def get_dec_att(self):
         # att_weights shape:[layer, sent, tok, lv] -->[sent, layer, tok, lv]
         att_weights = self.gen_bn.approximator[self.generated_v].att_vals
         att_vals = torch.stack(att_weights).transpose(1, 0)
         return att_vals
-
-    def get_sup_att_loss_dec(self, sup):
-        if self.h_params.sup_loss_choice == 'multi':
-            return self._get_sup_att_loss_dec_multi(sup)
-        elif self.h_params.sup_loss_choice == 'single':
-            return self._get_sup_att_loss_dec_single(sup)
-        else:
-            raise NotImplementedError("Unrecognized supervised decoder loss "
-                                      "choice :\"{}\"".format(self.h_params.sup_loss_choice))
-
-    def _get_sup_att_loss_dec_multi(self, sup):
-        # att_vals shape:[sent, layer, tok, lv], averaging over layers which leads to shape [sent, tok, lv]
-        att_vals = self.get_dec_att().mean(1)
-        # Avoiding the importance sampled forward passes
-        if len(att_vals.shape)>3:
-            return 0.
-        # One_hot representing sup, removing "other syntactic roles" label and calculating mask
-        o_idx = self.index['sup'].stoi['o']
-        unk_idx = self.index['sup'].unk_index
-        mask = 1-(sup == o_idx).int().unsqueeze(-1)
-        sup = F.one_hot(sup, len(self.index['sup']))
-        role_idx = list(range(sup.shape[-1]))
-        role_idx.remove(unk_idx)
-        role_idx.remove(o_idx)
-        sup = sup[..., role_idx]
-
-        # Calculating cross entropy
-        c_e = -(torch.log(att_vals)*sup*mask).sum()/mask.sum()
-        return c_e
-
-    def _get_sup_att_loss_dec_single(self, sup):
-        # att_vals shape:[sent, layer, tok, lv], average on layers and transpose which leads to shape [sent, lv, tok]
-        att_vals = self.get_dec_att().mean(1).transpose(-1, -2)
-        # Avoiding the importance sampled forward passes
-        if len(att_vals.shape)>3:
-            return 0.
-        # On_hot representing sup, removing "other syntactic roles" label and calculating mask
-        o_idx = self.index['sup'].stoi['o']
-        unk_idx = self.index['sup'].unk_index
-        sup = F.one_hot(sup, len(self.index['sup']))
-        role_idx = list(range(sup.shape[-1]))
-        role_idx.remove(unk_idx)
-        role_idx.remove(o_idx)
-        sup = sup[..., role_idx].transpose(-1, -2)
-
-        #Making new dimension for classification
-        att_vals = torch.cat([att_vals.unsqueeze(-1), 1-att_vals.unsqueeze(-1)], -1)
-        sup = torch.cat([sup.unsqueeze(-1), 1-sup.unsqueeze(-1)], -1)
-
-
-        # Calculating cross entropy
-        c_e = -(torch.log(att_vals)*sup).mean()
-        return c_e
 
     def _get_real_sent_argmaxes(self, sents, maxes):
         text = [[self.index[self.generated_v].itos[w] for w in sen] for sen in sents]
@@ -1393,8 +1118,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
             for i, batch in enumerate(tqdm(data_iter, desc="Getting Model Stats")):
                 if batch.text.shape[1] < 2: continue
                 inp = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
-                if self.h_params.sup_coeff > 0 or self.h_params.dec_sup_coeff > 0:
-                    inp['sup'] = batch.label
                 infer_prev, gen_prev = self(inp, prev_states=(infer_prev, gen_prev))
                 if not self.h_params.contiguous_lm:
                     infer_prev, gen_prev = None, None
@@ -1545,46 +1268,6 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
 
                 return torch.zeros_like(orig_z), orig_z
 
-
-    # def get_sent_eval(self):
-    #     def prepare(params, samples):
-    #         pass
-    #
-    #     def batcher_zs(params, batch):
-    #         batch = [' '.join(sent) if sent != [] else '.' for sent in batch]
-    #         embeddings = self.embed_sents(batch)[0]
-    #         return embeddings.detach().cpu().clone()
-    #
-    #
-    #     def batcher_zc(params, batch):
-    #         batch = [' '.join(sent) if sent != [] else '.' for sent in batch]
-    #         embeddings = self.embed_sents(batch)[1]
-    #         return embeddings.detach().cpu().clone()
-    #
-    #     # Set params for SentEval
-    #     print("Performing evaluation with zs")
-    #     task_path = os.path.join("disentanglement_qkv", "senteval", "data")
-    #     params = {'task_path': task_path, 'usepytorch': True, 'kfold': 10}
-    #     params['classifier'] = {'nhid': 50, 'optim': 'adam', 'batch_size': 64, 'tenacity': 5, 'epoch_size': 4}
-    #     se = SE(params, batcher_zs, prepare)
-    #
-    #     transfer_tasks = [#'STS12', 'STS13', 'STS14', 'STS15', 'STS16', 'STSBenchmark',
-    #                       'BigramShift', 'Depth', 'TopConstituents']
-    #
-    #     results_zs = se.eval(transfer_tasks)
-    #
-    #     print("Performing evaluation with zc")
-    #     task_path = os.path.join("disentanglement_qkv", "senteval", "data")
-    #     params = {'task_path': task_path, 'usepytorch': True, 'kfold': 10}
-    #     params['classifier'] = {'nhid': 50, 'optim': 'adam', 'batch_size': 64, 'tenacity': 5, 'epoch_size': 4}
-    #     se = SE(params, batcher_zc, prepare)
-    #
-    #     transfer_tasks = [#'STS12', 'STS13', 'STS14', 'STS15', 'STS16', 'STSBenchmark',
-    #                       'BigramShift', 'Depth', 'TopConstituents']
-    #
-    #     results_zc = se.eval(transfer_tasks)
-    #     return results_zs, results_zc
-
     def _get_syn_disent_encoder_hard(self, split="valid", batch_size=100):
         pair_fn = {"valid": os.path.join(".data", "paranmt2", "dev_input.txt"),
                    "test": os.path.join(".data", "paranmt2", "test_input.txt")}[split]
@@ -1675,154 +1358,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
         return scores
 
 
-class LaggingDisentanglementTransformerVAE(DisentanglementTransformerVAE, metaclass=abc.ABCMeta):
-    def __init__(self, vocab_index, tag_index, h_params, autoload=True, wvs=None, dataset=None, enc_iter=None):
-        self.dataset = dataset
-        super(LaggingDisentanglementTransformerVAE, self).__init__(vocab_index, tag_index, h_params,
-                                                                   autoload=False, wvs=wvs, dataset=dataset)
-        # Encoder iterator
-        self._enc_iter = enc_iter
-        self.enc_iter = iter(enc_iter)
-
-        # The Optimizer
-        self.optimizer = None
-        self.aggressive = True
-        self.inf_optimizer = h_params.optimizer(self.infer_bn.parameters(), **h_params.optimizer_kwargs)
-        self.gen_optimizer = h_params.optimizer(self.gen_bn.parameters(), **h_params.optimizer_kwargs)
-        # self.gen_optimizer = SGD(self.gen_bn.parameters(), lr=1.)
-
-        # Loading previous checkpoint if auto_load is set to True
-        if autoload:
-            self.load()
-
-    def opt_step(self, samples):
-        if self.aggressive:
-            prev_loss = 10**10
-            curr_loss = 0
-            burn_log_steps = 4
-            n_words = 0
-            for i in range(1, 24):
-                curr_loss += self._opt_step(None, mode="encoder")
-                n_words += self.losses[0].valid_n_samples
-                if i % burn_log_steps == 0:
-                    curr_loss /= n_words
-                    if curr_loss > prev_loss:
-                        break
-                    else:
-                        prev_loss = curr_loss
-                        curr_loss = 0
-                        n_words = 0
-            return self._opt_step(samples, "decoder")
-        else:
-            return self._opt_step(samples, "both")
-
-    def _opt_step(self, samples, mode="both"):
-        if mode == "encoder":
-            opt_encoder, opt_decoder = True, False
-            try:
-                batch = next(self.enc_iter)
-            except StopIteration:
-                self.enc_iter = iter(self._enc_iter)
-                batch = next(self.enc_iter)
-            samples = {'x': batch.text[..., 1:], 'x_prev': batch.text[..., :-1]}
-        elif mode == "decoder":
-            opt_encoder, opt_decoder = False, True
-        elif mode == "both":
-            opt_encoder, opt_decoder = True, True
-        else:
-            raise NotImplementedError("unrecognized mode : {}".format(mode))
-
-        self.inf_optimizer.zero_grad()
-        self.gen_optimizer.zero_grad()
-        #                          ----------- Unsupervised Forward/Backward ----------------
-        # Forward pass
-        infer_inputs = {'x': samples['x'], 'x_prev': samples['x_prev']}
-        alter = np.random.choice(['skip', 'crop'])
-        if alter == 'skip':
-            shift = np.random.randint(7)
-            shifted_x = infer_inputs['x'][..., shift:]
-            padding = torch.zeros_like(infer_inputs['x'])[..., :shift]
-            infer_inputs['x'] = torch.cat([shifted_x, padding], -1)
-        else:
-            cropt_at = np.random.randint(12)
-            cropped_x = infer_inputs['x'][..., :cropt_at]
-            padding = torch.zeros_like(infer_inputs['x'])[..., cropt_at:]
-            infer_inputs['x'] = torch.cat([padding, cropped_x], -1)
-        if self.iw:  # and (self.step >= self.h_params.anneal_kl[0]):
-            self.infer_last_states = self.infer_bn(infer_inputs, n_iw=self.h_params.training_iw_samples,
-                                                   prev_states=self.infer_last_states, complete=True)
-        else:
-            self.infer_last_states = self.infer_bn(infer_inputs, prev_states=self.infer_last_states, complete=True)
-        gen_inputs = {**{k.name: v for k, v in self.infer_bn.variables_hat.items()},
-                      **{'x': samples['x'], 'x_prev': samples['x_prev']}}
-        if self.iw:
-            gen_inputs = self._harmonize_input_shapes(gen_inputs, self.h_params.training_iw_samples)
-        if self.step < self.h_params.anneal_kl[0]:
-            self.gen_last_states = self.gen_bn(gen_inputs, target=self.generated_v,
-                                               prev_states=self.gen_last_states)
-        else:
-            self.gen_last_states = self.gen_bn(gen_inputs, prev_states=self.gen_last_states)
-
-        # Loss computation and backward pass
-        losses_uns = [loss.get_loss() * loss.w for loss in self.losses if not isinstance(loss, Supervision)]
-        sum(losses_uns).backward()
-        if not self.h_params.contiguous_lm:
-            self.infer_last_states, self.gen_last_states = None, None
-
-
-        if opt_encoder:
-            torch.nn.utils.clip_grad_norm_(self.infer_bn.parameters(), self.h_params.grad_clip)# 1.)
-            self.inf_optimizer.step()
-        if opt_decoder:
-            torch.nn.utils.clip_grad_norm_(self.gen_bn.parameters(), self.h_params.grad_clip)#0.5)
-            self.gen_optimizer.step()
-            self.step += 1
-
-            self._dump_train_viz()
-        total_loss = sum(losses_uns)
-
-        return total_loss
-
-    def save(self):
-        root = ''
-        for subfolder in self.h_params.save_path.split(os.sep)[:-1]:
-            root = os.path.join(root, subfolder)
-            if not os.path.exists(root):
-                os.mkdir(root)
-        torch.save({'model_checkpoint': self.state_dict(), 'step': self.step, 'aggr':self.aggressive},
-                   self.h_params.save_path)
-        print("Model {} saved !".format(self.h_params.test_name))
-
-    def load(self):
-        if os.path.exists(self.h_params.save_path):
-            print("Path {} exists !".format(self.h_params.save_path))
-            checkpoint = torch.load(self.h_params.save_path)
-            model_checkpoint, self.step, self.aggressive = checkpoint['model_checkpoint'], checkpoint['step'], \
-                                                           checkpoint['aggr']
-            self.load_state_dict(model_checkpoint)
-            print("Loaded model at step", self.step)
-        else:
-            print("Save file doesn't exist, the model will be trained from scratch.")
-
 # =========================================== DISENTANGLEMENT UTILITIES ================================================
-# def batch_sent_relations(sents):
-#     target = [{'sentence': sent} for sent in sents]
-#     preds = predictor.predict_batch_json(target)
-#     sent_dicts = []
-#     for pred in preds:
-#         sent_dict = []
-#         for el in pred['verbs']:
-#             sent_dict.append({})
-#             for v_i in el['description'].split('[')[1:]:
-#                 in_bracket = v_i.split(']')[0]
-#                 try:
-#                     arg_l, arg_str = in_bracket.split(':')
-#                     sent_dict[-1][arg_l] = arg_str
-#                 except ValueError as e:
-#                     print('this raised an anomaly:', el)
-#         sent_dicts.append(sent_dict)
-#     return sent_dicts
-
 
 def get_sentence_statistics(orig, sen, orig_relations=None, relations=None):
     # print(orig, sen)

@@ -10,42 +10,39 @@ from transformers import Adafactor
 import numpy as np
 from allennlp.training.learning_rate_schedulers import PolynomialDecay
 
-from disentanglement_qkv.data_prep import NLIGenData2, OntoGenData, HuggingYelp2, ParaNMTCuratedData, BARTYelp, \
-    BARTParaNMT, BARTNLI, BARTNewsCategory, BARTFrSbt, BARTWiki, BARTBookCorpus, SupYelpData, SupNLIData
-from disentanglement_qkv.models import DisentanglementTransformerVAE, LaggingDisentanglementTransformerVAE
+from disentanglement_qkv.data_prep import ParaNMTCuratedData, BARTParaNMT, BARTFrSbt
+from disentanglement_qkv.models import DisentanglementTransformerVAE
 from disentanglement_qkv.h_params import DefaultTransformerHParams as HParams
 from disentanglement_qkv.graphs import *
 from components.criteria import *
 parser = argparse.ArgumentParser()
-from torch.nn import MultiheadAttention
+
 # Training and Optimization
-k, kz, klstm = 2, 4, 2
-parser.add_argument("--test_name", default='unnamed', type=str)
-parser.add_argument("--data", default='nli', choices=["nli", "ontonotes", "yelp", 'paranmt', 'news', 'fr_sbt', 'wiki',
-                                                      "sup_yelp", "sup_nli", 'bc'], type=str)
+parser.add_argument("--test_name", default='defaultQKV', type=str)
+parser.add_argument("--data", default='paranmt', choices=['paranmt', 'fr_sbt'], type=str)
 parser.add_argument("--csv_out", default='disentqkv3.csv', type=str)
-parser.add_argument("--max_len", default=17, type=int)
+parser.add_argument("--max_len", default=40, type=int)
 parser.add_argument("--init_len", default=None, type=int)
-parser.add_argument("--batch_size", default=128, type=int)
+parser.add_argument("--batch_size", default=64, type=int)
 parser.add_argument("--grad_accu", default=1, type=int)
-parser.add_argument("--n_epochs", default=20, type=int)
+parser.add_argument("--n_epochs", default=40, type=int)
 parser.add_argument("--test_freq", default=32, type=int)
 parser.add_argument("--complete_test_freq", default=160, type=int)
 parser.add_argument("--generation_weight", default=1, type=float)
 parser.add_argument("--device", default='cuda:0', choices=["cuda:0", "cuda:1", "cuda:2", "cpu"], type=str)
 parser.add_argument("--embedding_dim", default=128, type=int)#################"
 parser.add_argument("--pretrained_embeddings", default=False, type=bool)#################"
-parser.add_argument("--z_size", default=96*kz, type=int)#################"
-parser.add_argument("--z_emb_dim", default=192*k, type=int)#################"
+parser.add_argument("--z_size", default=768, type=int)#################"
+parser.add_argument("--z_emb_dim", default=384, type=int)#################"
 parser.add_argument("--n_keys", default=4, type=int)#################"
 parser.add_argument("--n_latents", default=[4], nargs='+', type=int)#################"
 parser.add_argument("--text_rep_l", default=3, type=int)
-parser.add_argument("--text_rep_h", default=192*k, type=int)
-parser.add_argument("--encoder_h", default=192*k, type=int)#################"
+parser.add_argument("--text_rep_h", default=384, type=int)
+parser.add_argument("--encoder_h", default=384, type=int)#################"
 parser.add_argument("--encoder_l", default=2, type=int)#################"
-parser.add_argument("--decoder_h", default=int(192*k), type=int)################
+parser.add_argument("--decoder_h", default=384, type=int)################
 parser.add_argument("--decoder_l", default=2, type=int)#################"
-parser.add_argument("--bart_l", default=None, type=int or None)#################"
+parser.add_argument("--bart_l", default=4, type=int or None)#################"
 parser.add_argument("--highway", default=False, type=bool)
 parser.add_argument("--markovian", default=True, type=bool)
 parser.add_argument('--minimal_enc', dest='minimal_enc', action='store_true')
@@ -53,18 +50,18 @@ parser.add_argument('--no-minimal_enc', dest='minimal_enc', action='store_false'
 parser.set_defaults(minimal_enc=False)
 parser.add_argument('--use_bart', dest='use_bart', action='store_true')
 parser.add_argument('--no-use_bart', dest='use_bart', action='store_false')
-parser.set_defaults(use_bart=False)
+parser.set_defaults(use_bart=True)
 parser.add_argument('--layer_wise_qkv', dest='layer_wise_qkv', action='store_true')
 parser.add_argument('--no-layer_wise_qkv', dest='layer_wise_qkv', action='store_false')
-parser.set_defaults(layer_wise_qkv=False)
+parser.set_defaults(layer_wise_qkv=True)
 parser.add_argument('--z_ids', dest='z_ids', action='store_true')
 parser.add_argument('--no-z_ids', dest='z_ids', action='store_false')
 parser.set_defaults(z_ids=True)
 parser.add_argument('--tr_enc_in_dec', dest='tr_enc_in_dec', action='store_true')
 parser.add_argument('--no-tr_enc_in_dec', dest='tr_enc_in_dec', action='store_false')
 parser.set_defaults(tr_enc_in_dec=False)
-parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE", "LagVAE"], type=str)
-parser.add_argument("--graph", default='Normal', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs"],
+parser.add_argument("--losses", default='VAE', choices=["VAE", "IWAE"], type=str)
+parser.add_argument("--graph", default='QKV', choices=["Vanilla", "IndepInfer", "QKV", "SQKV", "HQKV", "HQKVDiscZs"],
                     type=str)
 parser.add_argument("--training_iw_samples", default=1, type=int)
 parser.add_argument("--testing_iw_samples", default=5, type=int)
@@ -72,23 +69,19 @@ parser.add_argument("--test_prior_samples", default=10, type=int)
 parser.add_argument("--anneal_kl0", default=3000, type=int)
 parser.add_argument("--anneal_kl1", default=6000, type=int)
 parser.add_argument("--zs_anneal_kl0", default=7000, type=int)
-parser.add_argument("--zs_anneal_kl1", default=10000, type=int)
+parser.add_argument("--zs_anneal_kl1", default=20000, type=int)
 parser.add_argument("--zg_anneal_kl0", default=7000, type=int)
 parser.add_argument("--zg_anneal_kl1", default=10000, type=int)
 parser.add_argument("--anneal_kl_type", default="linear", choices=["linear", "sigmoid"], type=str)
 parser.add_argument("--optimizer", default="adam", choices=["adam", "sgd", "radam"], type=str)
-parser.add_argument("--grad_clip", default=5., type=float)
-parser.add_argument("--kl_th", default=0., type=float or None)
+parser.add_argument("--grad_clip", default=100., type=float)
+parser.add_argument("--kl_th", default=0.01, type=float or None)
 parser.add_argument("--max_elbo1", default=6.0, type=float)
 parser.add_argument("--max_elbo2", default=4.0, type=float)
 parser.add_argument("--max_elbo_choice", default=6, type=int)
-parser.add_argument("--kl_beta", default=0.3, type=float)
-parser.add_argument("--kl_beta_zs", default=0.1, type=float)
+parser.add_argument("--kl_beta", default=0.6, type=float)
+parser.add_argument("--kl_beta_zs", default=0.3, type=float)
 parser.add_argument("--kl_beta_zg", default=0.1, type=float)
-parser.add_argument("--lv_kl_coeff", default=0.0, type=float)
-parser.add_argument("--sup_coeff", default=0.0, type=float)
-parser.add_argument("--dec_sup_coeff", default=0.0, type=float)
-parser.add_argument("--sup_loss_choice", default='multi', choices=["multi", "single"], type=str)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--word_dropout", default=0.4, type=float)
 parser.add_argument("--l2_reg", default=0, type=float)
@@ -99,63 +92,6 @@ parser.add_argument("--wait_epochs", default=1, type=float)
 parser.add_argument("--save_all", default=True, type=bool)
 
 flags = parser.parse_args()
-
-# Manual Settings, Deactivate before pushing
-if False:
-    # flags.optimizer="sgd"
-    # -----------------------------------
-    # Supervised Non-Bart QKV args
-    # flags.sup_loss_choice = 'single'
-    # flags.sup_coeff = 100.
-    # flags.dec_sup_coeff = 0.
-    # flags.use_bart = False
-    # flags.layer_wise_qkv = False
-    # flags.tr_enc_in_dec = False
-    # flags.data = "sup_yelp"#"fr_sbt"
-    # flags.decoder_h = 192
-    # flags.encoder_h = 192
-    # flags.embedding_dim = 192
-    # flags.encoder_l = 2
-    # flags.decoder_l = 2
-
-    # Unsupervised QKV args
-    flags.use_bart = True
-    flags.layer_wise_qkv = True
-    flags.tr_enc_in_dec=True
-    flags.data = "paranmt"#"fr_sbt"
-    # flags.optimizer = "radam"
-    # -----------------------------------
-    # flags.z_ids = False
-    # flags.lr_sched = 0.00003
-    flags.batch_size = 8
-    flags.grad_accu = 1
-    flags.max_len = 5
-    flags.bart_l = 2
-    flags.test_name = "nliLM/TestBart"
-    # flags.lv_kl_coeff = 1.0
-    flags.n_latents = [4]
-    flags.n_keys = 16
-    flags.graph = "IndepInfer"  # "Vanilla"
-    flags.z_size = 192
-    flags.losses = "VAE"
-    flags.kl_beta = 0.4
-    flags.kl_beta_zg = 0.1
-    flags.kl_beta_zs = 0.01
-    # flags.encoder_h = 768
-    # flags.decoder_h = 768
-    # flags.anneal_kl0, flags.anneal_kl1 = 4000, 500
-    # flags.zs_anneal_kl0, flags.zs_anneal_kl1 = 6000, 500
-    # flags.zg_anneal_kl0, flags.zg_anneal_kl1 = 6000, 500
-    flags.word_dropout = 0.4
-    # flags.anneal_kl_type = "sigmoid"
-    # flags.encoder_l = 4
-    # flags.decoder_l = 4
-
-    # flags.anneal_kl0 = 0
-    flags.max_elbo_choice = 6
-    # flags.z_size = 16
-    # flags.encoder_h = 256
-    # flags.decoder_h = 256
 
 if flags.use_bart:
     # flags.z_size = 768
@@ -184,21 +120,12 @@ GRAPH = {"Vanilla": get_vanilla_graph,
          "SQKV": get_min_struct_qkv_graphBART if flags.use_bart else None,
          "HQKV": get_hqkv_graphBART if flags.use_bart else get_hqkv_graph,
          "HQKVDiscZs": get_hqkv_graph_discrete_zsBART if flags.use_bart else get_hqkv_graph_discrete_zs}[flags.graph]
-if flags.graph == "NormalLSTM":
-    flags.encoder_h = int(flags.encoder_h/k*klstm)
+
 if flags.graph == "Vanilla":
     flags.n_latents = [flags.z_size]
-if flags.losses == "LagVAE":
-    flags.anneal_kl0, flags.zs_anneal_kl0, flags.zg_anneal_kl0 = 0, 0, 0
-    flags.anneal_kl1, flags.zs_anneal_kl1, flags.zg_anneal_kl1 = 0, 0, 0
-    # flags.kl_beta, flags.kl_beta_zs, flags.kl_beta_zg = 1.0, 1.0, 1.0
 
 if flags.data in ('news', 'fr_sbt', 'wiki'): assert flags.use_bart
-Data = {"nli": BARTNLI if flags.use_bart else NLIGenData2, "ontonotes": OntoGenData,
-        "yelp": BARTYelp if flags.use_bart else HuggingYelp2, "sup_yelp": SupYelpData, "sup_nli": SupNLIData,
-        "paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData,
-        "news": BARTNewsCategory, "wiki": BARTWiki, "bc": BARTBookCorpus,
-        'fr_sbt': BARTFrSbt}[flags.data]
+Data = {"paranmt": BARTParaNMT if flags.use_bart else ParaNMTCuratedData, 'fr_sbt': BARTFrSbt}[flags.data]
 MAX_LEN = flags.max_len
 BATCH_SIZE = flags.batch_size
 GRAD_ACCU = flags.grad_accu
@@ -206,14 +133,11 @@ N_EPOCHS = flags.n_epochs
 TEST_FREQ = flags.test_freq
 COMPLETE_TEST_FREQ = flags.complete_test_freq
 DEVICE = device(flags.device)
-SUPERVISED = flags.data.startswith("sup_")
-print('This run is {}supervised'.format("" if SUPERVISED else 'not '))
 # This prevents illegal memory access on multigpu machines (unresolved issue on torch's github)
 if flags.device.startswith('cuda'):
     torch.cuda.set_device(int(flags.device[-1]))
 LOSSES = {'IWAE': [IWLBo],
-          'VAE': [ELBo],
-          'LagVAE': [ELBo]}[flags.losses]
+          'VAE': [ELBo]}[flags.losses]
 
 ANNEAL_KL = [flags.anneal_kl0*flags.grad_accu, flags.anneal_kl1*flags.grad_accu]
 ZS_ANNEAL_KL = [flags.zs_anneal_kl0*flags.grad_accu, flags.zs_anneal_kl1*flags.grad_accu]
@@ -239,19 +163,14 @@ def main():
                        testing_iw_samples=flags.testing_iw_samples, loss_params=LOSS_PARAMS, optimizer=OPTIMIZER,
                        markovian=flags.markovian, word_dropout=flags.word_dropout, contiguous_lm=False,
                        test_prior_samples=flags.test_prior_samples, n_latents=flags.n_latents, n_keys=flags.n_keys,
-                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],  lv_kl_coeff=flags.lv_kl_coeff,
+                       max_elbo=[flags.max_elbo_choice, flags.max_elbo1],
                        z_emb_dim=flags.z_emb_dim, minimal_enc=flags.minimal_enc, kl_beta=flags.kl_beta,
                        kl_beta_zs=flags.kl_beta_zs, kl_beta_zg=flags.kl_beta_zg, anneal_kl_type=flags.anneal_kl_type,
-                       sup_coeff=flags.sup_coeff, dec_sup_coeff=flags.dec_sup_coeff, sup_loss_choice=flags.sup_loss_choice,
                        fr=flags.data == 'fr_sbt', bart_l=flags.bart_l, z_ids=flags.z_ids)
     val_iterator = iter(data.val_iter)
     print("Words: ", len(data.vocab.itos), ", On device: ", DEVICE.type, flush=True)
     print("Loss Type: ", flags.losses)
-    if flags.losses == 'LagVAE':
-        model = LaggingDisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data,
-                                                     enc_iter=data.enc_train_iter)
-    else:
-        model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
+    model = DisentanglementTransformerVAE(data.vocab, data.tags, h_params, wvs=data.wvs, dataset=data)
     if DEVICE.type == 'cuda':
         model.cuda(DEVICE)
 
@@ -281,16 +200,7 @@ def main():
     loss = torch.tensor(1e20)
     mean_loss = 0
     model.beam_size = 4
-    prev_mi = 0
-    # model.eval()
-    # orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter, beam_size=5)
-    # print(orig_mod_bleu, para_mod_bleu, rec_bleu)
-    # model.step = 8000
-    # model.get_disentanglement_summaries2(data.val_iter, 200)
-    # print(model.get_syn_disent_encoder(split="valid"))
-    # dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
-    # pp_ub = model.get_perplexity(data.val_iter)
-    while data.train_iter is not None :
+    while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
             # print("Training iter ", i, flush=True)
@@ -305,13 +215,11 @@ def main():
 
             # print([' '.join([data.vocab.itos[t] for t in text_i]) for text_i in training_batch.text[:2]])
             inp = {'x': training_batch.text[..., 1:], 'x_prev': training_batch.text[..., :-1]}
-            if SUPERVISED:
-                inp['sup'] = training_batch.label
             loss = model.opt_step(inp)
             if flags.lr_sched > 0:
                 decay.step_batch()
 
-                # ---------------------- In-training metric calculations ---------------------------------------------------
+            # ---------------------- In-training metric calculations ---------------------------------------------------
             mean_loss += loss
             if i % 30 == 0:
                 mean_loss /= 30
@@ -328,8 +236,6 @@ def main():
                     test_batch = limited_next(val_iterator)
                 with torch.no_grad():
                     inp = {'x': test_batch.text[..., 1:], 'x_prev': test_batch.text[..., :-1]}
-                    if SUPERVISED:
-                        inp['sup'] = test_batch.label
                     model(inp)
                     for loss in model.losses:
                         print(type(loss), ":")
@@ -346,12 +252,6 @@ def main():
             model.eval()
             pp_ub = model.get_perplexity(data.val_iter)
             print("perplexity is {} ".format(pp_ub))
-            # if flags.data == "yelp":
-            #     max_auc, auc_margin, max_auc_index  = model.get_sentiment_summaries(data.val_iter)
-            #     print("max_auc: {}, auc_margin: {}, max_auc_index: {} ".format(max_auc, auc_margin, max_auc_index))
-            # if flags.data == "paranmt":
-            #     orig_mod_bleu, para_mod_bleu, rec_bleu = model.get_paraphrase_bleu(data.val_iter)
-            #     print("orig_mod_bleu: {}, para_mod_bleu: {}, rec_bleu: {} ".format(orig_mod_bleu, para_mod_bleu, rec_bleu))
 
             print("=========== Old disentanglement scores ========================")
             val_dec_lab_wise_disent, val_enc_lab_wise_disent, val_decoder_Ndisent_vars, val_encoder_Ndisent_vars\
@@ -379,9 +279,6 @@ def main():
 
             dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
             data.reinit_iterator('valid')
-            if val_mi < prev_mi and flags.losses == "LagVAE":
-                print("Stopped aggressive training phase")
-                model.aggressive = False
             prev_mi = val_mi
 
             if flags.save_all:
@@ -424,58 +321,10 @@ def main():
     print("Decoder Syntax Disentanglement Scores: ", decoder_syn_disent_scores)
 
     print("=========== General VAE Language Modeling Metrics ========================")
-    pp_ub = model.get_perplexity(data.val_iter)
     test_pp_ub = model.get_perplexity(data.test_iter)
     print("Perplexity: {}".format(test_pp_ub))
-    dev_kl, dev_kl_std, dev_rec, val_mi = model.collect_stats(data.val_iter)
-    test_kl, test_kl_std, test_rec, test_mi = model.collect_stats(data.test_iter)
-    relations = ['nsubj', 'verb', 'dobj', 'pobj']
-    temps = ['syntemp', 'lextemp']
-    enc_tasks, dec_tasks = ["template", "paraphrase"], ["tma2", "tma3", "bleu"]
-    enc_vars, dec_vars = ["zs", "zc"], ["zs", "zc", "copy"]
-    if not os.path.exists(flags.csv_out):
-        with open(flags.csv_out, 'w') as f:
-            label_line = ['name', 'net_size', 'z_size', 'graph', 'data', 'kl_beta', 'n_latents',
-                               'dev_kl', 'dev_kl_std', 'dev_ppl', 'dev_tot_dec_disent',
-                              'dev_tot_en_disent',  *['dev_dec_disent_'+r for r in relations],
-                              'dev_dec_disent_syntemp', 'dev_dec_disent_lextemp',
-                              *['dev_enc_disent_' + r for r in relations],
-                              'dev_rec_error', 'dev_decoder_Ndisent_vars', 'dev_encoder_Ndisent_vars',
-                              'test_kl', 'test_kl_std', 'test_ppl', 'test_tot_dec_disent',
-                              'test_tot_en_disent', *['test_dec_disent_'+r for r in relations],
-                              'test_dec_disent_syntemp', 'test_dec_disent_lextemp',*['test_enc_disent_'+r for r in relations],
-                              'test_rec_error', 'test_decoder_Ndisent_vars', 'test_encoder_Ndisent_vars',
-                              'dev_mi', 'test_mi']
-            for t in enc_tasks:
-                for v in enc_vars:
-                    label_line.append("_".join([v, t, "dev", "score"]))
-                    label_line.append("_".join([v, t, "test", "score"]))
-            for t in dec_tasks:
-                for v in dec_vars:
-                    label_line.append("_".join([v, t, "score"]))
-            f.write('\t'.join(label_line)+'\n')
-    with open(flags.csv_out, 'a') as f:
-        value_line = [flags.test_name, str(flags.encoder_h), str(flags.z_size), str(flags.graph), str(flags.data),
-                           str(flags.kl_beta), str(flags.n_latents),
-                           str(dev_kl), str(dev_kl_std), str(pp_ub), str(sum([val_dec_lab_wise_disent[k] for k in relations])),
-                           str(sum([val_enc_lab_wise_disent[k] for k in relations])),
-                           *[str(val_dec_lab_wise_disent[k]) for k in relations+temps],
-                           *[str(val_enc_lab_wise_disent[k]) for k in relations], str(dev_rec),
-                           str(val_decoder_Ndisent_vars), str(val_encoder_Ndisent_vars),
-                           str(test_kl), str(test_kl_std), str(test_pp_ub), str(sum([test_dec_lab_wise_disent[k] for k in relations])),
-                           str(sum(test_enc_lab_wise_disent.values())),
-                           *[str(test_dec_lab_wise_disent[k]) for k in relations+temps],
-                           *[str(test_enc_lab_wise_disent[k]) for k in relations], str(test_rec),
-                           str(test_decoder_Ndisent_vars), str(test_encoder_Ndisent_vars), str(val_mi), str(test_mi)
-                      ]
-        for t in enc_tasks:
-            for v in enc_vars:
-                value_line.append(str(val_encoder_syn_disent_scores[t][v]))
-                value_line.append(str(test_encoder_syn_disent_scores[t][v]))
-        for t in dec_tasks:
-            for v in dec_vars:
-                value_line.append(str(decoder_syn_disent_scores[t][v]))
-        f.write('\t'.join(value_line)+'\n')
+    model.collect_stats(data.val_iter)
+    model.collect_stats(data.test_iter)
 
     print("Finished training !")
 

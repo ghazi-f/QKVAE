@@ -33,36 +33,6 @@ class BaseCriterion(metaclass=abc.ABCMeta):
 
 # ============================================== CRITERIA CLASSES ======================================================
 
-class SNRReg(BaseCriterion):
-    def __init__(self, model, w):
-        # Warning: This is still only implemented for categorical supervised variables
-        super(SNRReg, self).__init__(model, w)
-        self.infer_vars = [var for var in model.infer_bn.parent.keys()
-                           if (not var.is_placeholder) and isinstance(var, Gaussian)]
-        self.gen_vars = [var for var in model.gen_bn.parent.keys() if (not var.is_placeholder) and isinstance(var, Gaussian)]
-        self.log_snr = None
-
-    def get_loss(self):
-        var_means = {**{'/snr_inf_'+v.name: v.post_params['loc'] for v in self.infer_vars},
-                     **{'/snr_gen_' + v.name: v.post_params['loc'] for v in self.gen_vars}}
-        var_stds = {**{'/snr_inf_'+v.name: v.post_params['scale'] for v in self.infer_vars},
-                    **{'/snr_gen_' + v.name: v.post_params['scale'] for v in self.gen_vars}}
-        aggreg_dims = list(range(list(var_means.values())[0].ndim-1))
-        self.log_snr = {k: (var_means[k].std(aggreg_dims)/(var_stds[k].mean(aggreg_dims)+1e-8)+1e-8).log2().mean()
-                        for k in var_means.keys()}
-        loss = - sum([torch.min(torch.cat([log_snr_i.unsqueeze(0),
-                                           torch.zeros((1, *log_snr_i.shape), device=self.h_params.device)+4.0],
-                                          0), 0)[0]
-                      for log_snr_i in self.log_snr.values()])/len(list(self.log_snr.values()))
-
-        self._prepare_metrics(loss)
-
-        return loss
-
-    def _prepare_metrics(self, loss):
-        self._prepared_metrics = self.log_snr
-
-
 class Supervision(BaseCriterion):
     def __init__(self, model, w):
         # Warning: This is still only implemented for categorical supervised variables
