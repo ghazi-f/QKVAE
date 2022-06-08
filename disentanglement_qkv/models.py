@@ -345,8 +345,7 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
                 .replace(self.eos_symbol, '\n').replace(' ğ', '')
         else:
             samples = [self.decode_indices(sen) for sen in x_hat_params]
-            if not isinstance(self.dataset, NLIGenData2):
-                samples = [sen.split(self.eos_symbol)[0] for sen in samples]
+            samples = [sen.split(self.eos_symbol)[0] for sen in samples]
             first_sample, second_sample = samples[:int(len(samples)/2)], samples[int(len(samples) / 2):]
             samples = ['**First Sample**\n'] + \
                       [('orig' if i == 0 else 'zs' if i == len(first_sample)-1 else str(i) if sample == first_sample[0]
