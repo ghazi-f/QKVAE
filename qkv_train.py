@@ -203,6 +203,10 @@ def main():
     while data.train_iter is not None:
         # ============================= TRAINING LOOP ==================================================================
         for i, training_batch in enumerate(data.train_iter):
+            # Evaluating when resuming from checkpoint
+            if loss == torch.tensor(1e20) and model.step>0:
+                loss = torch.tensor(1e19)
+                break
             # print("Training iter ", i, flush=True)
             if training_batch.text.shape[1] < 2: continue
 
