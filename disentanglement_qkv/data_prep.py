@@ -41,8 +41,8 @@ class BARTParaNMT:
         np.random.seed(42)
         # Loading Data
         folder = os.path.join(".data", "paranmt")
-        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
-                                            os.path.join(folder, 'test.txt')
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev_input.txt'), \
+                                            os.path.join(folder, 'test_input.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
                                     delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
 
@@ -78,9 +78,9 @@ class BARTParaNMT:
         self.tags, self.wvs = None, None
 
     def redefine_max_len(self, new_len):
-        folder = os.path.join(".data", "paranmt2")
-        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
-                                            os.path.join(folder, 'test.txt')
+        folder = os.path.join(".data", "paranmt")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev_input.txt'), \
+                                            os.path.join(folder, 'test_input.txt')
         print("Reloading the data with max words per sentence : ", new_len)
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
                                     delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
@@ -231,8 +231,8 @@ class ParaNMTCuratedData:
         np.random.seed(42)
         # Loading Data
         folder = os.path.join(".data", "paranmt")
-        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
-                                os.path.join(folder, 'test.txt')
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev_input.txt'), \
+                                os.path.join(folder, 'test_input.txt')
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
                                     delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
 
@@ -295,9 +295,9 @@ class ParaNMTCuratedData:
             self.wvs = None
 
     def redefine_max_len(self, new_len):
-        folder = os.path.join(".data", "paranmt2")
-        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev.txt'), \
-                                os.path.join(folder, 'test.txt')
+        folder = os.path.join(".data", "paranmt")
+        train_path, valid_path, test_path = os.path.join(folder, 'train.txt'), os.path.join(folder, 'dev_input.txt'), \
+                                os.path.join(folder, 'test_input.txt')
         print("Reloading the data with max words per sentence : ", new_len)
         self.dataset = load_dataset('csv', data_files={'train': train_path, 'valid': valid_path, 'test': test_path},
                                     delimiter='\t', column_names=['text', 'para'], keep_in_memory=True)
