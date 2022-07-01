@@ -2,8 +2,8 @@
 This repo contains the code for our paper [Exploiting Inductive Bias in Transformers for Unsupervised Disentanglement
  of Syntax and Semantics with VAEs](https://arxiv.org/abs/2205.05943)
  
- The ParaNMT data we use can be found in the [Google Drive hosted by VGVAE Authors](https://drive.google.com/drive/folders/1HHDlUT_-WpedL6zNYpcN94cLwed_yyrP).
- Its content must be downloaded and placed in ```.data/paranmt/```.
+ The ParaNMT data files we use can be found in the [Google Drive hosted by VGVAE Authors](https://drive.google.com/drive/folders/1HHDlUT_-WpedL6zNYpcN94cLwed_yyrP), except for two files which are [here](https://drive.google.com/drive/folders/1o5r8UBu8efXgN5vPjb3p622CJZDFPfwD?usp=sharing).
+ The content of both Google Drives must be downloaded and placed in ```.data/paranmt/```.
  
  After adding the data and installing the dependencies listed in ``requirements.txt``,
  the model can be trained by running:
