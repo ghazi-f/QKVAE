@@ -1310,8 +1310,8 @@ class DisentanglementTransformerVAE(nn.Module, metaclass=abc.ABCMeta):
     def _get_syn_disent_encoder_easy(self, split="valid", batch_size=100):
         template_file = {"valid": os.path.join(".data", "paranmt", "dev_input.txt"),
                          "test": os.path.join(".data", "paranmt", "test_input.txt")}[split]
-        paraphrase_file = {"valid": os.path.join(".data", "paranmt", "dev.txt"),
-                           "test": os.path.join(".data", "paranmt", "test.txt")}[split]
+        paraphrase_file = {"valid": os.path.join(".data", "paranmt", "dev_ref.txt"),
+                           "test": os.path.join(".data", "paranmt", "test_ref.txt")}[split]
         file_names = {"template": template_file, "paraphrase": paraphrase_file}
         accuracies = {"template": {}, "paraphrase": {}}
         for task, file_n in file_names.items():
