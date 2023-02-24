@@ -11,7 +11,8 @@ This repo contains the code for our paper [Exploiting Inductive Bias in Transfor
 python qkv_train.py
 ```
 A checkpoint corresponding to the best model we obtained among the 5 instances we ran 
-in our paper can be found [in this google drive](https://drive.google.com/file/d/1LEBovmLN3kkHNE7Z_nk5IACMxhyk5-G4/view?usp=sharing).
+in our paper can be found [in this google drive](https://drive.google.com/file/d/1BbQQP7gzJOQxqRNliuTg87TdR-r6s74H/view?usp=sharing). Note that using this checkpoint requires putting it in a directory named ```checkpoints``` under the root of this repo, and setting the run name with the CLI option ```--test_name QKVBest```.
+
  
  
  ### To Be Done:
